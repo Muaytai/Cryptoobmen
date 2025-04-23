@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
-    "@tailwindcss/forms": "^0.5.10",
     "axios": "^1.8.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -22,16 +21,13 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.56.1",
     "react-icons": "^5.5.0",
-    "tailwind-merge": "^3.2.0",
     "zod": "^3.24.3",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "tailwindcss": "^4",
     "typescript": "^5"
   }
 }
