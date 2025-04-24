@@ -1,0 +1,178 @@
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background-color: #0A0A0A;
+  color: #FFFFFF;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Header styles */
+.header {
+  padding: 20px 0;
+}
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Navigation menu */
+.nav-menu {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .nav-menu {
+    display: flex;
+    gap: 32px;
+  }
+}
+
+.nav-link {
+  color: #9CA3AF;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+.nav-link:hover {
+  color: #FFFFFF;
+}
+
+/* Main content */
+.main {
+  padding: 64px 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Hero section */
+.hero-content {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.hero-title {
+  font-size: 36px;
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+@media (min-width: 768px) {
+  .hero-title {
+    font-size: 48px;
+  }
+}
+
+.hero-highlight {
+  background: linear-gradient(to right, #A855F7, #9333EA);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Buttons */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 32px;
+  border-radius: 9999px;
+  font-weight: 500;
+  transition: all 0.3s;
+  cursor: pointer;
+  border: none;
+}
+
+.button-primary {
+  background-color: #A855F7;
+  color: white;
+}
+
+.button-primary:hover {
+  background-color: #9333EA;
+}
+
+.button-outline {
+  background-color: transparent;
+  border: 2px solid #A855F7;
+  color: #A855F7;
+}
+
+.button-outline:hover {
+  background-color: #A855F7;
+  color: white;
+}
+
+/* Logo */
+.logo {
+  text-decoration: none;
+}
+
+.logo-text {
+  font-size: 24px;
+  font-weight: bold;
+  background: linear-gradient(to right, #A855F7, #7C3AED);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.logo-g {
+  color: white;
+}
+
+.logo-x {
+  background: linear-gradient(to right, white, #E9D5FF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Image container */
+.image-container {
+  position: relative;
+  height: 400px;
+}
+
+@media (min-width: 768px) {
+  .image-container {
+    height: 600px;
+  }
+}
+
+.image-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(168, 85, 247, 0.2), transparent);
+  border-radius: 16px;
+}
+
+/* Button group */
+.button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+} 
