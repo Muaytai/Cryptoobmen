@@ -1,76 +1,104 @@
-'use client';
-
 import React, { ButtonHTMLAttributes } from 'react';
-import { cn } from '@/lib/utils';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  isLoading?: boolean;
-  variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
-  size?: 'default' | 'sm' | 'lg' | 'icon';
+  variant?: 'primary' | 'secondary' | 'outline';
+  size?: 'small' | 'medium' | 'large';
+  fullWidth?: boolean;
 }
 
-// Определяем стили для разных вариантов кнопок
-const variantStyles = {
-  default: 'bg-blue-600 text-white hover:bg-blue-700',
-  destructive: 'bg-red-600 text-white hover:bg-red-700',
-  outline: 'border border-gray-300 bg-transparent hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800',
-  secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
-  ghost: 'hover:bg-gray-100 dark:hover:bg-gray-800',
-  link: 'text-blue-600 underline-offset-4 hover:underline dark:text-blue-400',
-};
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ 
+    children, 
+    variant = 'primary', 
+    size = 'medium', 
+    fullWidth = false,
+    disabled,
+    ...props 
+  }, ref) => {
+    const baseStyles = {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontWeight: 500,
+      borderRadius: '8px',
+      transition: 'all 0.2s ease',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.5 : 1,
+      width: fullWidth ? '100%' : 'auto',
+      border: 'none',
+      outline: 'none',
+    };
 
-// Определяем стили для разных размеров кнопок
-const sizeStyles = {
-  default: 'h-10 px-4 py-2',
-  sm: 'h-9 px-3 text-sm',
-  lg: 'h-11 px-8',
-  icon: 'h-10 w-10',
-};
+    const variants = {
+      primary: {
+        backgroundColor: '#8B5CF6',
+        color: '#ffffff',
+        ':hover': {
+          backgroundColor: '#7C3AED',
+        },
+        ':active': {
+          backgroundColor: '#6D28D9',
+        },
+      },
+      secondary: {
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        color: '#ffffff',
+        ':hover': {
+          backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        },
+        ':active': {
+          backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        },
+      },
+      outline: {
+        backgroundColor: 'transparent',
+        color: '#8B5CF6',
+        border: '1px solid #8B5CF6',
+        ':hover': {
+          backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        },
+        ':active': {
+          backgroundColor: 'rgba(139, 92, 246, 0.2)',
+        },
+      },
+    };
 
-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'default', size = 'default', isLoading, children, ...props }, ref) => {
+    const sizes = {
+      small: {
+        height: '32px',
+        padding: '0 12px',
+        fontSize: '14px',
+      },
+      medium: {
+        height: '40px',
+        padding: '0 20px',
+        fontSize: '14px',
+      },
+      large: {
+        height: '48px',
+        padding: '0 24px',
+        fontSize: '16px',
+      },
+    };
+
+    const style = {
+      ...baseStyles,
+      ...variants[variant],
+      ...sizes[size],
+    };
+
     return (
       <button
-        className={cn(
-          'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none',
-          variantStyles[variant],
-          sizeStyles[size],
-          className
-        )}
         ref={ref}
-        disabled={isLoading || props.disabled}
+        type="button"
+        disabled={disabled}
+        style={style}
         {...props}
       >
-        {isLoading ? (
-          <span className="mr-2">
-            <svg
-              className="animate-spin h-4 w-4 text-current"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-          </span>
-        ) : null}
         {children}
       </button>
     );
   }
 );
 
-Button.displayName = 'Button';
-
-export { Button }; 
+Button.displayName = 'Button'; 
