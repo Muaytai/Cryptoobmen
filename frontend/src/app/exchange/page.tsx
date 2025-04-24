@@ -1,191 +1,178 @@
 'use client';
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { formatCurrency } from '@/lib/utils';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/store/useAuthStore';
 
-// Временные данные о криптовалютах (в реальном приложении будут приходить с API)
-const CURRENCIES = [
-  { id: 1, code: 'BTC', name: 'Bitcoin', symbol: '₿', logo_url: '/crypto/btc.png', exchange_rate: 60000, is_active: true },
-  { id: 2, code: 'ETH', name: 'Ethereum', symbol: 'Ξ', logo_url: '/crypto/eth.png', exchange_rate: 3000, is_active: true },
-  { id: 3, code: 'USDT', name: 'Tether', symbol: '₮', logo_url: '/crypto/usdt.png', exchange_rate: 1, is_active: true },
-  { id: 4, code: 'XRP', name: 'Ripple', symbol: 'XRP', logo_url: '/crypto/xrp.png', exchange_rate: 0.5, is_active: true },
-  { id: 5, code: 'SOL', name: 'Solana', symbol: 'SOL', logo_url: '/crypto/sol.png', exchange_rate: 100, is_active: true },
-];
+interface ExchangeRate {
+  from: string;
+  to: string;
+  rate: number;
+}
 
 export default function ExchangePage() {
-  const [fromCurrency, setFromCurrency] = useState(CURRENCIES[0]);
-  const [toCurrency, setToCurrency] = useState(CURRENCIES[2]);
-  const [fromAmount, setFromAmount] = useState<number | ''>('');
-  const [toAmount, setToAmount] = useState<number | ''>('');
+  const router = useRouter();
+  const { isAuthenticated } = useAuthStore();
+  const [fromCurrency, setFromCurrency] = useState('BTC');
+  const [toCurrency, setToCurrency] = useState('USDT');
+  const [amount, setAmount] = useState('');
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Функция для расчета обмена
-  const calculateExchange = (amount: number, from: typeof CURRENCIES[0], to: typeof CURRENCIES[0]) => {
-    return (amount * from.exchange_rate) / to.exchange_rate;
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login');
+      return;
+    }
+
+    // Имитация загрузки курсов обмена
+    const fetchExchangeRates = async () => {
+      try {
+        // В реальном приложении здесь будет API запрос
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        setExchangeRates([
+          { from: 'BTC', to: 'USDT', rate: 45000 },
+          { from: 'ETH', to: 'USDT', rate: 3000 },
+          { from: 'BTC', to: 'ETH', rate: 15 }
+        ]);
+        
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Ошибка загрузки курсов:', error);
+        setIsLoading(false);
+      }
+    };
+
+    fetchExchangeRates();
+  }, [isAuthenticated, router]);
+
+  const calculateExchangeAmount = () => {
+    const rate = exchangeRates.find(
+      rate => rate.from === fromCurrency && rate.to === toCurrency
+    )?.rate || 0;
+    
+    return parseFloat(amount) * rate;
   };
 
-  // Обработчик изменения суммы "from"
-  const handleFromAmountChange = (value: number | '') => {
-    setFromAmount(value);
-    if (value !== '') {
-      const calculatedAmount = calculateExchange(value, fromCurrency, toCurrency);
-      setToAmount(parseFloat(calculatedAmount.toFixed(8)));
-    } else {
-      setToAmount('');
+  const handleExchange = async () => {
+    try {
+      // В реальном приложении здесь будет API запрос
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      alert('Обмен успешно выполнен!');
+      setAmount('');
+    } catch (error) {
+      console.error('Ошибка при обмене:', error);
+      alert('Произошла ошибка при обмене');
     }
   };
 
-  // Обработчик изменения суммы "to"
-  const handleToAmountChange = (value: number | '') => {
-    setToAmount(value);
-    if (value !== '') {
-      const calculatedAmount = calculateExchange(value, toCurrency, fromCurrency);
-      setFromAmount(parseFloat(calculatedAmount.toFixed(8)));
-    } else {
-      setFromAmount('');
-    }
-  };
-
-  // Обработчик смены направления обмена
-  const handleSwapCurrencies = () => {
-    setFromCurrency(toCurrency);
-    setToCurrency(fromCurrency);
-    setFromAmount(toAmount);
-    setToAmount(fromAmount);
-  };
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-center">Обмен криптовалют</h1>
-        
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8">
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold mb-4">Калькулятор обмена</h2>
-            
-            {/* Блок "Отдаете" */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Отдаете
+    <div className="min-h-screen bg-gray-100 py-6 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h1 className="text-2xl font-semibold text-gray-900 mb-6">
+            Обмен криптовалют
+          </h1>
+          
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Отдаю
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="md:col-span-3">
-                  <Input
-                    type="number"
-                    value={fromAmount === '' ? '' : fromAmount.toString()}
-                    onChange={(e) => handleFromAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    placeholder="Введите сумму"
-                    min={0}
-                  />
-                </div>
-                <div className="md:col-span-1">
-                  <select
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={fromCurrency.code}
-                    onChange={(e) => {
-                      const currency = CURRENCIES.find(c => c.code === e.target.value);
-                      if (currency) {
-                        setFromCurrency(currency);
-                        if (fromAmount !== '') {
-                          handleFromAmountChange(fromAmount);
-                        }
-                      }
-                    }}
-                  >
-                    {CURRENCIES.map((currency) => (
-                      <option key={currency.id} value={currency.code}>
-                        {currency.code} - {currency.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="flex space-x-4">
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+                <select
+                  value={fromCurrency}
+                  onChange={(e) => setFromCurrency(e.target.value)}
+                  className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="BTC">BTC</option>
+                  <option value="ETH">ETH</option>
+                  <option value="USDT">USDT</option>
+                </select>
               </div>
             </div>
             
-            {/* Кнопка смены направления */}
-            <div className="flex justify-center my-4">
-              <Button
-                variant="ghost"
-                onClick={handleSwapCurrencies}
-                className="rounded-full p-2"
+            <div className="flex justify-center">
+              <button
+                onClick={() => {
+                  const temp = fromCurrency;
+                  setFromCurrency(toCurrency);
+                  setToCurrency(temp);
+                }}
+                className="p-2 rounded-full hover:bg-gray-100"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                </svg>
-              </Button>
+                ↕️
+              </button>
             </div>
             
-            {/* Блок "Получаете" */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Получаете
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Получаю
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="md:col-span-3">
-                  <Input
-                    type="number"
-                    value={toAmount === '' ? '' : toAmount.toString()}
-                    onChange={(e) => handleToAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    placeholder="Сумма к получению"
-                    min={0}
-                  />
-                </div>
-                <div className="md:col-span-1">
-                  <select
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={toCurrency.code}
-                    onChange={(e) => {
-                      const currency = CURRENCIES.find(c => c.code === e.target.value);
-                      if (currency) {
-                        setToCurrency(currency);
-                        if (fromAmount !== '') {
-                          handleFromAmountChange(fromAmount);
-                        }
-                      }
-                    }}
-                  >
-                    {CURRENCIES.map((currency) => (
-                      <option key={currency.id} value={currency.code}>
-                        {currency.code} - {currency.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="flex space-x-4">
+                <input
+                  type="number"
+                  value={calculateExchangeAmount()}
+                  disabled
+                  className="flex-1 bg-gray-50 rounded-md border-gray-300 shadow-sm"
+                />
+                <select
+                  value={toCurrency}
+                  onChange={(e) => setToCurrency(e.target.value)}
+                  className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="BTC">BTC</option>
+                  <option value="ETH">ETH</option>
+                  <option value="USDT">USDT</option>
+                </select>
               </div>
             </div>
             
-            {/* Информация о курсе */}
-            {fromAmount && toAmount ? (
-              <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-md text-sm">
-                <p>Курс обмена: 1 {fromCurrency.code} = {formatCurrency(fromCurrency.exchange_rate / toCurrency.exchange_rate, toCurrency.code)} {toCurrency.code}</p>
-                <p>Минимальная сумма: {formatCurrency(0.001, fromCurrency.code)} {fromCurrency.code}</p>
-                <p>Комиссия: 0.5%</p>
-              </div>
-            ) : null}
+            <div className="bg-gray-50 p-4 rounded-md">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">
+                Курс обмена
+              </h3>
+              <p className="text-lg font-semibold text-gray-900">
+                1 {fromCurrency} = {
+                  exchangeRates.find(
+                    rate => rate.from === fromCurrency && rate.to === toCurrency
+                  )?.rate || '—'
+                } {toCurrency}
+              </p>
+            </div>
             
-            {/* Кнопка обмена */}
-            <div className="mt-6">
-              <Button
-                className="w-full py-3"
-                disabled={!fromAmount || !toAmount || fromAmount <= 0}
+            <div className="flex justify-end space-x-4">
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition-colors"
               >
-                Обменять {fromAmount ? `${fromAmount} ${fromCurrency.code} на ${toAmount} ${toCurrency.code}` : ''}
-              </Button>
+                Отмена
+              </button>
+              <button
+                onClick={handleExchange}
+                disabled={!amount || parseFloat(amount) <= 0}
+                className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Обменять
+              </button>
             </div>
           </div>
-        </div>
-        
-        {/* Дополнительная информация */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-4">Как работает обмен</h2>
-          <ol className="list-decimal list-inside space-y-2 text-gray-700 dark:text-gray-300">
-            <li>Выберите криптовалюту, которую хотите обменять, и укажите сумму.</li>
-            <li>Выберите криптовалюту, которую хотите получить.</li>
-            <li>Система автоматически рассчитает сумму к получению по текущему курсу.</li>
-            <li>Нажмите кнопку "Обменять" и следуйте инструкциям для завершения транзакции.</li>
-            <li>После подтверждения транзакции средства будут отправлены на ваш кошелек.</li>
-          </ol>
         </div>
       </div>
     </div>

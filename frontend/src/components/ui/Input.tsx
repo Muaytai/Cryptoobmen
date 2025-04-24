@@ -1,39 +1,61 @@
 import React, { InputHTMLAttributes } from 'react';
-import { cn } from '@/lib/utils';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
-  error?: string;
+  error?: boolean;
+  errorMessage?: string;
 }
 
-const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, label, error, ...props }, ref) => {
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className, label, error, errorMessage, type = 'text', ...props }, ref) => {
+    const inputStyles = {
+      display: 'flex',
+      width: '100%',
+      height: '40px',
+      padding: '8px 12px',
+      fontSize: '14px',
+      border: `1px solid ${error ? '#ef4444' : 'rgba(255, 255, 255, 0.1)'}`,
+      borderRadius: '8px',
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      color: '#fff',
+      transition: 'all 0.2s ease',
+      outline: 'none',
+    };
+
+    const labelStyles = {
+      display: 'block',
+      marginBottom: '8px',
+      fontSize: '14px',
+      color: 'rgba(255, 255, 255, 0.7)',
+    };
+
+    const errorStyles = {
+      marginTop: '4px',
+      fontSize: '12px',
+      color: '#ef4444',
+    };
+
     return (
-      <div className="space-y-2">
+      <div style={{ marginBottom: '16px' }}>
         {label && (
-          <label
-            className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-            htmlFor={props.id}
-          >
+          <label style={labelStyles}>
             {label}
           </label>
         )}
         <input
           type={type}
-          className={cn(
-            'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
-            error && 'border-red-500 focus-visible:ring-red-500',
-            className
-          )}
+          style={inputStyles}
           ref={ref}
           {...props}
         />
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && errorMessage && (
+          <p style={errorStyles}>
+            {errorMessage}
+          </p>
+        )}
       </div>
     );
   }
 );
 
-Input.displayName = 'Input';
-
-export { Input }; 
+Input.displayName = 'Input'; 

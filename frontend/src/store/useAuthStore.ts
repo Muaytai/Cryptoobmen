@@ -1,94 +1,150 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import api from '@/lib/api/axios';
-import { User, LoginCredentials, RegisterCredentials } from '@/types/api';
+import { persist } from 'zustand/middleware';
+
+interface User {
+  id: string;
+  username: string;
+  email: string;
+}
+
+interface Credentials {
+  username: string;
+  password: string;
+}
+
+interface RegistrationData {
+  username: string;
+  email: string;
+  password: string;
+}
 
 interface AuthState {
   user: User | null;
-  token: string | null;
-  refreshToken: string | null;
+  isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-  login: (credentials: LoginCredentials) => Promise<void>;
-  register: (credentials: RegisterCredentials) => Promise<void>;
+  
+  login: (credentials: Credentials) => Promise<void>;
+  register: (data: RegistrationData) => Promise<void>;
   logout: () => void;
-  getProfile: () => Promise<void>;
+  clearError: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
-      token: null,
-      refreshToken: null,
+      isAuthenticated: false,
       isLoading: false,
       error: null,
-
-      login: async (credentials) => {
-        set({ isLoading: true, error: null });
+      
+      login: async (credentials: Credentials) => {
         try {
-          const response = await api.post('/auth/login/', credentials);
-          const { access_token, refresh_token, user } = response.data;
+          set({ isLoading: true, error: null });
           
-          localStorage.setItem('token', access_token);
+          // В реальном приложении здесь будет запрос к API:
+          // const response = await fetch('/api/auth/login', {
+          //   method: 'POST',
+          //   headers: {
+          //     'Content-Type': 'application/json',
+          //   },
+          //   body: JSON.stringify(credentials),
+          // });
+          // 
+          // if (!response.ok) {
+          //   const errorData = await response.json();
+          //   throw new Error(errorData.message || 'Ошибка авторизации');
+          // }
+          // 
+          // const data = await response.json();
           
+          // Имитация ответа от сервера:
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Проверка демонстрационного логина:
+          if (credentials.username === 'demo' && credentials.password === 'password') {
+            const mockUser = {
+              id: '1',
+              username: credentials.username,
+              email: 'demo@example.com',
+            };
+            
+            set({
+              isLoading: false,
+              isAuthenticated: true,
+              user: mockUser,
+            });
+          } else {
+            throw new Error('Неверное имя пользователя или пароль');
+          }
+        } catch (error) {
           set({
-            token: access_token,
-            refreshToken: refresh_token,
-            user,
             isLoading: false,
+            error: error instanceof Error ? error.message : 'Ошибка авторизации',
           });
-        } catch (error: any) {
-          set({
-            error: error.response?.data?.detail || 'Ошибка при входе',
-            isLoading: false,
-          });
+          throw error;
         }
       },
-
-      register: async (credentials) => {
-        set({ isLoading: true, error: null });
+      
+      register: async (data: RegistrationData) => {
         try {
-          const response = await api.post('/auth/register/', credentials);
-          const { access_token, refresh_token, user } = response.data;
+          set({ isLoading: true, error: null });
           
-          localStorage.setItem('token', access_token);
+          // В реальном приложении здесь будет запрос к API:
+          // const response = await fetch('/api/auth/register', {
+          //   method: 'POST',
+          //   headers: {
+          //     'Content-Type': 'application/json',
+          //   },
+          //   body: JSON.stringify(data),
+          // });
+          // 
+          // if (!response.ok) {
+          //   const errorData = await response.json();
+          //   throw new Error(errorData.message || 'Ошибка регистрации');
+          // }
+          // 
+          // const responseData = await response.json();
+          
+          // Имитация ответа от сервера:
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          const mockUser = {
+            id: '2',
+            username: data.username,
+            email: data.email,
+          };
           
           set({
-            token: access_token,
-            refreshToken: refresh_token,
-            user,
             isLoading: false,
+            isAuthenticated: true,
+            user: mockUser,
           });
-        } catch (error: any) {
+        } catch (error) {
           set({
-            error: error.response?.data?.detail || 'Ошибка при регистрации',
             isLoading: false,
+            error: error instanceof Error ? error.message : 'Ошибка регистрации',
           });
+          throw error;
         }
       },
-
+      
       logout: () => {
-        localStorage.removeItem('token');
-        set({ token: null, refreshToken: null, user: null });
+        // В реальном приложении здесь будет запрос к API для уничтожения токена:
+        // fetch('/api/auth/logout', { method: 'POST' });
+        
+        set({
+          user: null,
+          isAuthenticated: false,
+          error: null,
+        });
       },
-
-      getProfile: async () => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await api.get('/auth/profile/');
-          set({ user: response.data, isLoading: false });
-        } catch (error: any) {
-          set({
-            error: error.response?.data?.detail || 'Ошибка при загрузке профиля',
-            isLoading: false,
-          });
-        }
-      },
+      
+      clearError: () => set({ error: null }),
     }),
     {
       name: 'auth-storage',
-      storage: createJSONStorage(() => localStorage),
+      // В production необходимо добавить шифрование для безопасного хранения
     }
   )
 ); 
