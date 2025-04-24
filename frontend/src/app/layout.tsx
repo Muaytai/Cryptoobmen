@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Header } from "@/components/layout/Header";
 import "./globals.css";
+import { useEffect, useState } from "react";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -20,7 +21,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body className={`${inter.className} antialiased bg-white text-black dark:bg-gray-900 dark:text-white min-h-screen`}>
+      <body 
+        suppressHydrationWarning
+        className={`${inter.className} antialiased bg-white text-black dark:bg-gray-900 dark:text-white min-h-screen`}
+      >
         <div className="flex flex-col min-h-screen">
           <Header />
           <main className="flex-1">
@@ -30,7 +34,7 @@ export default function RootLayout({
             <div className="container mx-auto px-4">
               <div className="flex flex-col md:flex-row justify-between items-center">
                 <div className="mb-4 md:mb-0">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <p suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
                     &copy; {new Date().getFullYear()} CryptoExchange. Все права защищены.
                   </p>
                 </div>
