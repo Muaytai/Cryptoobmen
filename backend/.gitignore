@@ -1,0 +1,49 @@
+# Виртуальное окружение
+venv/
+venv_main/
+env/
+.env
+
+# Python кэш
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+static/
+
+# Редакторы
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Файлы базы данных
+*.db
+*.sql
+
+# Локальные конфигурации
+core/local_settings.py 

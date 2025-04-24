@@ -12,8 +12,17 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+import sys
+import locale
 from datetime import timedelta
 from dotenv import load_dotenv
+
+# Для Windows установим правильную локаль
+if sys.platform == 'win32':
+    try:
+        locale.setlocale(locale.LC_ALL, 'Russian_Russia.1251')
+    except Exception as e:
+        print(f"Предупреждение settings.py: не удалось установить локаль: {e}")
 
 # Загружаем переменные окружения из .env файла
 load_dotenv()
@@ -26,10 +35,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-i+$7q*cy+1!jvjty71zpo1ecf$v!x6zqo(m1qf46@veozs97-g')
+SECRET_KEY = os.getenv('SECRET_KEY', '')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -100,24 +109,33 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Конфигурация базы данных из переменных окружения
-DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.sqlite3')
-DB_NAME = os.getenv('DB_NAME', os.path.join(BASE_DIR, 'db.sqlite3'))
+# Настройки базы данных
+DB_ENGINE = 'django.db.backends.postgresql'
+DB_NAME = os.getenv('DB_NAME')
+DB_USER = os.getenv('DB_USER')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_HOST = os.getenv('DB_HOST')
+DB_PORT = os.getenv('DB_PORT')
+
+# Создаем строку подключения (DSN) для PostgreSQL
+DB_DSN = f"postgres://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 DATABASES = {
     'default': {
         'ENGINE': DB_ENGINE,
         'NAME': DB_NAME,
+        'USER': DB_USER,
+        'PASSWORD': DB_PASSWORD,
+        'HOST': DB_HOST,
+        'PORT': DB_PORT,
+        'OPTIONS': {
+            # Исправленные настройки кодировки для Windows
+            'client_encoding': 'UTF8',
+        },
+        'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', 60)),
+        'CONN_HEALTH_CHECKS': True,
     }
 }
-
-# Добавляем PostgreSQL если настроен
-if DB_ENGINE == 'django.db.backends.postgresql':
-    DATABASES['default']['USER'] = os.getenv('DB_USER')
-    DATABASES['default']['PASSWORD'] = os.getenv('DB_PASSWORD')
-    DATABASES['default']['HOST'] = os.getenv('DB_HOST')
-    DATABASES['default']['PORT'] = os.getenv('DB_PORT')
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
