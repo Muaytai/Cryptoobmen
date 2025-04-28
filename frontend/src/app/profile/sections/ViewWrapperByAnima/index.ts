@@ -1,0 +1,1 @@
+export { ViewWrapperByAnima } from "./ViewWrapperByAnima";
