@@ -83,6 +83,7 @@
   padding: 9px 12px;
   font-size: 14px;
   color: var(--color-text);
+  border-color: transparent;
 }
 
 .chartContainer {
@@ -93,17 +94,28 @@
   display: flex;
   justify-content: space-between;
   margin-top: 16px;
+  background-color: var(--color-card-dark);
+  padding: 12px 16px;
+  border-radius: 10px;
+  color: var(--color-text);
 }
 
 .statItem {
   font-size: 14px;
-  color: var(--color-text-secondary);
+  /*color: var(--color-text-secondary);*/
 }
 
 .investmentInfo {
+  display: flex;
+  justify-content: space-between;
   margin-top: 16px;
   font-size: 14px;
-  color: var(--color-text-secondary);
+  color: var(--color-text);
+}
+
+.investmentInfo * {
+  display: flex;
+  flex-direction: column;
 }
 
 .actionButtons {
@@ -119,6 +131,10 @@
   font-size: 16px;
   font-weight: 500;
   border-radius: 10px;
+}
+
+.investButton {
+  border-color: transparent;
 }
 
 .investButton {

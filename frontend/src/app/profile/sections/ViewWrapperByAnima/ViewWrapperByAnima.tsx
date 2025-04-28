@@ -30,12 +30,12 @@ export const ViewWrapperByAnima = (): JSX.Element => {
   ];
 
   const timePeriods = [
-    { value: "1y", label: "1 г" },
-    { value: "6m", label: "6 м" },
-    { value: "1m", label: "1 м" },
-    { value: "1w", label: "1 н" },
-    { value: "1d", label: "1 д", active: true },
-    { value: "1h", label: "1 ч" },
+    { value: "1y", label: "1г" },
+    { value: "6m", label: "6м" },
+    { value: "1m", label: "1м" },
+    { value: "1w", label: "1н" },
+    { value: "1d", label: "1д", active: true },
+    { value: "1h", label: "1ч" },
   ];
 
   return (
@@ -99,7 +99,7 @@ export const ViewWrapperByAnima = (): JSX.Element => {
         <Card className={styles.chartCard}>
           <CardContent className={styles.cardContent}>
             <div className={styles.chartHeader}>
-              <div className={styles.tokenIcon} style={{ backgroundImage: 'url(/vector-2.svg)' }} />
+              <div className={styles.tokenIcon} style={{ backgroundImage: 'url(/profile/vector-2.svg)' }} />
               <div className={styles.tokenInfo}>
                 <p className={styles.tokenName}>CTokenX</p>
                 <p className={styles.tokenDescription}>CTokenX Token</p>

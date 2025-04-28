@@ -56,12 +56,12 @@ const cryptoData = [
 ];
 
 const timePeriods = [
-  { value: "1y", label: "1 г" },
-  { value: "6m", label: "6 м" },
-  { value: "1m", label: "1 м" },
-  { value: "1w", label: "1 н" },
-  { value: "1d", label: "1 д" },
-  { value: "1h", label: "1 ч" },
+  { value: "1y", label: "1г" },
+  { value: "6m", label: "6м" },
+  { value: "1m", label: "1м" },
+  { value: "1w", label: "1н" },
+  { value: "1d", label: "1д" },
+  { value: "1h", label: "1ч" },
 ];
 
 export const DivWrapperByAnima = (): JSX.Element => {
@@ -159,7 +159,7 @@ export const DivWrapperByAnima = (): JSX.Element => {
               <div className={styles.investmentInfo}>
                 <div>
                   <span>Дата инвестирования:</span>
-                  <span>00.00.0000</span>
+                  <span> 00.00.0000</span>
                 </div>
                 <div>
                   <span>Торгует:</span>
