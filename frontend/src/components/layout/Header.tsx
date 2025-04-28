@@ -38,7 +38,7 @@ export function Header() {
         <Logo />
         <nav style={{display: 'flex', gap: 24}}>
           <Link href="/" className="nav-link">Главная</Link>
-          <Link href="/about" className="nav-link">О нас</Link>
+          <Link href="/profile" className="nav-link">О нас</Link>
           <Link href="/reviews" className="nav-link">Отзывы</Link>
           <Link href="/faq" className="nav-link">FAQ</Link>
         </nav>
