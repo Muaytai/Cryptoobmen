@@ -99,47 +99,68 @@ export const DivByAnima = (): JSX.Element => {
 
         {/* Accounts */}
         {accounts.map((account, idx) => (
-          <div key={idx} className={styles.card}>
-            <div className={styles.accountCard}>
-              <div className={styles.accountType}>
-                <p className={styles.accountTypeText}>{account.type}</p>
-                <img src={account.iconSrc} alt="Account Icon"/>
-              </div>
-              <p className={styles.accountBalance}>{account.balance}</p>
-              <div className={styles.accountActions}>
-                {account.actions.map((action, actionIdx) => (
-                  <button
-                    key={actionIdx}
-                    className={`${styles.actionButton} ${actionIdx === 1 ? styles.actionButtonOutline : ""}`}
-                  >
-                    {action}
-                  </button>
-                ))}
+          <div key={idx} className={styles.cardUserWrapp}>
+            <div key={idx} className={styles.card}>
+              <div className={styles.accountCard}>
+                <div className={styles.accountBalanceWrap}>
+                  <div className={styles.accountType}>
+                    <p className={styles.accountTypeText}>{account.type}</p>
+                    <img src={account.iconSrc} alt="Account Icon"/>
+                  </div>
+                  <p className={styles.accountBalance}>{account.balance}</p>
+                </div>
+                <div className={styles.accountActions}>
+                  {account.actions.map((action, actionIdx) => (
+                    <button
+                      key={actionIdx}
+                      className={`${styles.actionButton} ${actionIdx === 1 ? styles.actionButtonOutline : ""}`}
+                    >
+                      {action}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
+            {idx == 0 && <div className={styles.card}>
+              <div className={styles.cardContent}>
+                <p className={styles.cardLabel}>Почта</p>
+                <p className={styles.cardValue}>{userData.email}</p>
+              </div>
+            </div>}
+
+            {idx == 1 && <div className={styles.card}>
+              <div className={styles.cardContent}>
+                <div>
+                  <p className={styles.cardLabel}>Реферальная ссылка</p>
+                  <p className={styles.cardValue}>{userData.referralLink}</p>
+                </div>
+                <CopyIcon className={styles.icon}/>
+              </div>
+            </div>}
           </div>
+
         ))}
       </div>
 
       {/* Bottom Row */}
-      <div className={styles.bottomRow}>
-        <div className={styles.card}>
-          <div className={styles.cardContent}>
-            <p className={styles.cardLabel}>Почта</p>
-            <p className={styles.cardValue}>{userData.email}</p>
-          </div>
-        </div>
+      {/*<div className={styles.bottomRow}>*/}
+      {/*  <div className={styles.card}>*/}
+      {/*    <div className={styles.cardContent}>*/}
+      {/*      <p className={styles.cardLabel}>Почта</p>*/}
+      {/*      <p className={styles.cardValue}>{userData.email}</p>*/}
+      {/*    </div>*/}
+      {/*  </div>*/}
 
-        <div className={styles.card}>
-          <div className={styles.cardContent}>
-            <div>
-              <p className={styles.cardLabel}>Реферальная ссылка</p>
-              <p className={styles.cardValue}>{userData.referralLink}</p>
-            </div>
-            <CopyIcon className={styles.icon}/>
-          </div>
-        </div>
-      </div>
+      {/*  <div className={styles.card}>*/}
+      {/*    <div className={styles.cardContent}>*/}
+      {/*      <div>*/}
+      {/*        <p className={styles.cardLabel}>Реферальная ссылка</p>*/}
+      {/*        <p className={styles.cardValue}>{userData.referralLink}</p>*/}
+      {/*      </div>*/}
+      {/*      <CopyIcon className={styles.icon}/>*/}
+      {/*    </div>*/}
+      {/*  </div>*/}
+      {/*</div>*/}
     </div>
   );
 };
