@@ -40,16 +40,12 @@ export default function RegisterPage() {
       setPasswordError('Пароли не совпадают');
       return;
     }
-    
-    const success = await register({
+    await register({
       email: formData.email,
       username: formData.username,
       password: formData.password
     });
-
-    if (success) {
-      router.push('/dashboard');
-    }
+    router.push('/dashboard');
   };
 
   return (
