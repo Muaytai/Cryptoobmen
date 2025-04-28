@@ -1,0 +1,17 @@
+.toggleGroup {
+  background-color: var(--color-card-dark);
+  border-radius: 15px;
+  height: 48px;
+}
+
+.toggleItem {
+  padding: 9px 10px;
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: normal;
+}
+
+.toggleItem[data-state="on"] {
+  background-color: var(--color-primary);
+  font-weight: 500;
+}

@@ -1,3 +1,43 @@
+:root {
+  --background: #0F0F1A;
+  --foreground: #ffffff;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  --popover: #ffffff;
+  --popover-foreground: #1f2937;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: #e5e7eb;
+  --card: #ffffff;
+  --card-foreground: #1f2937;
+  --primary: #8B5CF6;
+  --primary-foreground: #f9fafb;
+  --primary-hover: #7C3AED;
+  --primary-active: #6D28D9;
+  --secondary: rgba(255, 255, 255, 0.1);
+  --secondary-foreground: #1f2937;
+  --secondary-hover: rgba(255, 255, 255, 0.15);
+  --secondary-active: rgba(255, 255, 255, 0.2);
+  --accent: #f3f4f6;
+  --accent-foreground: #1f2937;
+  --destructive: #ff0000;
+  --destructive-foreground: #f9fafb;
+  --success: #22c55e;
+  --success-foreground: #f9fafb;
+  --ring: #9ca3af;
+  --radius: 0.5rem;
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-disabled: rgba(255, 255, 255, 0.4);
+
+  /*вынесено из DivByAnima.module.css*/
+  --color-card: rgba(26, 26, 33, 1);
+  --color-card-dark: rgba(47, 47, 59, 1);
+  --color-primary: #3b82f6;
+  --color-text: rgba(234,234,242,1);
+  --color-text-secondary: rgba(162,162,179,1);
+  --border-radius: 15px;
+}
+
 /* Reset and base styles */
 * {
   margin: 0;
