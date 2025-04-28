@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -20,40 +20,37 @@ const NavLink = ({ href, children }: { href: string; children: React.ReactNode }
 export function Header() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const [dark, setDark] = useState(true);
 
   const handleLogout = () => {
     logout();
     router.push('/');
   };
 
+  const handleThemeToggle = () => {
+    setDark((prev) => !prev);
+    // Здесь можно добавить реальный переключатель темы
+  };
+
   return (
-    <header className="header">
-      <nav className="nav">
+    <header className="header" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px 0'}}>
+      <div style={{display: 'flex', alignItems: 'center', gap: 32}}>
         <Logo />
-
-        {/* Navigation */}
-        <div className="nav-menu">
-          <Link href="/about" className="nav-link">
-            Меню
-          </Link>
-          <Link href="/features" className="nav-link">
-            Меню
-          </Link>
-          <Link href="/pricing" className="nav-link">
-            Меню
-          </Link>
-          <Link href="/contact" className="nav-link">
-            Меню
-          </Link>
-        </div>
-
-        {/* Auth Button */}
+        <nav style={{display: 'flex', gap: 24}}>
+          <Link href="/" className="nav-link">Главная</Link>
+          <Link href="/about" className="nav-link">О нас</Link>
+          <Link href="/reviews" className="nav-link">Отзывы</Link>
+          <Link href="/faq" className="nav-link">FAQ</Link>
+        </nav>
+      </div>
+      <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
+        <button onClick={handleThemeToggle} style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer'}} title="Переключить тему">
+          {dark ? '🌙' : '☀️'}
+        </button>
         <Link href="/login">
-          <button className="button button-outline">
-            Войти
-          </button>
+          <button className="button button-outline">Войти</button>
         </Link>
-      </nav>
+      </div>
     </header>
   );
 } 
