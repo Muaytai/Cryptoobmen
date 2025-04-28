@@ -1,6 +1,6 @@
-import React, { JSX } from "react";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent } from "../../components/ui/card";
+import React, {JSX} from "react";
+import {Button} from "../../components/ui/button";
+import {Card, CardContent} from "../../components/ui/card";
 import styles from "./ViewByAnima.module.css";
 
 export const ViewByAnima = (): JSX.Element => {
@@ -41,24 +41,26 @@ export const ViewByAnima = (): JSX.Element => {
         {/* Main gift box card */}
         <Card className={styles.mainCard}>
           <CardContent className={styles.cardContent}>
-            <div className={styles.descriptionWrapper}>
-              <p className={styles.description}>
-                Открывай наши уникальные подарочные боксы <br />и получай ценные
-                награды – токены, USDT и другие бонусы! Каждый бокс содержит
-                случайный приз, <br />а его стоимость фиксированная и доступна
-                для покупки как за USDT, так и за токены платформы.
-              </p>
+            <div className={styles.cardContentWrapper}>
+              <div className={styles.descriptionWrapper}>
+                <p className={styles.description}>
+                  Открывай наши уникальные подарочные боксы <br/>и получай ценные
+                  награды – токены, USDT и другие бонусы! Каждый бокс содержит
+                  случайный приз, <br/>а его стоимость фиксированная и доступна
+                  для покупки как за USDT, так и за токены платформы.
+                </p>
+              </div>
+
+              <h3 className={styles.chanceTitle}>Шансы выпадения призов:</h3>
+
+              <div className={styles.chanceList}>
+                {prizeChances.map((chance, index) => (
+                  <p key={index}>{chance}</p>
+                ))}
+              </div>
+
+              <Button className={styles.detailsButton}>Подробнее</Button>
             </div>
-
-            <h3 className={styles.chanceTitle}>Шансы выпадения призов:</h3>
-
-            <div className={styles.chanceList}>
-              {prizeChances.map((chance, index) => (
-                <p key={index}>{chance}</p>
-              ))}
-            </div>
-
-            <Button className={styles.detailsButton}>Подробнее</Button>
 
             {/* Nested gift box card */}
             <Card className={styles.giftBoxCard}>
@@ -79,8 +81,8 @@ export const ViewByAnima = (): JSX.Element => {
                   </p>
 
                   <div className={styles.boxActions}>
-                    <Button className={styles.boxButtonPrimary}>Купить</Button>
-                    <Button className={styles.boxButton}>Открыть</Button>
+                    <Button className={styles.boxButton}>Купить</Button>
+                    <Button className={styles.boxButtonPrimary}>Открыть</Button>
                   </div>
                 </div>
               </CardContent>
@@ -91,24 +93,25 @@ export const ViewByAnima = (): JSX.Element => {
         {/* User winnings card */}
         <Card className={styles.winningsCard}>
           <CardContent className={styles.cardContent}>
-            <h3 className={styles.winningsTitle}>Выигрыши пользователей</h3>
+            <div><h3 className={styles.winningsTitle}>Выигрыши пользователей</h3>
 
-            <div className={styles.winningsList}>
-              {userWinnings.map((user) => (
-                <div key={user.id} className={styles.winningItem}>
-                  <div className={styles.userIcon}>
-                    <img
-                      className={styles.userIconImage}
-                      alt="User Icon"
-                      src="/vector.svg"
-                    />
+              <div className={styles.winningsList}>
+                {userWinnings.map((user) => (
+                  <div key={user.id} className={styles.winningItem}>
+                    <div className={styles.userIcon}>
+                      <img
+                        className={styles.userIconImage}
+                        alt="User Icon"
+                        src="/profile/vector.svg"
+                      />
+                    </div>
+                    <div className={styles.winningInfo}>
+                      {user.email} <br/>
+                      {user.prize}
+                    </div>
                   </div>
-                  <div className={styles.winningInfo}>
-                    {user.email} <br />
-                    {user.prize}
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
