@@ -85,6 +85,9 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
 ]
 
+# Отключаем требование слэша в конце URL
+APPEND_SLASH = False
+
 ROOT_URLCONF = 'core.urls'
 
 TEMPLATES = [
