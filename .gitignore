@@ -47,3 +47,4 @@ static/
 
 # Локальные конфигурации
 core/local_settings.py 
+.idea/
