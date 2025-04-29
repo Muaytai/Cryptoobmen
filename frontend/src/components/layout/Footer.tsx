@@ -1,38 +1,34 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import styles from './Footer.module.css';
+import Link from 'next/link';
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  if (!mounted) {
+    return null;
+  }
   
   return (
-    <footer className="py-6 border-t border-gray-200 dark:border-gray-800">
-      <div className="container mx-auto px-4">
-        <div className="flex flex-col md:flex-row justify-between items-center">
-          <div className="mb-4 md:mb-0">
-            <p suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
-              &copy; {currentYear} CryptoExchange. Все права защищены.
+    <footer className={styles.footer}>
+      <div className={styles.container}>
+        <div className={styles.content}>
+          <div className={styles.copyright}>
+            <p suppressHydrationWarning>
+              &copy; {currentYear} GX Exchange. Все права защищены.
             </p>
           </div>
-          <div className="flex space-x-6">
-            <a 
-              href="#" 
-              className="text-sm text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-white"
-            >
-              Условия использования
-            </a>
-            <a 
-              href="#" 
-              className="text-sm text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-white"
-            >
-              Политика конфиденциальности
-            </a>
-            <a 
-              href="#" 
-              className="text-sm text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-white"
-            >
-              Контакты
-            </a>
+          <div className={styles.links}>
+            <Link href="/terms">Условия использования</Link>
+            <Link href="/privacy">Политика конфиденциальности</Link>
+            <Link href="/contacts">Контакты</Link>
           </div>
         </div>
       </div>

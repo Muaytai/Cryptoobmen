@@ -1,0 +1,32 @@
+.logoLink {
+  text-decoration: none;
+}
+
+.logoText {
+  display: flex;
+  align-items: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  background-color: #9b81f8;
+  padding: 2px 10px;
+  border-radius: 8px;
+}
+
+.logoG {
+  color: white;
+}
+
+.logoX {
+  color: #111014;
+}
+
+.logoImage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logoImage img {
+  object-fit: contain;
+} 
