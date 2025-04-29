@@ -1,0 +1,97 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 32px;
+  background-color: #111014;
+  color: white;
+  position: relative;
+  z-index: 200;
+}
+
+.container {
+  display: flex;
+  align-items: center;
+  gap: 60px;
+}
+
+.nav {
+  display: flex;
+  gap: 20px;
+  background-color: rgba(155, 129, 248, 0.15);
+  padding: 8px 16px;
+  border-radius: 50px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 201;
+}
+
+.navLink {
+  color: #fff;
+  opacity: 0.8;
+  text-decoration: none;
+  padding: 4px 16px;
+  transition: all 0.2s;
+  font-weight: 500;
+  border-radius: 50px;
+  font-size: 16px;
+}
+
+.navLink:hover {
+  opacity: 1;
+  color: #fff;
+  background-color: #9b81f8;
+}
+
+.activeNavLink {
+  background-color: #9b81f8;
+  border-radius: 50px;
+  opacity: 1;
+  color: #fff;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.themeToggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  color: #9b81f8;
+}
+
+.themeToggle svg {
+  fill: none;
+  stroke: #9b81f8;
+  width: 22px;
+  height: 22px;
+}
+
+.themeIcon {
+  width: 24px;
+  height: 24px;
+}
+
+.loginButton {
+  background-color: transparent;
+  color: white;
+  border: 1px solid #9b81f8;
+  padding: 8px 24px;
+  border-radius: 50px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+  font-size: 16px;
+}
+
+.loginButton:hover {
+  background-color: #9b81f8;
+  color: white;
+} 
