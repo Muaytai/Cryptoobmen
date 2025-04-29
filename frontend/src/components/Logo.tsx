@@ -1,11 +1,18 @@
 import Link from 'next/link';
+import Image from 'next/image';
+import styles from './Logo.module.css';
 
 export function Logo() {
   return (
-    <Link href="/" className="logo-text">
-      <div className="logo-text">
-        <span className="logo-g">G</span>
-        <span className="logo-x">X</span>
+    <Link href="/" className={styles.logoLink}>
+      <div className={styles.logoImage}>
+        <Image 
+          src="/images/Логотип.png" 
+          alt="GX Exchange" 
+          width={50} 
+          height={50}
+          priority
+        />
       </div>
     </Link>
   );
