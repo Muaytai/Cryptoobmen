@@ -5,24 +5,21 @@ import styles from './Footer.module.css';
 import Link from 'next/link';
 
 export function Footer() {
-  const currentYear = new Date().getFullYear();
+  const [currentYear, setCurrentYear] = useState('');
   const [mounted, setMounted] = useState(false);
   
   useEffect(() => {
     setMounted(true);
+    setCurrentYear(new Date().getFullYear().toString());
   }, []);
-  
-  if (!mounted) {
-    return null;
-  }
   
   return (
     <footer className={styles.footer}>
       <div className={styles.container}>
         <div className={styles.content}>
           <div className={styles.copyright}>
-            <p suppressHydrationWarning>
-              &copy; {currentYear} GX Exchange. Все права защищены.
+            <p>
+              &copy; {mounted ? currentYear : '2025'} GX Exchange. Все права защищены.
             </p>
           </div>
           <div className={styles.links}>
