@@ -1,41 +1,86 @@
-:root {
-  --background: #0F0F1A;
-  --foreground: #ffffff;
-  --muted: #f3f4f6;
-  --muted-foreground: #6b7280;
-  --popover: #ffffff;
-  --popover-foreground: #1f2937;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: #e5e7eb;
-  --card: #ffffff;
-  --card-foreground: #1f2937;
-  --primary: #8B5CF6;
-  --primary-foreground: #f9fafb;
-  --primary-hover: #7C3AED;
-  --primary-active: #6D28D9;
-  --secondary: rgba(255, 255, 255, 0.1);
-  --secondary-foreground: #1f2937;
-  --secondary-hover: rgba(255, 255, 255, 0.15);
-  --secondary-active: rgba(255, 255, 255, 0.2);
-  --accent: #f3f4f6;
-  --accent-foreground: #1f2937;
-  --destructive: #ff0000;
-  --destructive-foreground: #f9fafb;
-  --success: #22c55e;
-  --success-foreground: #f9fafb;
-  --ring: #9ca3af;
-  --radius: 0.5rem;
-  --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-disabled: rgba(255, 255, 255, 0.4);
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  /*вынесено из DivByAnima.module.css*/
-  --color-card: rgba(26, 26, 33, 1);
-  --color-card-dark: rgba(47, 47, 59, 1);
-  --color-primary: #3b82f6;
-  --color-text: rgba(234,234,242,1);
-  --color-text-secondary: rgba(162,162,179,1);
-  --border-radius: 15px;
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+
+    --radius: 0.5rem;
+
+    /*вынесено из DivByAnima.module.css*/
+    --color-card: rgba(26, 26, 33, 1);
+    --color-card-dark: rgba(47, 47, 59, 1);
+    --color-primary: #3b82f6;
+    --color-text: rgba(234,234,242,1);
+    --color-text-secondary: rgba(162,162,179,1);
+    --border-radius: 15px;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 
 /* Reset and base styles */

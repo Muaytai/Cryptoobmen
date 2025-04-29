@@ -22,7 +22,6 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body 
-        suppressHydrationWarning
         className={`${inter.className} antialiased bg-white text-black dark:bg-gray-900 dark:text-white min-h-screen`}
       >
         <div className="flex flex-col min-h-screen">
@@ -30,7 +29,7 @@ export default function RootLayout({
           <main className="flex-1 overflow-auto pb-[50px]">
             {children}
           </main>
-          <div id="footer-container" suppressHydrationWarning>
+          <div id="footer-container">
             <Footer />
           </div>
         </div>
