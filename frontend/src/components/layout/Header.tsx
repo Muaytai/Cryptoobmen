@@ -1,26 +1,55 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Button } from '@/components/ui/Button';
 import { Logo } from '@/components/Logo';
+import styles from './Header.module.css';
 
 // Компонент навигационной ссылки
-const NavLink = ({ href, children }: { href: string; children: React.ReactNode }) => (
-  <Link 
-    href={href} 
-    className="text-gray-600 hover:text-blue-600 transition-colors dark:text-gray-300 dark:hover:text-white"
-  >
-    {children}
-  </Link>
+const NavLink = ({ href, children, isDefault = false }: { href: string; children: React.ReactNode; isDefault?: boolean }) => {
+  const pathname = usePathname();
+  // Если это главная страница (/) или указан флаг isDefault, считаем ссылку активной
+  const isActive = pathname === href || (pathname === '/' && isDefault);
+  
+  return (
+    <Link 
+      href={href} 
+      className={`${styles.navLink} ${isActive ? styles.activeNavLink : ''}`}
+    >
+      {children}
+    </Link>
+  );
+};
+
+// Компонент иконки для темной темы (луна)
+const MoonIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+// Компонент иконки для светлой темы (солнце)
+const SunIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="5" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <line x1="12" y1="1" x2="12" y2="3" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="12" y1="21" x2="12" y2="23" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="1" y1="12" x2="3" y2="12" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="21" y1="12" x2="23" y2="12" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="#9B81F8" strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
 );
 
 export function Header() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
-  const [dark, setDark] = useState(true);
+  const [isDark, setIsDark] = useState(true);
 
   const handleLogout = () => {
     logout();
@@ -28,27 +57,33 @@ export function Header() {
   };
 
   const handleThemeToggle = () => {
-    setDark((prev) => !prev);
+    setIsDark((prev) => !prev);
     // Здесь можно добавить реальный переключатель темы
   };
 
   return (
-    <header className="header" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px 0'}}>
-      <div style={{display: 'flex', alignItems: 'center', gap: 32}}>
+    <header className={styles.header}>
+      <div className={styles.container}>
         <Logo />
-        <nav style={{display: 'flex', gap: 24}}>
-          <Link href="/" className="nav-link">Главная</Link>
-          <Link href="/profile" className="nav-link">О нас</Link>
-          <Link href="/reviews" className="nav-link">Отзывы</Link>
-          <Link href="/faq" className="nav-link">FAQ</Link>
-        </nav>
       </div>
-      <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
-        <button onClick={handleThemeToggle} style={{background: 'none', border: 'none', fontSize: 22, cursor: 'pointer'}} title="Переключить тему">
-          {dark ? '🌙' : '☀️'}
+      
+      <nav className={styles.nav}>
+        <NavLink href="/" isDefault={true}>Главная</NavLink>
+        <NavLink href="/about">О нас</NavLink>
+        <NavLink href="/reviews">Отзывы</NavLink>
+        <NavLink href="/faq">FAQ</NavLink>
+      </nav>
+      
+      <div className={styles.actions}>
+        <button 
+          onClick={handleThemeToggle} 
+          className={styles.themeToggle}
+          aria-label="Переключить тему"
+        >
+          {isDark ? <MoonIcon /> : <SunIcon />}
         </button>
         <Link href="/login">
-          <button className="button button-outline">Войти</button>
+          <button className={styles.loginButton}>Войти</button>
         </Link>
       </div>
     </header>

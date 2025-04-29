@@ -7,7 +7,7 @@ export const SocialButtons = () => (
     right: 32,
     display: 'flex',
     flexDirection: 'column',
-    gap: 16,
+    gap: 14,
     zIndex: 10
   }}>
     <a

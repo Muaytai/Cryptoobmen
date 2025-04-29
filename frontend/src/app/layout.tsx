@@ -27,10 +27,12 @@ export default function RootLayout({
       >
         <div className="flex flex-col min-h-screen">
           <Header />
-          <main className="flex-1">
+          <main className="flex-1 overflow-auto pb-[50px]">
             {children}
           </main>
-          <Footer />
+          <div id="footer-container" suppressHydrationWarning>
+            <Footer />
+          </div>
         </div>
       </body>
     </html>
