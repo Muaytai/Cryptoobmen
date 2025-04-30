@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { Logo } from '@/components/Logo';
+import { useTheme } from '@/lib/ThemeProvider';
 import styles from './Header.module.css';
 
 // Компонент навигационной ссылки
@@ -49,16 +50,28 @@ const SunIcon = () => (
 export function Header() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
-  const [isDark, setIsDark] = useState(true);
+  const { theme, toggleTheme } = useTheme();
+
+  // Эффект для применения класса темы к документу
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+        document.documentElement.classList.remove('light');
+        document.body.style.backgroundColor = '#0A0A0A';
+        document.body.style.color = 'white';
+      } else {
+        document.documentElement.classList.add('light');
+        document.documentElement.classList.remove('dark');
+        document.body.style.backgroundColor = 'white';
+        document.body.style.color = '#111827';
+      }
+    }
+  }, [theme]);
 
   const handleLogout = () => {
     logout();
     router.push('/');
-  };
-
-  const handleThemeToggle = () => {
-    setIsDark((prev) => !prev);
-    // Здесь можно добавить реальный переключатель темы
   };
 
   return (
@@ -76,11 +89,11 @@ export function Header() {
       
       <div className={styles.actions}>
         <button 
-          onClick={handleThemeToggle} 
+          onClick={toggleTheme} 
           className={styles.themeToggle}
           aria-label="Переключить тему"
         >
-          {isDark ? <MoonIcon /> : <SunIcon />}
+          {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
         </button>
         <Link href="/login">
           <button className={styles.loginButton}>Войти</button>
