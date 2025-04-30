@@ -1,58 +1,213 @@
-:root {
-  --background: #0F0F1A;
-  --foreground: #ffffff;
-  --muted: #f3f4f6;
-  --muted-foreground: #6b7280;
-  --popover: #ffffff;
-  --popover-foreground: #1f2937;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: #e5e7eb;
-  --card: #ffffff;
-  --card-foreground: #1f2937;
-  --primary: #8B5CF6;
-  --primary-foreground: #f9fafb;
-  --primary-hover: #7C3AED;
-  --primary-active: #6D28D9;
-  --secondary: rgba(255, 255, 255, 0.1);
-  --secondary-foreground: #1f2937;
-  --secondary-hover: rgba(255, 255, 255, 0.15);
-  --secondary-active: rgba(255, 255, 255, 0.2);
-  --accent: #f3f4f6;
-  --accent-foreground: #1f2937;
-  --destructive: #ff0000;
-  --destructive-foreground: #f9fafb;
-  --success: #22c55e;
-  --success-foreground: #f9fafb;
-  --ring: #9ca3af;
-  --radius: 0.5rem;
-  --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-disabled: rgba(255, 255, 255, 0.4);
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
+@layer base {
+:root {
+    /* Цвета для светлой темы (по умолчанию) */
+    --background: 0 0% 100%; /* #FFFFFF */
+    --foreground: 0 0% 6%; /* #0A0A0A */
+    
+    --card-bg: 220 20% 97%; /* #F5F7FA */
+    --card-bg-hover: 220 20% 92%; /* #E9EDF2 */
+    
+    --primary: 267 85% 60%; /* #7C3AED */
+    --primary-hover: 265 89% 55%; /* #6D28D9 */
+    
+    --secondary: 265 89% 67%; /* #A855F7 */
+    --secondary-hover: 267 85% 62%; /* #9333EA */
+    
+    --accent: 250 85% 65%; /* #8B5CF6 */
+    --accent-hover: 250 85% 60%; /* #7C3AED */
+    
+    --muted: 220 14% 40%; /* #6B7280 */
+    --muted-hover: 220 14% 30%; /* #4B5563 */
+    
+    --border: 220 14% 85%; /* #E5E7EB */
+    --input: 220 14% 85%; /* #E5E7EB */
+    
+    color-scheme: light;
 }
 
 .dark {
-  --background: #111827;
-  --foreground: #e5e7eb;
-  --muted: #1f2937;
-  --muted-foreground: #9ca3af;
-  --accent: #1f2937;
-  --accent-foreground: #f9fafb;
-  --popover: #111827;
-  --popover-foreground: #9ca3af;
-  --border: #1f2937;
-  --input: #1f2937;
-  --card: #111827;
-  --card-foreground: #e5e7eb;
-  --primary: #f9fafb;
-  --primary-foreground: #111827;
-  --secondary: #1f2937;
-  --secondary-foreground: #f9fafb;
-  --destructive: #991b1b;
-  --destructive-foreground: #f9fafb;
-  --success: #15803d;
-  --success-foreground: #166534;
-  --ring: #1f2937;
+    /* Цвета для темной темы */
+    --background: 0 0% 6%; /* #0A0A0A */
+    --foreground: 0 0% 100%; /* #FFFFFF */
+    
+    --card-bg: 240 6% 10%; /* #1A1A1A */
+    --card-bg-hover: 240 5% 15%; /* #232328 */
+    
+    --primary: 267 85% 60%; /* #7C3AED */
+    --primary-hover: 265 89% 70%; /* #9333EA */
+    
+    --secondary: 265 89% 67%; /* #A855F7 */
+    --secondary-hover: 267 85% 62%; /* #9333EA */
+    
+    --accent: 250 85% 65%; /* #8B5CF6 */
+    --accent-hover: 250 89% 75%; /* #A78BFA */
+    
+    --muted: 220 14% 60%; /* #9CA3AF */
+    --muted-hover: 220 14% 70%; /* #B5BDC9 */
+    
+    --border: 240 6% 20%; /* #323238 */
+    --input: 240 6% 20%; /* #323238 */
+    
+    color-scheme: dark;
+  }
+}
+
+/* Главные стили для тела страницы */
+body {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.dark body {
+  color: white;
+  background-color: #0A0A0A;
+}
+
+html.light body {
+  color: #111827;
+  background-color: white;
+}
+
+/* Базовые стили компонентов */
+.card {
+  background-color: hsl(var(--card-bg));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+.card:hover {
+  background-color: hsl(var(--card-bg-hover));
+}
+
+/* Кнопки */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 32px;
+  border-radius: 9999px;
+  font-weight: 500;
+  transition: all 0.3s;
+  cursor: pointer;
+  border: none;
+}
+
+.button-primary {
+  background-color: hsl(var(--primary));
+  color: #FFFFFF;
+  transition: background-color 0.3s;
+}
+
+.button-primary:hover {
+  background-color: hsl(var(--primary-hover));
+}
+
+.button-outline {
+  background-color: transparent;
+  border: 2px solid hsl(var(--primary));
+  color: hsl(var(--primary));
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.button-outline:hover {
+  background-color: hsl(var(--primary));
+  color: #FFFFFF;
+}
+
+/* Стили для полей ввода */
+input, textarea, select {
+  background-color: transparent;
+  border: 1px solid hsl(var(--input));
+  color: hsl(var(--foreground));
+  transition: border-color 0.3s;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: hsl(var(--primary));
+  outline: none;
+}
+
+/* Стили для скроллбара - тёмная тема */
+.dark::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dark::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.dark::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Стили для скроллбара - светлая тема */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* webkit-scrollbar specific styles */
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+@layer components {
+  /* Базовый цвет фона и текста */
+  body {
+    @apply bg-white dark:bg-black text-black dark:text-white;
+    transition: background-color 0.3s, color 0.3s;
+  }
+
+  /* Стилизация для карточек */
+  .card {
+    @apply bg-white border border-gray-200 rounded-md p-4 dark:bg-black dark:border-gray-700;
+    transition: background-color 0.3s, border-color 0.3s;
+  }
+
+  /* Базовые кнопки */
+  .btn {
+    @apply px-4 py-2 rounded-md transition-colors duration-300;
+  }
+
+  /* Основная кнопка */
+  .btn-primary {
+    @apply bg-primary text-white hover:opacity-90;
+  }
+
+  /* Контурная кнопка */
+  .btn-outline {
+    @apply border-2 border-primary text-primary hover:bg-primary hover:text-white;
+  }
+
+  /* Поля ввода */
+  input, textarea, select {
+    @apply bg-transparent border border-gray-200 p-2 rounded-md outline-none focus:border-primary dark:border-gray-700;
+  }
 }
 
 * {
@@ -67,9 +222,27 @@ body {
   max-width: 100vw;
   min-height: 100vh;
   overflow-x: hidden;
-  background-color: var(--background);
-  color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Явно задаем фон и цвет для светлой темы */
+html.light, html.light body, html.light main {
+  background-color: white;
+  color: #111827;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Явно задаем фон и цвет для темной темы */
+html.dark, html.dark body, html.dark main {
+  background-color: #0A0A0A;
+  color: white;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Добавляем общие переходы для всех элементов */
+*, *::before, *::after {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 a {
@@ -79,31 +252,6 @@ a {
 
 button {
   font-family: inherit;
-}
-
-input,
-textarea,
-select {
-  font-family: inherit;
-}
-
-/* Стили для скроллбара */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
 }
 
 .container {
@@ -130,21 +278,24 @@ select {
 
 /* Стили для криптовалютных карточек */
 .crypto-card {
-  background-color: var(--background);
-  border-radius: var(--radius);
+  border-radius: 0.5rem;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   padding: 1rem;
-  border: 1px solid var(--border);
   transition: all 0.2s ease-in-out;
+}
+
+.crypto-card {
+  background-color: white;
+  border: 1px solid #e5e7eb;
+}
+
+.dark .crypto-card {
+  background-color: #1a1a1a;
+  border: 1px solid #323238;
 }
 
 .crypto-card:hover {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.dark .crypto-card {
-  background-color: var(--card);
-  border-color: var(--border);
 }
 
 .crypto-card-logo {

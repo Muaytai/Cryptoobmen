@@ -7,6 +7,13 @@
   color: white;
   position: relative;
   z-index: 200;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+:global(.light) .header {
+  background-color: #f8f9fa;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .container {
@@ -25,6 +32,11 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 201;
+  transition: background-color 0.3s;
+}
+
+:global(.light) .nav {
+  background-color: rgba(155, 129, 248, 0.1);
 }
 
 .navLink {
@@ -38,8 +50,18 @@
   font-size: 16px;
 }
 
+:global(.light) .navLink {
+  color: #111827;
+  opacity: 0.8;
+}
+
 .navLink:hover {
   opacity: 1;
+  color: #fff;
+  background-color: #9b81f8;
+}
+
+:global(.light) .navLink:hover {
   color: #fff;
   background-color: #9b81f8;
 }
@@ -89,6 +111,10 @@
   font-weight: 500;
   transition: all 0.2s;
   font-size: 16px;
+}
+
+:global(.light) .loginButton {
+  color: #111827;
 }
 
 .loginButton:hover {

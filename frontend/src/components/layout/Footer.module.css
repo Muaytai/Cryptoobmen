@@ -12,6 +12,12 @@
   z-index: 50;
   transform: translateZ(0);
   will-change: transform;
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+:global(.light) .footer {
+  background-color: #f8f9fa;
+  border-top: 1px solid rgba(155, 129, 248, 0.2);
 }
 
 .container {
@@ -30,6 +36,10 @@
   font-size: 16px;
   font-weight: 500;
   color: #777777;
+}
+
+:global(.light) .copyright {
+  color: #666666;
 }
 
 .copyright p {
@@ -53,7 +63,16 @@
   transition: all 0.2s;
 }
 
+:global(.light) .links a {
+  color: #666666;
+}
+
 .links a:hover {
+  color: #fff;
+  background-color: #9b81f8;
+}
+
+:global(.light) .links a:hover {
   color: #fff;
   background-color: #9b81f8;
 }

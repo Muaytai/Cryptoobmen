@@ -3,37 +3,52 @@ module.exports = {
   content: [
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         primary: {
-          DEFAULT: "#1E40AF", // сине-голубой
-          foreground: "#FFFFFF",
+          DEFAULT: "#7C3AED", // фиолетовый
+          hover: "#6D28D9",
         },
         secondary: {
-          DEFAULT: "#4F46E5", // индиго
-          foreground: "#FFFFFF",
+          DEFAULT: "#A855F7", // светло-фиолетовый
+          hover: "#9333EA",
         },
         accent: {
-          DEFAULT: "#6366F1", // светло-индиго
-          foreground: "#FFFFFF",
+          DEFAULT: "#8B5CF6", // индиго
+          hover: "#7C3AED",
         },
-        background: "#FFFFFF",
-        foreground: "#111827",
+        background: {
+          DEFAULT: "#FFFFFF",
+          dark: "#0A0A0A",
+        },
+        foreground: {
+          DEFAULT: "#111827",
+          dark: "#FFFFFF",
+        },
         card: {
           DEFAULT: "#FFFFFF",
           foreground: "#111827",
+          dark: "#1A1A1A",
+          "dark-foreground": "#FFFFFF",
         },
         muted: {
           DEFAULT: "#F3F4F6",
-          foreground: "#6B7280",
+          dark: "#374151",
         },
         destructive: {
           DEFAULT: "#DC2626",
           foreground: "#FFFFFF",
         },
-        border: "#E5E7EB",
-        input: "#E5E7EB",
+        border: {
+          DEFAULT: "#E5E7EB",
+          dark: "#323238",
+        },
+        input: {
+          DEFAULT: "#E5E7EB",
+          dark: "#323238",
+        },
       },
       borderRadius: {
         lg: "0.5rem",
