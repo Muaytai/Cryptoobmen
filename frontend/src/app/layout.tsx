@@ -26,12 +26,10 @@ export default function RootLayout({
         <ThemeProvider>
         <div className="flex flex-col min-h-screen">
           <Header />
-          <main className="flex-1 overflow-auto pb-[50px]">
+          <main className="flex-1 overflow-auto">
             {children}
           </main>
-          <div id="footer-container">
-            <Footer />
-          </div>
+          <Footer />
         </div>
         </ThemeProvider>
       </body>
