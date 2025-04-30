@@ -4,10 +4,14 @@ import Image from 'next/image';
 import { SocialButtons } from '@/components/ui/SocialButtons';
 import chessImage from '../../public/images/chess.png';
 import { useEffect, useState, CSSProperties } from 'react';
+import { useTheme } from '@/lib/ThemeProvider';
 
 export default function HomePage() {
   const [deviceType, setDeviceType] = useState('desktop');
   const [styleLoaded, setStyleLoaded] = useState(false);
+  const { theme } = useTheme();
+  const [forceUpdate, setForceUpdate] = useState(0);
+  const [isDarkMode, setIsDarkMode] = useState(true); // По умолчанию темная тема
 
   // Определяем тип устройства с более точной градацией
   useEffect(() => {
@@ -34,7 +38,16 @@ export default function HomePage() {
     return () => window.removeEventListener('resize', checkDevice);
   }, []);
 
-  // Добавляем стили для мобильной адаптации
+  // Обновляем состояние isDarkMode при изменении темы
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      setIsDarkMode(document.documentElement.classList.contains('dark'));
+    }
+    // Вызываем перерендер компонента для обновления стилей
+    setForceUpdate(prev => prev + 1);
+  }, [theme]);
+
+  // Добавляем стили для мобильной адаптации и темной/светлой темы
   useEffect(() => {
     // Создаем стиль только один раз
     if (!styleLoaded) {
@@ -66,6 +79,18 @@ export default function HomePage() {
             word-break: break-word !important;
             display: inline !important;
           }
+        }
+        
+        /* Стили для темной темы */
+        html.dark main, html.dark .main {
+          background-color: #0A0A0A;
+          color: #FFFFFF;
+        }
+        
+        /* Стили для светлой темы */
+        html.light main, html.light .main {
+          background-color: #FFFFFF;
+          color: #111827;
         }
       `;
       document.head.appendChild(style);
@@ -107,7 +132,7 @@ export default function HomePage() {
       heading: {
         fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
         fontWeight: 700,
-        color: '#fff',
+        color: isDarkMode ? '#fff' : '#111827',
         marginBottom: isMobile ? 16 : 24,
         lineHeight: isMobile ? 1.3 : 1.2,
         maxWidth: '100%',
@@ -121,7 +146,8 @@ export default function HomePage() {
         display: 'inline' as const,
         fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
         wordBreak: 'break-word' as const,
-        hyphens: 'auto' as const
+        hyphens: 'auto' as const,
+        color: isDarkMode ? '#fff' : '#111827'
       } as CSSProperties,
       
       // Span с выделенным цветом в заголовке
@@ -136,7 +162,7 @@ export default function HomePage() {
       
       // Подзаголовок
       subtitle: {
-        color: '#bdbdbd',
+        color: isDarkMode ? '#bdbdbd' : '#666666',
         fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 20 : 24,
         marginBottom: isMobile ? 30 : 48
       } as CSSProperties,
@@ -168,14 +194,14 @@ export default function HomePage() {
       // Кнопка дополнительного действия
       secondaryButton: {
         border: '1px solid #a259ff',
-        color: '#fff',
+        color: isDarkMode ? '#fff' : '#7C3AED',
         borderRadius: 12,
         padding: isSmallMobile ? '10px 20px' : isMobile ? '12px 24px' : '16px 36px',
         fontWeight: 500,
         fontSize: isSmallMobile ? 14 : isMobile ? 16 : 18,
         background: 'none',
         cursor: 'pointer',
-        transition: 'background 0.2s',
+        transition: 'all 0.2s ease',
         width: isMobile ? '100%' : 'auto'
       } as CSSProperties,
       
@@ -240,7 +266,7 @@ export default function HomePage() {
         width: 48,
         height: 48,
         borderRadius: 12,
-        background: 'rgba(38, 38, 38, 0.4)',
+        background: isDarkMode ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -262,7 +288,7 @@ export default function HomePage() {
   const isMobile = deviceType === 'mobile' || deviceType === 'mobile-small';
 
   return (
-    <div className="relative h-full bg-[#111014]">
+    <div className={`relative h-full ${isDarkMode ? 'bg-[#111014]' : 'bg-white'}`}>
       <main style={{
         height: '100%',
         maxWidth: 1400, 
@@ -270,7 +296,9 @@ export default function HomePage() {
         padding: '20px 5px 80px 5px',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'flex-start'
+        justifyContent: 'flex-start',
+        backgroundColor: isDarkMode ? '#111014' : 'white',
+        color: isDarkMode ? 'white' : '#111827'
       } as CSSProperties}>
         <div style={styles.contentContainer}>
           {/* Левая колонка */}
@@ -298,7 +326,7 @@ export default function HomePage() {
               <button style={styles.secondaryButton} 
                 onMouseOver={e => {
                   const target = e.currentTarget.style as any;
-                  target.background = '#2a1a3a';
+                  target.background = isDarkMode ? '#2a1a3a' : '#f5eeff';
                 }} 
                 onMouseOut={e => {
                   const target = e.currentTarget.style as any;
@@ -351,7 +379,7 @@ export default function HomePage() {
             }}
             onMouseOut={e => {
               const target = e.currentTarget.style as any;
-              target.background = 'rgba(38, 38, 38, 0.4)';
+              target.background = isDarkMode ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)';
             }}
           >
             <Image
@@ -373,7 +401,7 @@ export default function HomePage() {
             }}
             onMouseOut={e => {
               const target = e.currentTarget.style as any;
-              target.background = 'rgba(38, 38, 38, 0.4)';
+              target.background = isDarkMode ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)';
             }}
           >
             <Image
