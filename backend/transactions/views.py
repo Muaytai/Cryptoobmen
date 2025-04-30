@@ -1,15 +1,18 @@
 from django.shortcuts import render
-from rest_framework import viewsets, status, generics
+from rest_framework import viewsets, status, generics, permissions, filters
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from django.db.models import Q
 from django.utils import timezone
+from django_filters.rest_framework import DjangoFilterBackend, FilterSet, NumberFilter
+from rest_framework.pagination import PageNumberPagination
 
-from .models import Transaction, Exchange, Deposit, Withdrawal
+from .models import Transaction, Exchange, Deposit, Withdrawal, Review
 from .serializers import (
     TransactionSerializer, ExchangeSerializer, DepositSerializer,
-    WithdrawalSerializer, ExchangeCreateSerializer, WithdrawalCreateSerializer
+    WithdrawalSerializer, ExchangeCreateSerializer, WithdrawalCreateSerializer,
+    ReviewSerializer
 )
 
 
@@ -127,3 +130,125 @@ class DepositViewSet(viewsets.ReadOnlyModelViewSet):
         """Пользователь может видеть только свои депозиты"""
         user = self.request.user
         return Deposit.objects.filter(user=user).order_by('-transaction__timestamp')
+
+
+class ReviewFilter(FilterSet):
+    """Фильтры для отзывов"""
+    min_rating = NumberFilter(field_name='rating', lookup_expr='gte')
+    max_rating = NumberFilter(field_name='rating', lookup_expr='lte')
+    
+    class Meta:
+        model = Review
+        fields = {
+            'rating': ['exact'],
+            'is_verified': ['exact'],
+            'is_published': ['exact'],
+            'created_at': ['gte', 'lte'],
+        }
+
+
+class ReviewPagination(PageNumberPagination):
+    """Пагинация для отзывов"""
+    page_size = 10
+    page_size_query_param = 'limit'
+    max_page_size = 100
+
+
+class ReviewViewSet(viewsets.ModelViewSet):
+    """API для работы с отзывами"""
+    queryset = Review.objects.filter(is_published=True)
+    serializer_class = ReviewSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
+    filterset_class = ReviewFilter
+    ordering_fields = ['created_at', 'rating']
+    ordering = ['-created_at']
+    search_fields = ['name', 'content']
+    pagination_class = ReviewPagination
+    
+    def get_permissions(self):
+        """
+        Получение отзывов - для всех.
+        Создание - для авторизованных или анонимных.
+        Изменение/удаление - только для администраторов.
+        """
+        if self.action == 'create':
+            permission_classes = []
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            permission_classes = [permissions.IsAdminUser]
+        else:
+            permission_classes = []
+        return [permission() for permission in permission_classes]
+    
+    def create(self, request, *args, **kwargs):
+        """Создание нового отзыва"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        review = serializer.save(
+            is_verified=False,
+            is_published=False,  # Требуется модерация
+        )
+        
+        # Если пользователь авторизован, привязываем отзыв к нему
+        if request.user.is_authenticated:
+            review.user = request.user
+            review.save()
+        
+        # Сохраняем IP-адрес пользователя
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        review.ip_address = ip
+        review.save()
+        
+        return Response(
+            {'message': 'Отзыв успешно отправлен и будет опубликован после проверки модератором'},
+            status=status.HTTP_201_CREATED
+        )
+    
+    @action(detail=False, methods=['get'])
+    def filter_by_rating(self, request):
+        """Фильтрация отзывов по рейтингу"""
+        rating_min = request.query_params.get('min', 1)
+        rating_max = request.query_params.get('max', 5)
+        
+        queryset = self.queryset.filter(
+            rating__gte=rating_min,
+            rating__lte=rating_max
+        )
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='published')
+    def published(self, request):
+        """Получение только опубликованных отзывов"""
+        queryset = self.queryset.filter(is_published=True)
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+        
+    @action(detail=False, methods=['get'], url_path='featured')
+    def featured(self, request):
+        """Получение избранных отзывов для главной страницы
+        Возвращает 5 верифицированных отзывов с высшим рейтингом"""
+        queryset = self.queryset.filter(
+            is_published=True,
+            is_verified=True,
+            rating__gte=4
+        ).order_by('-rating', '-created_at')[:5]
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Transaction, Exchange, Deposit, Withdrawal
+from .models import Transaction, Exchange, Deposit, Withdrawal, Review
 from crypto.models import Cryptocurrency, UserWallet, CryptoPrice
 from crypto.serializers import CryptocurrencySerializer
 from django.db import transaction as db_transaction
@@ -11,12 +11,14 @@ class TransactionSerializer(serializers.ModelSerializer):
     """Сериализатор для транзакций"""
     crypto_name = serializers.ReadOnlyField(source='crypto.name')
     crypto_symbol = serializers.ReadOnlyField(source='crypto.symbol')
+    type_display = serializers.ReadOnlyField(source='get_type_display')
+    status_display = serializers.ReadOnlyField(source='get_status_display')
     
     class Meta:
         model = Transaction
         fields = ['id', 'transaction_id', 'type', 'status', 'amount', 'fee',
                  'crypto', 'crypto_name', 'crypto_symbol', 'timestamp',
-                 'tx_hash', 'notes']
+                 'tx_hash', 'notes', 'type_display', 'status_display']
         read_only_fields = ['id', 'transaction_id', 'timestamp']
 
 
@@ -244,4 +246,24 @@ class WithdrawalCreateSerializer(serializers.Serializer):
             wallet.balance -= amount
             wallet.save()
             
-            return withdrawal 
+            return withdrawal
+
+
+class ReviewSerializer(serializers.ModelSerializer):
+    """Сериализатор для модели отзывов"""
+    user_name = serializers.ReadOnlyField(source='user.username')
+    date = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Review
+        fields = [
+            'id', 'name', 'email', 'rating', 'content', 'is_verified', 
+            'is_published', 'is_featured', 'created_at', 'updated_at', 
+            'user', 'user_name', 'date'
+        ]
+        read_only_fields = ['user', 'is_verified', 'is_published', 'is_featured', 
+                           'created_at', 'updated_at']
+    
+    def get_date(self, obj):
+        """Возвращает дату в формате дд.мм.гггг"""
+        return obj.created_at.strftime('%d.%m.%Y') 
