@@ -3,6 +3,9 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from crypto.models import Cryptocurrency, UserWallet
 import uuid
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.core.mail import send_mail
 
 
 class Transaction(models.Model):
@@ -116,3 +119,81 @@ class Withdrawal(models.Model):
     
     def __str__(self):
         return f"Withdrawal {self.transaction.amount} {self.wallet.crypto.symbol} to {self.destination_address}"
+
+
+class Review(models.Model):
+    """Модель для отзывов пользователей"""
+    RATING_CHOICES = (
+        (1, '1 - Ужасно'),
+        (2, '2 - Плохо'),
+        (3, '3 - Нормально'),
+        (4, '4 - Хорошо'),
+        (5, '5 - Отлично'),
+    )
+    
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='reviews',
+        null=True,
+        blank=True,
+        verbose_name=_('User')
+    )
+    name = models.CharField(max_length=100, verbose_name=_('Name'))
+    email = models.EmailField(verbose_name=_('Email'))
+    rating = models.IntegerField(choices=RATING_CHOICES, verbose_name=_('Rating'))
+    content = models.TextField(verbose_name=_('Review Content'), default='')
+    
+    is_verified = models.BooleanField(default=False, verbose_name=_('Verified'))
+    is_published = models.BooleanField(default=False, verbose_name=_('Published'))
+    is_featured = models.BooleanField(default=False, verbose_name=_('Featured'))
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Created at'))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_('Updated at'))
+    
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name=_('IP Address'))
+    
+    def __str__(self):
+        return f"{self.name} - {self.rating} stars"
+    
+    def notify_admin(self):
+        """Отправляет уведомление администратору о новом отзыве"""
+        subject = f'Новый отзыв на модерацию: {self.name} ({self.rating}★)'
+        message = f"""
+Новый отзыв требует модерации:
+
+Имя: {self.name}
+Email: {self.email}
+Рейтинг: {self.rating}/5
+Дата: {self.created_at}
+
+Текст отзыва:
+{self.content}
+
+Ссылка на админку: {settings.ADMIN_URL}transactions/review/{self.id}/change/
+"""
+        try:
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [settings.ADMIN_EMAIL],
+                fail_silently=False,
+            )
+            return True
+        except Exception as e:
+            # В случае ошибки отправки
+            print(f"Ошибка отправки уведомления: {e}")
+            return False
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = _('review')
+        verbose_name_plural = _('reviews')
+
+# Сигнал для отправки уведомления при создании нового отзыва
+@receiver(post_save, sender=Review)
+def review_post_save(sender, instance, created, **kwargs):
+    """Отправляет уведомление администратору при создании нового отзыва"""
+    if created and not instance.is_published:
+        instance.notify_admin()
