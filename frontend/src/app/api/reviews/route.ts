@@ -127,13 +127,19 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
     
+    // Преобразуем поле text в content для соответствия бэкенду
+    const transformedData = {
+      ...data,
+      content: data.text,
+    };
+    
     // Отправка данных на бэкенд
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/transactions/reviews/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify(transformedData),
     });
 
     if (!response.ok) {
