@@ -1,0 +1,25 @@
+.closeButton {
+    font-size: 44px;
+    font-weight: 600;
+    color: #12f7d6;
+
+    cursor: pointer;
+    position: absolute;
+    top: -70px;
+    right: -5px;
+}
+
+.closeButton:hover {
+    display: flex;
+    justify-content: center;
+    color: white;
+    /*border-right: 2px solid #12f7d6;*/
+    /*border-left: 2px solid #12f7d6;*/
+}
+
+@media(max-width:435px) {
+    .closeButton {
+      top: -29px;
+      right: -2px;
+    }
+  }

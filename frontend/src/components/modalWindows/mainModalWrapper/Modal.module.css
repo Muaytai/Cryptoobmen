@@ -1,0 +1,35 @@
+.modalWrapper {
+    position: fixed;
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+    z-index: 2147483647;
+    top: 0;
+    left: 0;
+    overscroll-behavior: none;
+    scrollbar-width: none;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.724);
+    gap: 10px;
+    transition: opacity 1.7s ease, visibility 1.7s ease, transform 1.7s ease;
+}
+
+.modal {
+    margin: auto;
+    position: relative;
+    z-index: 1001;
+    background-color: #43454d;
+    border-radius: 30px;
+    width: 400px;
+    padding: 30px 30px 30px 30px;
+    /*transition: visibility 0.7s ease;*/
+    /*box-shadow: 20px 25px 50px rgba(92, 237, 217);*/ /* вариант смещенной вниз-вправо подсветки */
+    box-shadow: 0px 0px 300px rgba(92, 237, 217); /* вариант рассеивающейся по центру подсветки */
+    z-index: 2147483647
+}
+
+.btnWrapper {
+    position: absolute;
+    right: -30px;
+    top: 29px;
+}
