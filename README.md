@@ -6,42 +6,70 @@
 
 - `backend/` - Django REST Framework бэкенд
 - `frontend/` - Next.js фронтенд
+- `postgres/` - PostgreSQL
 
 ## Установка и запуск
 
-### Backend (Django)
+Для запуска проекта испльзуется Docker.
 
-```bash
-# Переход в директорию бэкенда
-cd backend
+##### 1. Клонировать репозиторий
 
-# Активация виртуального окружения
-python -m venv venv
-venv\Scripts\activate
+    git clone https://github.com/Muaytai/Cryptoobmen.git
 
-# Установка зависимостей
-pip install -r requirements.txt
+##### 2. Перейти в папку репозитория
 
-# Создание и применение миграций
-python manage.py makemigrations
-python manage.py migrate
+    cd Cryptoobmen
 
-# Запуск сервера разработки
-python manage.py runserver
-```
+##### 3. Создать файл .env с переменными окружения в папке backend
 
-### Frontend (Next.js)
+Например:
 
-```bash
-# Переход в директорию фронтенда
-cd frontend
+    SECRET_KEY=secret_key
+    DEBUG=debug
+    ALLOWED_HOSTS=allowed_hosts
+    DB_ENGINE=sql_engine
+    DB_NAME=sql_name
+    DB_USER=sql_user
+    DB_PASSWORD=sql_password
+    DB_HOST=sql_host
+    DB_PORT=sql_port
 
-# Установка зависимостей
-npm install
+##### 4. Создать файл .env с переменными окружения в папке frontend:
 
-# Запуск сервера разработки
-npm run dev
-```
+    NODE_ENV=development
+    PORT=3000
+
+##### 5. Создать файл .env с переменными окружения в папке postgres
+
+Например:
+
+    POSTGRES_DB=sql_name
+    POSTGRES_USER=sql_user
+    POSTGRES_PASSWORD=sql_password
+
+##### 6. Создать образ
+
+    docker compose build
+
+##### 7. Запустить bash в сервисе backend
+
+    docker compose run backend bash
+
+##### 8. Применить миграции
+
+    python manage.py migrate
+
+##### 9. Создать суперпользователя
+
+    python manage.py createsuperuser
+
+##### 10. Выйти из bash
+
+    exit
+
+##### 11. Запустить сервисы
+
+    docker compose up
 
 ## Возможности
 
@@ -55,4 +83,4 @@ npm run dev
 
 - Backend: Django, Django REST Framework, JWT
 - Frontend: Next.js, React, TypeScript, Tailwind CSS
-- Авторизация: django-allauth, next-auth 
+- Авторизация: django-allauth, next-auth
