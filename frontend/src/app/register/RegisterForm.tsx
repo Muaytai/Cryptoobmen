@@ -51,11 +51,11 @@ export default function RegisterForm() {
       setPasswordError('Необходимо согласиться с условиями');
       return;
     }
-    
+
     // Сбрасываем все ошибки перед отправкой
     setPasswordError('');
     setNetworkError('');
-    
+
     try {
       console.log('Отправка запроса на регистрацию...');
       await register({
@@ -63,7 +63,7 @@ export default function RegisterForm() {
         username: formData.email,
         password: formData.password,
       });
-      
+
       console.log('Регистрация успешна, перенаправление на дашборд');
       // Если успешно зарегистрировались и залогинились, перенаправляем на дашборд
       router.push('/dashboard');
@@ -210,4 +210,4 @@ export default function RegisterForm() {
       </div>
     </div>
   );
-} 
+}
