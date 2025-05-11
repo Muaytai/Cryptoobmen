@@ -6,6 +6,7 @@ const nextConfig = {
       aggregateTimeout: 300,
       ignored: ['**/node_modules'],
     };
+    
     return config;
   },
   images: {

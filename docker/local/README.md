@@ -1,62 +1,35 @@
-# Локальная среда разработки
+# Локальное окружение Docker
 
-Эта папка содержит настройки Docker для локальной разработки проекта Cryptoobmen.
+Эта директория содержит конфигурационные файлы для запуска проекта в локальном окружении Docker.
+
+## Файлы
+
+- `backend.Dockerfile` - Dockerfile для бэкенда (Django)
+- `frontend.Dockerfile` - Dockerfile для фронтенда (Next.js)
+- `docker-compose.local.yml` - Конфигурация docker-compose для локальной разработки
+- `start-local.ps1` - PowerShell скрипт для запуска всех контейнеров
 
 ## Запуск
 
-Для запуска локальной среды разработки выполните:
+Для запуска локальной среды разработки, выполните:
 
-```bash
-# Из папки docker/local
-docker-compose -f docker-compose.local.yml up -d
-
-# Или из корня проекта
-docker-compose -f docker/local/docker-compose.local.yml up -d
+```powershell
+.\docker\local\start-local.ps1
 ```
 
-## Особенности локального окружения
+Скрипт:
+1. Проверит, запущены ли базы данных (PostgreSQL и Redis)
+2. Запустит контейнер с бэкендом на порту 8000
+3. Запустит контейнер с фронтендом на порту 3000
 
-1. **Горячая перезагрузка кода**:
-   - При изменении файлов в папке `backend/` изменения автоматически применяются к работающему контейнеру Django
-   - При изменении файлов в папке `frontend/` изменения автоматически применяются к работающему контейнеру Next.js
+## Проблемы CSS/Tailwind
 
-2. **Доступные сервисы**:
-   - Django backend: http://localhost:8000
-   - Django admin: http://localhost:8000/admin
-   - Next.js frontend: http://localhost:3000
-   - PostgreSQL: localhost:5432 (для подключения из IDE или других инструментов)
-   - Redis: localhost:6379
-
-3. **Настройки по умолчанию**:
-   - PostgreSQL:
-     - Database: cryptoobmen
-     - User: postgres
-     - Password: postgres
-   - Django:
-     - Debug mode: включен
-     - Admin: создайте суперпользователя командой `docker-compose exec backend python manage.py createsuperuser`
-
-## Полезные команды
+Если у вас возникают проблемы с CSS/Tailwind в контейнере Docker, рекомендуется запускать фронтенд напрямую на вашей машине:
 
 ```bash
-# Запуск сервисов
-docker-compose -f docker-compose.local.yml up -d
+cd frontend
+npm install
+npm run dev
+```
 
-# Остановка сервисов
-docker-compose -f docker-compose.local.yml down
-
-# Перезапуск конкретного сервиса
-docker-compose -f docker-compose.local.yml restart backend
-
-# Просмотр логов всех сервисов
-docker-compose -f docker-compose.local.yml logs -f
-
-# Просмотр логов конкретного сервиса
-docker-compose -f docker-compose.local.yml logs -f backend
-
-# Выполнение миграций Django
-docker-compose -f docker-compose.local.yml exec backend python manage.py migrate
-
-# Создание суперпользователя Django
-docker-compose -f docker-compose.local.yml exec backend python manage.py createsuperuser
-``` 
+При этом бэкенд можно продолжать запускать через Docker. 

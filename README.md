@@ -1,174 +1,200 @@
-# Crypto Exchange Platform
+# Cryptoobmen
 
-Платформа для обмена криптовалют с современным интерфейсом и безопасной авторизацией.
+Проект обмена криптовалют, разработанный с использованием Django REST Framework (backend) и Next.js (frontend).
 
-## Структура проекта
+## Содержание
 
-- `backend/` - Django REST Framework бэкенд
-- `frontend/` - Next.js фронтенд
-- `postgres/` - PostgreSQL
-- `docker/` - Docker-конфигурации для продакшена
+- [Настройка окружения](#настройка-окружения)
+- [Локальная разработка](#локальная-разработка)
+- [Docker разработка](#docker-разработка)
+- [Проблемы гидратации Next.js](#проблемы-гидратации-nextjs)
+- [Деплой](#деплой)
 
-## Технологии
+## Настройка окружения
 
-- Backend: Django, Django REST Framework, JWT
-- Frontend: Next.js, React, TypeScript, Tailwind CSS
-- Авторизация: django-allauth, next-auth
-- Контейнеризация: Docker, Docker Compose
+### Требования
+
+- Python 3.10+
+- Node.js 18+
+- Docker & Docker Compose
+- PowerShell (для Windows)
+
+### Настройка для Windows
+
+```powershell
+# Клонирование репозитория
+git clone https://your-repo-url/cryptoobmen.git
+cd cryptoobmen
+
+# Проверка установленных версий
+python --version
+node --version
+docker --version
+docker-compose --version
+```
 
 ## Локальная разработка
 
-Для локальной разработки есть два варианта: с использованием Docker или без него.
+### Backend (Django)
 
-### Вариант 1: Быстрый старт (без Docker)
+```powershell
+# Перейти в директорию backend
+cd backend
 
-Для быстрого старта используйте скрипты настройки:
+# Создать виртуальное окружение
+python -m venv venv
+.\venv\Scripts\Activate
 
-#### Windows:
-```bash
-# Запускает автоматическую настройку
-.\setup.bat
+# Установить зависимости
+pip install -r requirements.txt
+
+# Запустить миграции
+python manage.py migrate
+
+# Создать суперпользователя
+python manage.py createsuperuser
+
+# Запустить сервер разработки
+python manage.py runserver
 ```
 
-#### Linux/macOS:
-```bash
-# Делаем скрипт исполняемым
-chmod +x setup.sh
+### Frontend (Next.js)
 
-# Запускаем автоматическую настройку
-./setup.sh
+```powershell
+# Перейти в директорию frontend
+cd frontend
+
+# Установить зависимости
+npm install
+
+# Запустить сервер разработки
+npm run dev
+
+# Собрать для production
+npm run build
+
+# Запустить production версию
+npm run start
 ```
 
-После настройки можно запустить:
-- Бэкенд: `cd backend && venv\Scripts\activate && python manage.py runserver`
-- Фронтенд: `cd frontend && npm run dev`
+## Docker разработка
 
-### Вариант 2: Локальная разработка с Docker
+### Запуск всех сервисов
 
-```bash
-# Запуск локальной среды разработки
-docker-compose -f docker/local/docker-compose.local.yml up -d
+```powershell
+# Из корневой директории проекта
+.\docker\local\start-local.ps1
 
-# Создание суперпользователя Django (опционально)
-docker-compose -f docker/local/docker-compose.local.yml exec backend python manage.py createsuperuser
+# Если скрипт не работает, можно запустить вручную:
+cd docker\local
+docker-compose -f docker-compose.local.yml up -d
 ```
 
-После запуска доступны:
-- Django backend: http://localhost:8000
-- Django admin: http://localhost:8000/admin
-- Next.js frontend: http://localhost:3000
+### Остановка контейнеров
 
-Более подробные инструкции смотрите в [docker/local/README.md](docker/local/README.md)
+```powershell
+# Из директории docker\local
+docker-compose -f docker-compose.local.yml down
 
-## Деплой на продакшен-сервер
-
-### Подготовка к деплою
-
-1. Клонируйте репозиторий на сервер:
-   ```bash
-   git clone <url-репозитория> cryptoobmen
-   cd cryptoobmen
-   ```
-
-2. Создайте файлы с переменными окружения на основе примеров:
-   ```bash
-   # Для PostgreSQL
-   cp docker/postgres/example.env.prod docker/postgres/.env.prod
-   
-   # Для бэкенда (Django)
-   cp docker/backend/example.env.prod docker/backend/.env.prod
-   
-   # Для фронтенда (Next.js)
-   cp docker/frontend/example.env.prod docker/frontend/.env.prod
-   ```
-
-3. Отредактируйте файлы .env.prod, установив безопасные пароли и другие настройки
-
-### Запуск деплоя
-
-#### Вариант 1: Раздельный запуск базы данных и приложения (рекомендуется)
-
-1. Сначала запустите только базу данных и Redis:
-```bash
-# На Linux/macOS
-cd docker/postgres
-docker-compose -f docker-compose.db.yml up -d
-
-# На Windows
-cd docker\postgres
-docker-compose -f docker-compose.db.yml up -d
+# Или из корневой директории
+docker-compose -f .\docker\local\docker-compose.local.yml down
 ```
 
-2. Затем запустите основные сервисы (в корне проекта):
-```bash
-# На Linux/macOS
-cd ../..  # Вернуться в корень проекта
-docker-compose -f docker-compose.prod.yml up -d
+### Просмотр логов
 
-# На Windows
-cd ..\..  # Вернуться в корень проекта
-docker-compose -f docker-compose.prod.yml up -d
+```powershell
+# Все логи
+docker-compose -f .\docker\local\docker-compose.local.yml logs -f
+
+# Логи конкретного сервиса
+docker-compose -f .\docker\local\docker-compose.local.yml logs -f frontend
+docker-compose -f .\docker\local\docker-compose.local.yml logs -f backend
 ```
 
-3. Применить миграции и создать суперпользователя:
-```bash
-docker-compose -f docker-compose.prod.yml exec backend python manage.py migrate
-docker-compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+### Перезапуск отдельных сервисов
+
+```powershell
+# Перезапуск фронтенда
+docker-compose -f .\docker\local\docker-compose.local.yml restart frontend
+
+# Перезапуск бэкенда
+docker-compose -f .\docker\local\docker-compose.local.yml restart backend
 ```
 
-#### Вариант 2: Запуск всех сервисов вместе
+## Проблемы гидратации Next.js
 
-```bash
-# На Linux/macOS
-chmod +x deploy.sh
-./deploy.sh
+В проекте реализовано несколько решений для устранения проблем гидратации Next.js, особенно связанных с атрибутами `bls_skin_checked="1"`, добавляемыми расширениями браузера.
 
-# На Windows
-.\deploy.ps1
+### Проверка наличия проблем гидратации
+
+```powershell
+# Запуск frontend в режиме разработки
+cd frontend
+npm run dev
+
+# Затем откройте консоль разработчика в браузере (F12)
+# Ищите предупреждения вида "Warning: Prop `className` did not match..."
 ```
 
-### Что делает скрипт деплоя:
+### Решения для проблем гидратации
 
-1. Проверяет наличие всех необходимых .env.prod файлов
-2. Собирает Docker-образы с помощью docker-compose
-3. Запускает контейнеры в фоновом режиме
-4. Выполняет миграции Django
-5. Предлагает создать суперпользователя (опционально)
+В проекте реализованы следующие компоненты:
 
-### Структура Docker-контейнеров:
+1. **HydrationFix** - удаляет проблемные атрибуты, добавляемые расширениями браузера
+2. **ClientOnly** - рендерит содержимое только на клиенте
+3. **withHydrationFix** - HOC для обертывания компонентов
+4. **SafeImage** - безопасная работа с изображениями
+5. **SafeImageMulti** - улучшенная версия с поддержкой альтернативных источников
 
-- **postgres**: База данных PostgreSQL
-- **redis**: Redis для кэширования/очередей
-- **backend**: Django REST Framework API
-- **frontend**: Next.js фронтенд
-- **nginx**: Веб-сервер, который проксирует запросы к бэкенду и фронтенду
+### Проблемы с кириллическими именами файлов
 
-### SSL-сертификат (после деплоя):
+```powershell
+# Проверка наличия файла с кириллическим именем
+dir .\frontend\public\images\Логотип.png
 
-Для настройки HTTPS выполните следующие шаги:
-
-1. Получите SSL-сертификат (например, с помощью Let's Encrypt)
-2. Поместите сертификаты в директорию `docker/nginx/ssl/`
-3. Раскомментируйте секцию HTTPS в `docker/nginx/conf.d/cryptoobmen.conf`
-4. Перезапустите контейнер nginx:
-   ```bash
-   docker-compose -f docker-compose.prod.yml restart nginx
-   ```
-
-### Мониторинг логов:
-
-```bash
-# Мониторинг логов всех контейнеров
-docker-compose -f docker-compose.prod.yml logs -f
-
-# Мониторинг логов конкретного контейнера
-docker-compose -f docker-compose.prod.yml logs -f backend
+# Проверка всех изображений
+dir .\frontend\public\images\
 ```
 
-## Возможности
+### Отладка проблем с гидратацией
 
-- Светлая и темная тема интерфейса
-- Авторизация через Google, Yandex, Telegram
-- Личный кабинет пользователя
-- Удобная система обмена криптовалют
-- Просмотр истории транзакций
+```powershell
+# Очистка кэша Next.js
+cd frontend
+npm run clean  # Если команда существует, или
+rm -r -fo .next/  # Удаление директории .next вручную
+
+# Перезапуск сервера разработки с очищенным кэшем
+npm run dev
+```
+
+## Деплой
+
+### Подготовка к production
+
+```powershell
+# Запуск production окружения
+.\start-prod.sh  # На Linux/Mac
+# Или на Windows через WSL:
+wsl -e ./start-prod.sh
+
+# Остановка production окружения
+.\stop-prod.sh  # На Linux/Mac
+# Или на Windows через WSL:
+wsl -e ./stop-prod.sh
+```
+
+### Проверка статуса контейнеров
+
+```powershell
+docker ps  # Просмотр запущенных контейнеров
+docker-compose -f docker-compose.prod.yml ps  # Статус контейнеров в production
+```
+
+## Документация компонентов
+
+Подробная документация по компонентам находится в README каждого сервиса:
+
+- [Backend документация](./backend/README.md)
+- [Frontend документация](./frontend/README.md)
+- [Docker документация](./docker/local/README.md)
