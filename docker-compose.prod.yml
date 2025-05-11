@@ -1,0 +1,91 @@
+services:
+  postgres:
+    container_name: cryptoobmen-postgres
+    restart: always
+    image: postgres:17.4
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ./docker/postgres/.env.prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cryptoobmen_network
+
+  redis:
+    container_name: cryptoobmen-redis
+    restart: always
+    image: redis:7.4.3
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cryptoobmen_network
+
+  backend:
+    container_name: cryptoobmen-backend
+    restart: always
+    build:
+      context: .
+      dockerfile: ./docker/backend/Dockerfile
+    env_file:
+      - ./docker/backend/.env.prod
+    volumes:
+      - static_volume:/usr/src/app/static
+      - media_volume:/usr/src/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cryptoobmen_network
+
+  frontend:
+    container_name: cryptoobmen-frontend
+    restart: always
+    build:
+      context: .
+      dockerfile: ./docker/frontend/Dockerfile
+    env_file:
+      - ./docker/frontend/.env.prod
+    depends_on:
+      - backend
+    networks:
+      - cryptoobmen_network
+
+  nginx:
+    container_name: cryptoobmen-nginx
+    restart: always
+    build:
+      context: ./docker/nginx/
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+      - static_volume:/usr/share/nginx/static
+      - media_volume:/usr/share/nginx/media
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - cryptoobmen_network
+
+networks:
+  cryptoobmen_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_volume:
+  media_volume: 
