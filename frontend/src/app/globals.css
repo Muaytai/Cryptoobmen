@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Базовые стили Tailwind будут импортированы в другом месте */
+
 @layer base {
 :root {
     /* Цвета для светлой темы (по умолчанию) */

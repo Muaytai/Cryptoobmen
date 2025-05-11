@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - cryptoobmen_db_network
+      - cryptoobmen_network
 
   redis:
     container_name: cryptoobmen-redis
@@ -31,10 +31,10 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - cryptoobmen_db_network
+      - cryptoobmen_network
 
 networks:
-  cryptoobmen_db_network:
+  cryptoobmen_network:
     name: cryptoobmen_network
     driver: bridge
 

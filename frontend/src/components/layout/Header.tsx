@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Logo } from '@/components/Logo';
+import LogoComponent from '@/components/Logo';
 import { useTheme } from '@/lib/ThemeProvider';
 import styles from './Header.module.css';
 
@@ -77,7 +77,7 @@ export function Header() {
   return (
     <header className={styles.header}>
       <div className={styles.container}>
-        <Logo />
+        <LogoComponent />
       </div>
       
       <nav className={styles.nav}>

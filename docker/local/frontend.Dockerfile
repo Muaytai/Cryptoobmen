@@ -1,15 +1,17 @@
 FROM node:22.15.0
 
-WORKDIR /app
+# Устанавливаем рабочую директорию
+WORKDIR /usr/src/app
 
 # Копирование файлов package.json и package-lock.json
 COPY ./frontend/package*.json ./
 
-# Установка зависимостей
-RUN npm cache clean --force && npm install
+# Установка зависимостей с улучшенными параметрами для совместимости
+RUN npm cache clean --force && npm install --legacy-peer-deps
 
-# Мы не копируем весь код, он будет смонтирован как том
-# для мгновенного отражения изменений во время разработки
+# Явно устанавливаем режим разработки
+ENV NODE_ENV=development
+ENV WATCHPACK_POLLING=true
 
 # Открываем порт
 EXPOSE 3000
