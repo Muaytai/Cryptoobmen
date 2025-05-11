@@ -45,58 +45,20 @@ chmod +x setup.sh
 
 ### Вариант 2: Локальная разработка с Docker
 
-#### 1. Клонировать репозиторий
-
 ```bash
-git clone https://github.com/Muaytai/Cryptoobmen.git
-cd Cryptoobmen
+# Запуск локальной среды разработки
+docker-compose -f docker/local/docker-compose.local.yml up -d
+
+# Создание суперпользователя Django (опционально)
+docker-compose -f docker/local/docker-compose.local.yml exec backend python manage.py createsuperuser
 ```
 
-#### 2. Создать файлы окружения
+После запуска доступны:
+- Django backend: http://localhost:8000
+- Django admin: http://localhost:8000/admin
+- Next.js frontend: http://localhost:3000
 
-Создайте файлы .env в соответствующих директориях:
-
-**backend/.env**:
-```
-SECRET_KEY=secret_key
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
-DB_ENGINE=django.db.backends.postgresql
-DB_NAME=cryptoobmen
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_HOST=postgres
-DB_PORT=5432
-```
-
-**frontend/.env**:
-```
-NEXT_PUBLIC_API_URL=http://localhost:8000/api
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-```
-
-**postgres/.env**:
-```
-POSTGRES_DB=cryptoobmen
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-```
-
-#### 3. Запустить с Docker Compose
-
-```bash
-# Создать образы
-docker compose build
-
-# Запустить контейнеры
-docker compose up -d
-
-# Применить миграции
-docker compose exec backend python manage.py migrate
-
-# Создать суперпользователя
-docker compose exec backend python manage.py createsuperuser
-```
+Более подробные инструкции смотрите в [docker/local/README.md](docker/local/README.md)
 
 ## Деплой на продакшен-сервер
 
@@ -124,18 +86,44 @@ docker compose exec backend python manage.py createsuperuser
 
 ### Запуск деплоя
 
-#### На Linux/macOS:
-```bash
-# Сделайте скрипт исполняемым
-chmod +x deploy.sh
+#### Вариант 1: Раздельный запуск базы данных и приложения (рекомендуется)
 
-# Запустите скрипт деплоя
-./deploy.sh
+1. Сначала запустите только базу данных и Redis:
+```bash
+# На Linux/macOS
+cd docker/postgres
+docker-compose -f docker-compose.db.yml up -d
+
+# На Windows
+cd docker\postgres
+docker-compose -f docker-compose.db.yml up -d
 ```
 
-#### На Windows:
-```powershell
-# Запустите скрипт деплоя
+2. Затем запустите основные сервисы (в корне проекта):
+```bash
+# На Linux/macOS
+cd ../..  # Вернуться в корень проекта
+docker-compose -f docker-compose.prod.yml up -d
+
+# На Windows
+cd ..\..  # Вернуться в корень проекта
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+3. Применить миграции и создать суперпользователя:
+```bash
+docker-compose -f docker-compose.prod.yml exec backend python manage.py migrate
+docker-compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+```
+
+#### Вариант 2: Запуск всех сервисов вместе
+
+```bash
+# На Linux/macOS
+chmod +x deploy.sh
+./deploy.sh
+
+# На Windows
 .\deploy.ps1
 ```
 

@@ -1,33 +1,20 @@
 services:
+  # Определяем опорные сервисы для зависимостей
   postgres:
-    container_name: cryptoobmen-postgres
-    restart: always
     image: postgres:17.4
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-    env_file:
-      - ./docker/postgres/.env.prod
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    container_name: cryptoobmen-postgres
     networks:
       - cryptoobmen_network
-
+    profiles:
+      - donotstart
+      
   redis:
-    container_name: cryptoobmen-redis
-    restart: always
     image: redis:7.4.3
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    container_name: cryptoobmen-redis
     networks:
       - cryptoobmen_network
+    profiles:
+      - donotstart
 
   backend:
     container_name: cryptoobmen-backend
@@ -41,10 +28,8 @@ services:
       - static_volume:/usr/src/app/static
       - media_volume:/usr/src/app/media
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - redis
     networks:
       - cryptoobmen_network
 
@@ -80,12 +65,15 @@ services:
     networks:
       - cryptoobmen_network
 
+# Используем внешнюю сеть, созданную в docker-compose.db.yml
 networks:
   cryptoobmen_network:
-    driver: bridge
+    external: true
+    name: cryptoobmen_network
 
+# Используем именованные тома, чтобы данные сохранялись между перезапусками
 volumes:
-  postgres_data:
-  redis_data:
   static_volume:
-  media_volume: 
+    name: cryptoobmen_static_volume
+  media_volume:
+    name: cryptoobmen_media_volume 

@@ -1,0 +1,70 @@
+services:
+  postgres:
+    container_name: cryptoobmen-postgres-local
+    image: postgres:17.4
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=cryptoobmen
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"  # Для доступа из IDE и других инструментов
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    container_name: cryptoobmen-redis-local
+    image: redis:7.4.3
+    ports:
+      - "6379:6379"  # Для доступа к Redis из локальных инструментов
+
+  backend:
+    container_name: cryptoobmen-backend-local
+    build:
+      context: ../..
+      dockerfile: ./docker/local/backend.Dockerfile
+    volumes:
+      - ../../backend:/usr/src/app  # Монтируем код для мгновенного отражения изменений
+    command: python manage.py runserver 0.0.0.0:8000  # Для разработки используем runserver
+    environment:
+      - SECRET_KEY=dev_secret_key
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=cryptoobmen
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+
+  frontend:
+    container_name: cryptoobmen-frontend-local
+    build:
+      context: ../..
+      dockerfile: ./docker/local/frontend.Dockerfile
+    volumes:
+      - ../../frontend:/app  # Монтируем код для мгновенного отражения изменений
+      - /app/node_modules  # Это предотвращает перезапись node_modules
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    command: npm run dev
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data_local:
+    name: cryptoobmen_postgres_data_local 

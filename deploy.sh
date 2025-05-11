@@ -39,22 +39,64 @@ for env_file in "${ENV_FILES[@]}"; do
     fi
 done
 
-# Сборка и запуск контейнеров в продакшен-режиме
-log "Сборка и запуск контейнеров..."
-docker-compose -f docker-compose.prod.yml build
-docker-compose -f docker-compose.prod.yml up -d
+# Запрос пользователя о режиме запуска
+warn "Выберите режим запуска:"
+echo "1. Только база данных и Redis (рекомендуется для начала)"
+echo "2. Полный стек (база данных, backend, frontend, nginx)"
+echo "3. Только приложение (если база данных уже запущена)"
+read -p "Введите номер (1-3): " deploy_mode
 
-# Выполнение миграций
-log "Применение миграций Django..."
-docker-compose -f docker-compose.prod.yml exec backend python manage.py migrate
-
-# Создание суперпользователя (опционально)
-warn "Вы хотите создать суперпользователя Django? (y/n)"
-read answer
-if [ "$answer" = "y" ]; then
-    log "Создание суперпользователя..."
-    docker-compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
-fi
+case $deploy_mode in
+    1)
+        log "Запуск только базы данных и Redis..."
+        cd docker/postgres
+        docker-compose -f docker-compose.db.yml up -d
+        cd ../..
+        log "База данных и Redis успешно запущены!"
+        ;;
+    2)
+        log "Запуск полного стека..."
+        # Сначала запускаем базу данных
+        cd docker/postgres
+        docker-compose -f docker-compose.db.yml up -d
+        cd ../..
+        
+        # Затем запускаем основные сервисы
+        log "Запуск основных сервисов..."
+        docker-compose -f docker-compose.prod.yml up -d
+        
+        # Выполнение миграций
+        log "Применение миграций Django..."
+        docker-compose -f docker-compose.prod.yml exec backend python manage.py migrate
+        
+        # Создание суперпользователя (опционально)
+        warn "Вы хотите создать суперпользователя Django? (y/n)"
+        read answer
+        if [ "$answer" = "y" ]; then
+            log "Создание суперпользователя..."
+            docker-compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+        fi
+        ;;
+    3)
+        log "Запуск только приложения (без базы данных)..."
+        docker-compose -f docker-compose.prod.yml up -d
+        
+        # Выполнение миграций
+        log "Применение миграций Django..."
+        docker-compose -f docker-compose.prod.yml exec backend python manage.py migrate
+        
+        # Создание суперпользователя (опционально)
+        warn "Вы хотите создать суперпользователя Django? (y/n)"
+        read answer
+        if [ "$answer" = "y" ]; then
+            log "Создание суперпользователя..."
+            docker-compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+        fi
+        ;;
+    *)
+        error "Неверный выбор. Пожалуйста, введите число от 1 до 3."
+        ;;
+esac
 
 log "Деплой успешно завершен. Приложение доступно по адресу: http://194.15.46.70"
 log "Админ-панель: http://194.15.46.70/admin/" 
