@@ -37,24 +37,67 @@ foreach ($env_file in $ENV_FILES) {
     }
 }
 
-# Сборка и запуск контейнеров в продакшен-режиме
-Log "Сборка и запуск контейнеров..."
-docker-compose -f docker-compose.prod.yml build
-if (-not $?) { Error "Произошла ошибка при сборке контейнеров" }
+# Запрос пользователя о режиме запуска
+Warn "Выберите режим запуска:"
+Write-Host "1. Только база данных и Redis (рекомендуется для начала)"
+Write-Host "2. Полный стек (база данных, backend, frontend, nginx)"
+Write-Host "3. Только приложение (если база данных уже запущена)"
+$deploy_mode = Read-Host "Введите номер (1-3)"
 
-docker-compose -f docker-compose.prod.yml up -d
-if (-not $?) { Error "Произошла ошибка при запуске контейнеров" }
-
-# Выполнение миграций
-Log "Применение миграций Django..."
-docker-compose -f docker-compose.prod.yml exec backend python manage.py migrate
-if (-not $?) { Warn "Произошла ошибка при выполнении миграций" }
-
-# Создание суперпользователя (опционально)
-$answer = Read-Host "Вы хотите создать суперпользователя Django? (y/n)"
-if ($answer -eq "y") {
-    Log "Создание суперпользователя..."
-    docker-compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+switch ($deploy_mode) {
+    "1" {
+        Log "Запуск только базы данных и Redis..."
+        Set-Location -Path docker/postgres
+        docker-compose -f docker-compose.db.yml up -d
+        if (-not $?) { Error "Произошла ошибка при запуске базы данных" }
+        Set-Location -Path ../..
+        Log "База данных и Redis успешно запущены!"
+    }
+    "2" {
+        Log "Запуск полного стека..."
+        # Сначала запускаем базу данных
+        Set-Location -Path docker/postgres
+        docker-compose -f docker-compose.db.yml up -d
+        if (-not $?) { Error "Произошла ошибка при запуске базы данных" }
+        Set-Location -Path ../..
+        
+        # Затем запускаем основные сервисы
+        Log "Запуск основных сервисов..."
+        docker-compose -f docker-compose.prod.yml up -d
+        if (-not $?) { Error "Произошла ошибка при запуске контейнеров" }
+        
+        # Выполнение миграций
+        Log "Применение миграций Django..."
+        docker-compose -f docker-compose.prod.yml exec backend python manage.py migrate
+        if (-not $?) { Warn "Произошла ошибка при выполнении миграций" }
+        
+        # Создание суперпользователя (опционально)
+        $answer = Read-Host "Вы хотите создать суперпользователя Django? (y/n)"
+        if ($answer -eq "y") {
+            Log "Создание суперпользователя..."
+            docker-compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+        }
+    }
+    "3" {
+        Log "Запуск только приложения (без базы данных)..."
+        docker-compose -f docker-compose.prod.yml up -d
+        if (-not $?) { Error "Произошла ошибка при запуске контейнеров" }
+        
+        # Выполнение миграций
+        Log "Применение миграций Django..."
+        docker-compose -f docker-compose.prod.yml exec backend python manage.py migrate
+        if (-not $?) { Warn "Произошла ошибка при выполнении миграций" }
+        
+        # Создание суперпользователя (опционально)
+        $answer = Read-Host "Вы хотите создать суперпользователя Django? (y/n)"
+        if ($answer -eq "y") {
+            Log "Создание суперпользователя..."
+            docker-compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+        }
+    }
+    default {
+        Error "Неверный выбор. Пожалуйста, введите число от 1 до 3."
+    }
 }
 
 Log "Деплой успешно завершен. Приложение доступно по адресу: http://194.15.46.70"
