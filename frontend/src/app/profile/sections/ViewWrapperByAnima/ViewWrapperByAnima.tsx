@@ -44,54 +44,91 @@ export const ViewWrapperByAnima = (): JSX.Element => {
 
       <div className={styles.content}>
         {/* Token Info Card */}
-        <Card className={styles.tokenInfoCard}>
-          <CardContent className={styles.cardContent}>
-            <h3 className={styles.tokenName}>CTokenX</h3>
-            <p className={styles.tokenDescription}>
-              Утилитарный токен для оплаты внутри платформы
-            </p>
-
-            <div className={styles.tokenPrice}>
-              <span className={styles.priceValue}>$0,09</span>
-              <span className={styles.priceChange}>+2,4%</span>
+        <Card className="w-full md:w-[520px] rounded-[15px] md:rounded-[25px] shadow-[0px_0px_20px_#0000004c]">
+          <CardContent className="p-4 md:p-5 relative">
+            <div className="mb-8 md:mb-12">
+              <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica]">
+                CTokenX
+              </h3>
+              <p className="text-xs md:text-sm font-medium text-gray-500 [font-family:'Manrope',Helvetica]">
+                Утилитарный токен для оплаты внутри платформы
+              </p>
             </div>
 
-            <div className={styles.statsSection}>
-              <p className={styles.statsLabel}>Объём торгов (24ч)</p>
-              <p className={styles.statsValue}>$230.000</p>
+            <div className="mb-6 md:mb-8">
+              <div className="flex items-center h-9 md:h-11">
+                <span className="text-2xl md:text-[32px] font-normal text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica]">
+                  $0,09
+                </span>
+                <span className="ml-3 md:ml-4 text-base md:text-xl font-normal text-emerald-500 [font-family:'Manrope',Helvetica]">
+                  +2,4%
+                </span>
+              </div>
             </div>
 
-            <div className={styles.statsSection}>
-              <p className={styles.statsLabel}>Рыночная капитализация</p>
-              <p className={styles.statsValue}>$14.870.000</p>
+            <div className="space-y-6 md:space-y-8">
+              <div className="h-[40px] md:h-[52px]">
+                <p className="text-xs md:text-sm font-medium text-gray-500 [font-family:'Manrope',Helvetica]">
+                  Объём торгов (24ч)
+                </p>
+                <p className="text-base md:text-xl font-medium text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica] mt-1">
+                  $230.000
+                </p>
+              </div>
+
+              <div className="h-[40px] md:h-[52px]">
+                <p className="text-xs md:text-sm font-medium text-gray-500 [font-family:'Manrope',Helvetica]">
+                  Рыночная капитализация
+                </p>
+                <p className="text-base md:text-xl font-medium text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica] mt-1">
+                  $14.870.000
+                </p>
+              </div>
+
+              <div className="h-[40px] md:h-[52px]">
+                <p className="text-xs md:text-sm font-medium text-gray-500 [font-family:'Manrope',Helvetica]">
+                  Оборот / Циркуляция
+                </p>
+                <p className="text-base md:text-xl font-medium text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica] mt-1">
+                  210.000.000 CTokenX
+                </p>
+              </div>
+
+              <div className="h-[40px] md:h-[52px]">
+                <p className="text-xs md:text-sm font-medium text-gray-500 [font-family:'Manrope',Helvetica]">
+                  Максимальное предложение
+                </p>
+                <p className="text-base md:text-xl font-medium text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica] mt-1">
+                  1.000.000.000 CTokenX
+                </p>
+              </div>
             </div>
 
-            <div className={styles.statsSection}>
-              <p className={styles.statsLabel}>Оборот / Циркуляция</p>
-              <p className={styles.statsValue}>210.000.000 CTokenX</p>
+            <div className="mt-6 md:mt-8 p-4 md:p-5 bg-gray-100 dark:bg-gray-800 rounded-[15px]">
+              <div className="mb-6 md:mb-8">
+                <p className="text-xs md:text-sm font-medium text-gray-500 [font-family:'Manrope',Helvetica]">
+                  Мои токены
+                </p>
+                <p className="text-2xl md:text-[32px] font-medium text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica] mt-1">
+                  50 CTokenX
+                </p>
+                <p className="text-xs md:text-sm font-medium text-gray-500 [font-family:'Manrope',Helvetica] mt-1">
+                  ≈ 4.50 USDT
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 md:gap-4">
+                <Button className="w-full md:w-[220px] h-[40px] md:h-[48px] ml-auto rounded-[15px] font-medium text-base md:text-lg [font-family:'Manrope',Helvetica]">
+                  Купить
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full md:w-[220px] h-[40px] md:h-[48px] ml-auto rounded-[15px] border-2 border-violet-600 font-medium text-[#1a1a1a] dark:text-white text-base md:text-lg [font-family:'Manrope',Helvetica]"
+                >
+                  Продать
+                </Button>
+              </div>
             </div>
-
-            <div className={styles.statsSection}>
-              <p className={styles.statsLabel}>Максимальное предложение</p>
-              <p className={styles.statsValue}>1.000.000.000 CTokenX</p>
-            </div>
-
-            <Card className={styles.tokenBalanceCard}>
-              <CardContent className={styles.cardContent}>
-                <p className={styles.balanceLabel}>Мои токены</p>
-                <p className={styles.balanceValue}>50 CTokenX</p>
-                <p className={styles.balanceUSDT}>≈ 4.50 USDT</p>
-
-                <div className={styles.balanceActions}>
-                  <Button className={`${styles.actionButton} ${styles.primaryButton}`}>
-                    Купить
-                  </Button>
-                  <Button className={`${styles.actionButton} ${styles.outlineButton}`}>
-                    Продать
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           </CardContent>
         </Card>
 

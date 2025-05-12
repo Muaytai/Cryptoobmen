@@ -6,7 +6,7 @@
   padding: 20px;
   background-color: var(--color-card);
   border-radius: 25px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 /* Секция профиля */
@@ -82,9 +82,8 @@
 }
 
 .card {
-  /*background-color: var(--color-card-dark);*/
-  background-color: #F3F4F6;
-  border-radius: 15px;
+  background-color: var(--color-card-dark);
+  border-radius: var(--border-radius);
   padding: 20px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
