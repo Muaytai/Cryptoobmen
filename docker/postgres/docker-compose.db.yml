@@ -1,0 +1,45 @@
+services:
+  postgres:
+    container_name: cryptoobmen-postgres
+    restart: always
+    image: postgres:17.4
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ./.env.prod
+    ports:
+      - "5432:5432"  # Открываем порт наружу для доступа
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cryptoobmen_network
+
+  redis:
+    container_name: cryptoobmen-redis
+    restart: always
+    image: redis:7.4.3
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"  # Открываем порт наружу для доступа
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cryptoobmen_network
+
+networks:
+  cryptoobmen_network:
+    name: cryptoobmen_network
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: cryptoobmen_postgres_data  # Именованный том для сохранения данных
+  redis_data:
+    name: cryptoobmen_redis_data  # Именованный том для сохранения данных 

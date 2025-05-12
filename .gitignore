@@ -47,7 +47,7 @@ static/
 *.sql
 
 # Локальные конфигурации
-core/local_settings.py 
+core/local_settings.py
 .idea/
 .venv_main/
 .venv/
@@ -56,3 +56,6 @@ core/local_settings.py
 .env.development.local
 .env.test.local
 .env.production.local
+.env.prod
+postgres/data/
+docker-compose.local.yml

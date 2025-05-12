@@ -1,0 +1,79 @@
+services:
+  # Определяем опорные сервисы для зависимостей
+  postgres:
+    image: postgres:17.4
+    container_name: cryptoobmen-postgres
+    networks:
+      - cryptoobmen_network
+    profiles:
+      - donotstart
+      
+  redis:
+    image: redis:7.4.3
+    container_name: cryptoobmen-redis
+    networks:
+      - cryptoobmen_network
+    profiles:
+      - donotstart
+
+  backend:
+    container_name: cryptoobmen-backend
+    restart: always
+    build:
+      context: .
+      dockerfile: ./docker/backend/Dockerfile
+    env_file:
+      - ./docker/backend/.env.prod
+    volumes:
+      - static_volume:/usr/src/app/static
+      - media_volume:/usr/src/app/media
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cryptoobmen_network
+
+  frontend:
+    container_name: cryptoobmen-frontend
+    restart: always
+    build:
+      context: .
+      dockerfile: ./docker/frontend/Dockerfile
+    env_file:
+      - ./docker/frontend/.env.prod
+    depends_on:
+      - backend
+    networks:
+      - cryptoobmen_network
+
+  nginx:
+    container_name: cryptoobmen-nginx
+    restart: always
+    build:
+      context: ./docker/nginx/
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+      - static_volume:/usr/share/nginx/static
+      - media_volume:/usr/share/nginx/media
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - cryptoobmen_network
+
+# Используем внешнюю сеть, созданную в docker-compose.db.yml
+networks:
+  cryptoobmen_network:
+    external: true
+    name: cryptoobmen_network
+
+# Используем именованные тома, чтобы данные сохранялись между перезапусками
+volumes:
+  static_volume:
+    name: cryptoobmen_static_volume
+  media_volume:
+    name: cryptoobmen_media_volume 
