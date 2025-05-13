@@ -51,7 +51,7 @@ export default function LoginForm() {
                         <form className={styles.formStyle} onSubmit={handleSubmit}>
                             <Input
                                 type="text"
-                                placeholder="Email или телефон"
+                                placeholder="Введите ваш электронный адрес или телефон"
                                 value={credentials.username}
                                 onChange={(e) => setCredentials({...credentials, username: e.target.value})}
                                 required
@@ -59,13 +59,14 @@ export default function LoginForm() {
                             <div className="relative">
                                 <Input
                                     type={showPassword ? 'text' : 'password'}
-                                    placeholder="Пароль"
+                                    placeholder="Введите пароль"
                                     value={credentials.password}
                                     onChange={(e) => setCredentials({...credentials, password: e.target.value})}
                                     required
                                 />
                                 <button type="button" onClick={() => setShowPassword(v => !v)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary">
+                                        // className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary">
+                                        className={styles.eyeButton}>
                                     {showPassword ? <FaEyeSlash/> : <FaEye/>}
                                 </button>
                             </div>

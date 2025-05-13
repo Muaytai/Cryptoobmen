@@ -103,6 +103,18 @@
   flex-direction: column;
   gap:17px;
 }
+.eyeButton {
+  position: absolute;
+  right: 12px;
+  top: 37%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #A259FF;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+}
 .linkForgotPassword{
   display: flex;
   flex-direction: column;
