@@ -103,7 +103,7 @@
 .formStyle{
   display: flex;
   flex-direction: column;
-  gap:17px;
+  gap:30px;
 }
 .eyeButton {
   position: absolute;
