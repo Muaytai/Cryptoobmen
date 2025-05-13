@@ -11,7 +11,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const inputStyles = {
       display: 'flex',
       width: '100%',
-      height: '40px',
+      height: '48px',
       padding: '8px 12px',
       fontSize: '14px',
       border: `1px solid ${error ? '#ef4444' : 'rgba(255, 255, 255, 0.1)'}`,
