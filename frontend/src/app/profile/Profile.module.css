@@ -17,6 +17,7 @@
 .wrapperMain {
   padding-left: 30px;
   padding-right: 30px;
+  padding-top: 30px;
 }
 
 .header {
@@ -29,6 +30,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
+  margin-bottom: 30px;
 }
 
 .searchContainer {

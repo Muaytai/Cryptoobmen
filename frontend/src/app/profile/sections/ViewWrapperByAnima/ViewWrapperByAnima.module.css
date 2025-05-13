@@ -145,6 +145,7 @@
 .chartCard {
   width: 100%;
   background-color: var(--color-card);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
   border-radius: 25px;
   padding: 20px;
 }

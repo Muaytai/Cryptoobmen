@@ -34,24 +34,25 @@ export const Profile = (): JSX.Element => {
       <div className={styles.wrapper}>
         <div className={styles.wrapperMain}>
           <div className={styles.header}>
-            <div className={styles.searchContainer}>
-              <div className={styles.searchBox}>
-                <div className={styles.searchInput}>
-                  <img
-                    className={styles.icon}
-                    alt="Search"
-                    src="/profile/vector-16.svg"
-                  />
-                </div>
-                <Button className={styles.actionButton}>
-                  <img
-                    className={styles.iconLarge}
-                    alt="Notifications"
-                    src="/profile/vector-17.svg"
-                  />
-                </Button>
-              </div>
-            </div>
+            {/*Переключение темы - здесь не нужно?*/}
+            {/*<div className={styles.searchContainer}>*/}
+            {/*  <div className={styles.searchBox}>*/}
+            {/*    <div className={styles.searchInput}>*/}
+            {/*      <img*/}
+            {/*        className={styles.icon}*/}
+            {/*        alt="Search"*/}
+            {/*        src="/profile/vector-16.svg"*/}
+            {/*      />*/}
+            {/*    </div>*/}
+            {/*    <Button className={styles.actionButton}>*/}
+            {/*      <img*/}
+            {/*        className={styles.iconLarge}*/}
+            {/*        alt="Notifications"*/}
+            {/*        src="/profile/vector-17.svg"*/}
+            {/*      />*/}
+            {/*    </Button>*/}
+            {/*  </div>*/}
+            {/*</div>*/}
 
             <Button className={styles.actionButton}>
               <img

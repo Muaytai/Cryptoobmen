@@ -39,7 +39,7 @@ export const ViewByAnima = (): JSX.Element => {
 
       <div className={styles.content}>
         {/* Left card - Gift box information */}
-        <Card className="w-full md:w-2/3 shadow-[0px_0px_20px_#0000004c] rounded-[15px] md:rounded-[25px] relative">
+        <Card className="flex w-full md:w-2/3 shadow-[0px_0px_20px_#0000004c] rounded-[15px] md:rounded-[25px] relative">
           <CardContent className="p-4 md:p-5">
             <div className="text-gray-500 text-base md:text-lg font-medium">
               Открывай наши уникальные подарочные боксы и получай ценные
@@ -66,8 +66,9 @@ export const ViewByAnima = (): JSX.Element => {
                 Подробнее
               </span>
             </Button>
+          </CardContent>
 
-            {/* Right section with gift box */}
+          {/* Right section with gift box */}
             <div className="relative md:absolute w-full md:w-[520px] h-auto md:h-[363px] mt-8 md:mt-0 md:top-5 md:right-5 bg-gray-100 rounded-[15px] p-4 md:p-0">
               <img
                 className="w-[100px] md:w-[156px] h-[108px] md:h-[169px] mx-auto mt-4 md:mt-6"
@@ -103,7 +104,6 @@ export const ViewByAnima = (): JSX.Element => {
                 </div>
               </div>
             </div>
-          </CardContent>
         </Card>
 
         {/* User winnings card */}
