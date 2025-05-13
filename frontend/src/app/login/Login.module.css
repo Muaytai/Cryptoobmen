@@ -110,10 +110,15 @@
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #A259FF;
+  /*color: #A259FF;*/
+  color: #A2A2B3;
   font-size: 20px;
   cursor: pointer;
   padding: 0;
+}
+.eyeButton:hover {
+  /*color: #A259FF;*/
+  color: #fff;
 }
 .linkForgotPassword{
   display: flex;
