@@ -7,7 +7,7 @@ import {useAuthStore} from '@/store/useAuthStore';
 import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
 import styles from './Register.module.css';
 import {Input} from "@/components/ui/Input";
-import InputCheckbox from "@/components/modalWindows/check forms/InputCheckbox";
+import InputCheckbox from "@/components/modalWindows/modalComponents/InputCheckbox";
 
 export default function RegisterForm() {
     const router = useRouter();
@@ -157,20 +157,10 @@ export default function RegisterForm() {
                                 </button>
                             </div>
                             <div className={styles.checkboxRow}>
-                                {/*<input*/}
-                                {/*    type="checkbox"*/}
-                                {/*    name="agree"*/}
-                                {/*    checked={formData.agree}*/}
-                                {/*    onChange={handleChange}*/}
-                                {/*    className={styles.checkbox}*/}
-                                {/*    required*/}
-                                {/*/>*/}
                                 <InputCheckbox
                                     idInput={"agreepment"}
                                     nameInput={"agreepment"}
                                     valueInput={"service"}
-                                    // label={"Услуга"}
-                                    // typeInput={""}
                                 />
                                 <span className={styles.agreeText}>
               Я соглашаюсь с <Link href="/terms" className={styles.link}>Условиями использования</Link> и <Link
