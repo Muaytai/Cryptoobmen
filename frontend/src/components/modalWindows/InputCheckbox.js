@@ -1,5 +1,5 @@
 import React from "react";
-import styles from "./InputCheckbox.module.css"
+import styles from "./modalCSS/InputCheckbox.module.css"
 
 
 const InputCheckbox = ({idInput, nameInput, valueInput, label = "", typeInput = "checkbox"}) => {

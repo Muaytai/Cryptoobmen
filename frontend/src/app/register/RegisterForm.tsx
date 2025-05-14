@@ -7,7 +7,7 @@ import {useAuthStore} from '@/store/useAuthStore';
 import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
 import styles from './Register.module.css';
 import {Input} from "@/components/ui/Input";
-import InputCheckbox from "@/components/modalWindows/modalComponents/InputCheckbox";
+import InputCheckbox from "@/components/modalWindows/InputCheckbox";
 
 export default function RegisterForm() {
     const router = useRouter();
