@@ -87,7 +87,7 @@ export default function LoginForm() {
                             <div className={styles.linkForgotPassword}>
                                 {/*<Link href="/forgot-password" className="text-sm  hover:underline">Забыли*/}
                                 {/*    пароль?</Link>*/}
-                                <a onClick={modalManagerChangePassword.open} className="text-sm  hover:underline">Забыли
+                                <a className="text-sm  hover:underline">Забыли
                                     пароль?</a>
 
                             </div>
