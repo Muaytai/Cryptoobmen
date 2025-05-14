@@ -73,13 +73,13 @@ export const DivByAnima = (): JSX.Element => {
           </CardContent>
         </Card>
 
-        <Card className={clsx(styles.div4, "bg-gray-100 rounded-[15px]")}>
+        <Card className={clsx(styles.div4, "bg-subcard rounded-[15px]")}>
           <CardContent className="p-3 md:p-5 h-[80px] md:h-[104px]">
-            <span className="font-medium text-gray-500 text-xs md:text-sm [font-family:'Manrope',Helvetica]">
+            <span className="font-medium text-subcard-text/60 text-xs md:text-sm [font-family:'Manrope',Helvetica]">
               Тип пользователя
             </span>
             <div className="mt-4 ">
-              <span className="font-medium text-[#1a1a1a] text-base md:text-lg [font-family:'Manrope',Helvetica]">
+              <span className="font-medium text-subcard-text text-base md:text-lg [font-family:'Manrope',Helvetica]">
                 {userData.userType}
               </span>
             </div>
@@ -140,7 +140,7 @@ export const DivByAnima = (): JSX.Element => {
 
             <div className="flex flex-col gap-2 md:gap-3 absolute top-3 md:top-5 right-3 md:right-5">
               <Button
-                className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] border-2 border-solid">
+                className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] ">
                 <span
                   className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
                   Пополнить
@@ -158,7 +158,7 @@ export const DivByAnima = (): JSX.Element => {
               </Button>
 
               <Button
-                className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] border-2 border-solid">
+                className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px]">
                 <span
                   className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
                   Инвестировать
@@ -209,7 +209,7 @@ export const DivByAnima = (): JSX.Element => {
 
             <div className="flex flex-col gap-2 md:gap-3 absolute top-3 md:top-5 right-3 md:right-5">
               <Button
-                className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] border-2 border-solid">
+                className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px]">
                 <span
                   className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
                   Пополнить
@@ -236,8 +236,8 @@ export const DivByAnima = (): JSX.Element => {
             <span className="font-medium text-gray-500 text-xs md:text-sm [font-family:'Manrope',Helvetica]">
               Реферальная ссылка
             </span>
-            <div className="flex items-center justify-between mt-4 ">
-              <span className="font-medium text-[#1a1a1a] text-base md:text-lg [font-family:'Manrope',Helvetica] truncate">
+            <div className="flex w-full items-center justify-between mt-4 ">
+              <span className="font-medium text-[#1a1a1a] text-base md:text-lg [font-family:'Manrope',Helvetica] ">
                 {userData.referralLink}
               </span>
               <img

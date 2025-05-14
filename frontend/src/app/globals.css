@@ -5,55 +5,61 @@
 /* Базовые стили Tailwind будут импортированы в другом месте */
 
 @layer base {
-:root {
+  :root {
     /* Цвета для светлой темы (по умолчанию) */
     --background: 0 0% 100%; /* #FFFFFF */
     --foreground: 0 0% 6%; /* #0A0A0A */
-    
+
     --card-bg: 220 20% 97%; /* #F5F7FA */
     --card-bg-hover: 220 20% 92%; /* #E9EDF2 */
-    
+
+    --subcard-bg: 220 20% 97%; /* #F3F4F6 */
+    --subcard-text: 0 0% 10%;    /* #1A1A1A в HSL (0° 0% 10%) */
+
     --primary: 267 85% 60%; /* #7C3AED */
     --primary-hover: 265 89% 55%; /* #6D28D9 */
-    
+
     --secondary: 265 89% 67%; /* #A855F7 */
     --secondary-hover: 267 85% 62%; /* #9333EA */
-    
+
     --accent: 250 85% 65%; /* #8B5CF6 */
     --accent-hover: 250 85% 60%; /* #7C3AED */
-    
+
     --muted: 220 14% 40%; /* #6B7280 */
     --muted-hover: 220 14% 30%; /* #4B5563 */
-    
+
     --border: 220 14% 85%; /* #E5E7EB */
     --input: 220 14% 85%; /* #E5E7EB */
-    
-    color-scheme: light;
-}
 
-.dark {
+    color-scheme: light;
+  }
+
+  .dark {
     /* Цвета для темной темы */
     --background: 0 0% 6%; /* #0A0A0A */
     --foreground: 0 0% 100%; /* #FFFFFF */
-    
+
     --card-bg: 240 6% 10%; /* #1A1A1A */
     --card-bg-hover: 240 5% 15%; /* #232328 */
-    
+
+    --subcard-bg: 220 15% 20%; /* #2F2F3B */
+    --subcard-text: 240 20% 92%; /* #E6E6E6 */
+
     --primary: 267 85% 60%; /* #7C3AED */
     --primary-hover: 265 89% 70%; /* #9333EA */
-    
+
     --secondary: 265 89% 67%; /* #A855F7 */
     --secondary-hover: 267 85% 62%; /* #9333EA */
-    
+
     --accent: 250 85% 65%; /* #8B5CF6 */
     --accent-hover: 250 89% 75%; /* #A78BFA */
-    
+
     --muted: 220 14% 60%; /* #9CA3AF */
     --muted-hover: 220 14% 70%; /* #B5BDC9 */
-    
+
     --border: 240 6% 20%; /* #323238 */
     --input: 240 6% 20%; /* #323238 */
-    
+
     color-scheme: dark;
   }
 }

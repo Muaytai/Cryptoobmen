@@ -33,6 +33,10 @@ module.exports = {
           dark: "#1A1A1A",
           "dark-foreground": "#FFFFFF",
         },
+        subcard: {
+          DEFAULT: 'hsl(var(--subcard-bg) / <alpha-value>)',
+          text: 'hsl(var(--subcard-text) / <alpha-value>)',  // Цвет текста
+        },
         muted: {
           DEFAULT: "#F3F4F6",
           dark: "#374151",

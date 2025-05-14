@@ -1,21 +1,12 @@
-"use client";
+import styles from "./layout.module.css";
 
-import React, {JSX} from "react";
+import React from "react";
+import {Button} from "@/app/(profile)/profile/components/ui/button";
+import {Avatar, AvatarFallback, AvatarImage} from "@/app/(profile)/profile/components/ui/avatar";
 
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "./components/ui/avatar";
-import {Button} from "./components/ui/button";
-import {DivByAnima} from "./sections/DivByAnima";
-import {DivWrapperByAnima} from "./sections/DivWrapperByAnima/DivWrapperByAnima";
-import {ViewByAnima} from "./sections/ViewByAnima";
-import {ViewWrapperByAnima} from "./sections/ViewWrapperByAnima";
-
-import styles from "./Profile.module.css";
-
-export const Profile = (): JSX.Element => {
+export default function Layout({children}: {
+  children: React.ReactNode
+}) {
   const navItems = [
     {icon: "/profile/vector-5.svg", isActive: true, alt: "Dashboard"},
     {icon: "/profile/vector-9.svg", isActive: false, alt: "Analytics"},
@@ -34,26 +25,6 @@ export const Profile = (): JSX.Element => {
       <div className={styles.wrapper}>
         <div className={styles.wrapperMain}>
           <div className={styles.header}>
-            {/*Переключение темы - здесь не нужно?*/}
-            {/*<div className={styles.searchContainer}>*/}
-            {/*  <div className={styles.searchBox}>*/}
-            {/*    <div className={styles.searchInput}>*/}
-            {/*      <img*/}
-            {/*        className={styles.icon}*/}
-            {/*        alt="Search"*/}
-            {/*        src="/profile/vector-16.svg"*/}
-            {/*      />*/}
-            {/*    </div>*/}
-            {/*    <Button className={styles.actionButton}>*/}
-            {/*      <img*/}
-            {/*        className={styles.iconLarge}*/}
-            {/*        alt="Notifications"*/}
-            {/*        src="/profile/vector-17.svg"*/}
-            {/*      />*/}
-            {/*    </Button>*/}
-            {/*  </div>*/}
-            {/*</div>*/}
-
             <Button className={styles.actionButton}>
               <img
                 className={styles.iconMedium}
@@ -81,10 +52,7 @@ export const Profile = (): JSX.Element => {
             </Button>
           </div>
 
-          <DivByAnima/>
-          <DivWrapperByAnima/>
-          <ViewWrapperByAnima/>
-          <ViewByAnima/>
+          {children}
 
           <div className={styles.sidebar}>
             <div className={styles.hamburger}>
