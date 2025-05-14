@@ -1,13 +1,13 @@
 "use client";
 
-import AnimatedWrapper from "@/components/AnimatedWrapper/AnimatedWrapper";
+// import AnimatedWrapper from "@/components/AnimatedWrapper/AnimatedWrapper";
 import classes from "./ModalWrapper.module.css";
 
 const ModalWrapper = ({ children }) => {
   return (
-    <AnimatedWrapper>
+    // <AnimatedWrapper>
       {children}
-    </AnimatedWrapper>
+    // </AnimatedWrapper>
   );
 };
 

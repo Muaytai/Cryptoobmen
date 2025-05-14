@@ -18,8 +18,8 @@
     margin: auto;
     position: relative;
     z-index: 1001;
-    background-color: #43454d;
-    border-radius: 30px;
+    background-color: #2F2F3B;
+    border-radius: 25px;
     width: 400px;
     padding: 30px 30px 30px 30px;
     /*transition: visibility 0.7s ease;*/

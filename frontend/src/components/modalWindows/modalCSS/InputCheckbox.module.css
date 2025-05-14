@@ -1,0 +1,33 @@
+/* Скрываем оригинальный чекбокс */
+.checkbox {
+    display: none;
+}
+
+/* Стилизуем label как кастомный чекбокс */
+.label {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    border: 2px solid #18C29E;
+    border-radius: 3px;
+    position: relative;
+    cursor: pointer;
+    /*transition: all 0.3s ease;*/
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Hover эффект */
+.label:hover {
+    border-color: #fff;
+}
+
+/* Отмеченное состояние */
+.checkbox:checked + .label {
+    background-image: url('/images/checkbox.png'); /* Изображение для отмеченного состояния */
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 14px 15px;
+    /*background-color: white;*/
+    /*border-color: transparent; !* Убираем границу *!*/
+}
