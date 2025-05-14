@@ -5,7 +5,6 @@ import {useRouter, useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
-import {authConfig} from '@/config/auth';
 import styles from './Login.module.css';
 import {FaEye, FaEyeSlash, FaGoogle, FaYandex} from 'react-icons/fa';
 
