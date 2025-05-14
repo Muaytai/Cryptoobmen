@@ -12,6 +12,7 @@ export default function RegisterForm() {
     const router = useRouter();
     const {register, error, clearError, isLoading} = useAuthStore();
     const [formData, setFormData] = useState({
+        username: '',
         email: '',
         password: '',
         confirmPassword: '',
@@ -21,6 +22,7 @@ export default function RegisterForm() {
     const [showConfirm, setShowConfirm] = useState(false);
     const [passwordError, setPasswordError] = useState('');
     const [networkError, setNetworkError] = useState('');
+    const [registrationMessage, setRegistrationMessage] = useState('');
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const {name, value, type, checked} = e.target;
@@ -40,6 +42,7 @@ export default function RegisterForm() {
         }
         if (error) clearError();
         if (networkError) setNetworkError('');
+        setRegistrationMessage('');
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -56,18 +59,21 @@ export default function RegisterForm() {
         // Сбрасываем все ошибки перед отправкой
         setPasswordError('');
         setNetworkError('');
+        setRegistrationMessage('');
 
         try {
             console.log('Отправка запроса на регистрацию...');
             await register({
                 email: formData.email,
-                username: formData.email,
-                password: formData.password,
+                username: formData.username,
+                password1: formData.password,
+                password2: formData.confirmPassword,
             });
 
-            console.log('Регистрация успешна, перенаправление на дашборд');
-            // Если успешно зарегистрировались и залогинились, перенаправляем на дашборд
-            router.push('/dashboard');
+            // console.log('Регистрация успешна, перенаправление на дашборд');
+            // router.push('/dashboard'); // Убираем автоматический редирект
+            setRegistrationMessage('Регистрация почти завершена! Пожалуйста, проверьте вашу почту и перейдите по ссылке для подтверждения email.');
+
         } catch (err) {
             console.error('Ошибка регистрации:', err);
             // Проверяем, является ли ошибка сетевой
@@ -108,6 +114,15 @@ export default function RegisterForm() {
 
                         </div>
                         <form className={styles.formStyle} onSubmit={handleSubmit}>
+                            <input
+                                type="text"
+                                name="username"
+                                placeholder="Придумайте ваш ник"
+                                value={formData.username}
+                                onChange={handleChange}
+                                required
+                                className={styles.input}
+                            />
                             <input
                                 type="email"
                                 name="email"
@@ -171,6 +186,9 @@ export default function RegisterForm() {
                             </div>
                             {(error || passwordError || networkError) && (
                                 <p className={styles.error}>{error || passwordError || networkError}</p>
+                            )}
+                            {registrationMessage && (
+                                <p className={styles.successMessage}>{registrationMessage}</p>
                             )}
                             <button
                                 type="submit"

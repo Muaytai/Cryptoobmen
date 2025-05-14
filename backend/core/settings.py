@@ -13,32 +13,17 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 import sys
-import locale
 from datetime import timedelta
-from dotenv import load_dotenv
-
-# Для Windows установим правильную локаль
-if sys.platform == 'win32':
-    try:
-        locale.setlocale(locale.LC_ALL, 'Russian_Russia.1251')
-    except Exception as e:
-        print(f"Предупреждение settings.py: не удалось установить локаль: {e}")
-
-# Загружаем переменные окружения из .env файла
-load_dotenv()
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', '')
+SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False')
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(',')
 
@@ -72,6 +57,8 @@ INSTALLED_APPS = [
     'crypto',
     'transactions',
 ]
+
+SITE_ID = 1
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -113,36 +100,23 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# Формируем DSN строку из переменных окружения
+# DATABASE_URL = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+
 # Настройки базы данных
-DB_ENGINE = os.getenv('DB_ENGINE')
-DB_NAME = os.getenv('DB_NAME')
-DB_USER = os.getenv('DB_USER')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
-DB_HOST = os.getenv('DB_HOST')
-DB_PORT = os.getenv('DB_PORT')
-
-# Создаем строку подключения (DSN) для PostgreSQL
-DB_DSN = f"postgres://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
 DATABASES = {
     'default': {
-        'ENGINE': DB_ENGINE,
-        'NAME': DB_NAME,
-        'USER': DB_USER,
-        'PASSWORD': DB_PASSWORD,
-        'HOST': DB_HOST,
-        'PORT': DB_PORT,
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT'),
         'OPTIONS': {
-            # Исправленные настройки кодировки для Windows
             'client_encoding': 'UTF8',
-        },
-        'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', 60)),
-        'CONN_HEALTH_CHECKS': True,
+        }
     }
 }
-
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -199,6 +173,21 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 10,
 }
 
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+)
+
+# Determine FRONTEND_URL based on environment
+FRONTEND_URL = os.getenv('FRONTEND_URL')
+if not FRONTEND_URL:
+    if DEBUG: # DEBUG is now a boolean
+        FRONTEND_URL = 'http://localhost:3000'
+    else:
+        raise ImproperlyConfigured(
+            "FRONTEND_URL environment variable must be set in production (when DEBUG is False)."
+        )
+
 # JWT настройки
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_TOKEN_LIFETIME', 5))),
@@ -206,16 +195,18 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'ALGORITHM': os.getenv('JWT_ALGORITHM', 'HS256'),
     'SIGNING_KEY': os.getenv('JWT_SECRET_KEY', SECRET_KEY),
+    'JWT_AUTH_HTTPONLY': True, # Рекомендуется True для безопасности
+    'JWT_AUTH_SAMESITE': 'Lax', # 'Lax' или 'Strict'
+    'JWT_AUTH_SECURE': not DEBUG, # True, если сайт на HTTPS
+    'EMAIL_CONFIRMATION_URL': f"{FRONTEND_URL}/?email_confirmed=true",
 }
 
-# Настройки для django-allauth
-SITE_ID = int(os.getenv('SITE_ID', 1))
-
-AUTHENTICATION_BACKENDS = (
-    'django.contrib.auth.backends.ModelBackend',
-    'allauth.account.auth_backends.AuthenticationBackend',
-)
-
+LOGIN_REDIRECT_URL = f'{FRONTEND_URL}/login-success/' # Оставляем или меняем на /profile/, если после обычного логина тоже туда
+ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
+ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = f"{FRONTEND_URL}/?email_confirmed=true" # Изменено
+ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = f"{FRONTEND_URL}/?email_confirmed=true" # Изменено
+ACCOUNT_CONFIRM_EMAIL_ON_GET = True
+ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_AUTHENTICATION_METHOD = 'email'
 ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
@@ -255,25 +246,30 @@ CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'True') == 'True'
 # Настройки REST Auth
 REST_AUTH = {
     'USER_DETAILS_SERIALIZER': 'accounts.serializers.UserDetailsSerializer',
+    'REGISTER_SERIALIZER': 'accounts.serializers.CustomRegisterSerializer',
     'USE_JWT': True,
-    'JWT_AUTH_COOKIE': 'auth',
-    'JWT_AUTH_REFRESH_COOKIE': 'refresh-token',
+    'JWT_AUTH_COOKIE': 'auth', # Имя куки для access token
+    'JWT_AUTH_REFRESH_COOKIE': 'refresh-token', # Имя куки для refresh token
+    'JWT_AUTH_HTTPONLY': True, # Рекомендуется True для безопасности
+    'JWT_AUTH_SAMESITE': 'Lax', # 'Lax' или 'Strict'
+    'JWT_AUTH_SECURE': not DEBUG, # True, если сайт на HTTPS
+    'EMAIL_CONFIRMATION_URL': f"{FRONTEND_URL}/?email_confirmed=true",
 }
 
 # Пользовательская модель
 AUTH_USER_MODEL = 'accounts.User'
 
 # Email настройки для уведомлений
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Для разработки
-DEFAULT_FROM_EMAIL = 'noreply@cryptoobmen.ru'
-ADMIN_EMAIL = 'admin@cryptoobmen.ru'  # Замените на реальный email администратора
-ADMIN_URL = 'http://localhost:8000/admin/'  # URL админки для ссылок в письмах
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Для разработки
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+# DEFAULT_FROM_EMAIL должен быть адресом, с которого отправляются письма.
+# Если не задан в .env, используется EMAIL_HOST_USER. Если и он не задан, то 'webmaster@localhost'.
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL') or os.getenv('EMAIL_HOST_USER') or 'webmaster@localhost'
 
-# В продакшн среде использовать настоящий SMTP сервер
-if not DEBUG:
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
-    EMAIL_PORT = os.environ.get('EMAIL_PORT', 587)
-    EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
-    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', 'admin@example.com')
+ADMIN_URL = os.getenv('ADMIN_URL', 'http://localhost:8000/admin/')

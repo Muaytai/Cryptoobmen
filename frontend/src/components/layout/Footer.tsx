@@ -1,21 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import styles from './Footer.module.css';
 import Link from 'next/link';
 import { useTheme } from '@/lib/ThemeProvider';
-import Image from 'next/image';
 
 export function Footer() {
   const { theme } = useTheme();
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  // Обновляем состояние isDarkMode при изменении темы
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      setIsDarkMode(document.documentElement.classList.contains('dark'));
-    }
-  }, [theme]);
+  const isDarkMode = theme === 'dark';
 
   return (
     <footer className={`${styles.footer} ${isDarkMode ? styles.dark : styles.light}`}>

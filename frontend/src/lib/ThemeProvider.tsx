@@ -13,57 +13,61 @@ interface ThemeContextProps {
 const ThemeContext = createContext<ThemeContextProps | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('dark'); // Темная тема по умолчанию
+  // Устанавливаем темную тему по умолчанию
+  const [theme, setTheme] = useState<Theme>('dark');
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Функция для переключения темы
+  // Функция для переключения темы - только через кнопку переключения
   const toggleTheme = () => {
     setTheme((prevTheme) => {
       const newTheme = prevTheme === 'light' ? 'dark' : 'light';
       // Сохраняем выбор пользователя в localStorage
       localStorage.setItem('theme', newTheme);
-      console.log('Тема изменена на:', newTheme);
       return newTheme;
     });
   };
 
   // Применяем класс темы к HTML элементу
   useEffect(() => {
-    const root = document.documentElement;
+    // Применяем тему только после инициализации, чтобы избежать мерцания
+    if (!isInitialized) return;
+    
+    const html = document.documentElement;
+    
     if (theme === 'dark') {
-      root.classList.add('dark');
-      root.classList.remove('light');
-      document.body.classList.add('dark');
-      document.body.classList.remove('light');
+      html.classList.add('dark');
+      html.classList.remove('light');
     } else {
-      root.classList.add('light');
-      root.classList.remove('dark');
-      document.body.classList.add('light');
-      document.body.classList.remove('dark');
+      html.classList.add('light');
+      html.classList.remove('dark');
     }
-    console.log('Применен класс для темы:', theme);
-  }, [theme]);
 
-  // При загрузке компонента, проверяем сохраненную тему в localStorage
+    // Устанавливаем атрибут data-theme для возможности CSS-селекторов
+    html.setAttribute('data-theme', theme);
+    
+    // Также обновляем классы для body для совместимости
+    document.body.className = document.body.className
+      .replace(/\b(light|dark)\b/g, '')
+      .trim() + ` ${theme}`;
+  }, [theme, isInitialized]);
+
+  // Загружаем сохраненную тему только один раз при инициализации
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !isInitialized) {
+      // Загружаем тему из localStorage, или используем темную по умолчанию
       const savedTheme = localStorage.getItem('theme') as Theme | null;
       
       if (savedTheme) {
-        console.log('Загружена сохраненная тема:', savedTheme);
         setTheme(savedTheme);
       } else {
-        localStorage.setItem('theme', theme);
+        // Если нет сохраненной темы, устанавливаем темную по умолчанию
+        localStorage.setItem('theme', 'dark');
       }
-
-      // Проверяем системные настройки, если нет сохраненной темы
-      if (!savedTheme && window.matchMedia) {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (prefersDark) {
-          setTheme('dark');
-        }
-      }
+      
+      // Обозначаем, что инициализация завершена
+      setIsInitialized(true);
     }
-  }, []);
+  }, [isInitialized]);
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>

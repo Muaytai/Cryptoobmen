@@ -587,4 +587,14 @@
     font-size: 10px;
     margin: 0 6px;
   }
+}
+
+.successMessage {
+  color: #28a745; /* Зеленый цвет для успеха */
+  background-color: #e9f7ef; /* Светло-зеленый фон */
+  padding: 10px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+  text-align: center;
+  border: 1px solid #a3d8b3;
 } 

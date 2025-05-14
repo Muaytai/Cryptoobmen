@@ -1,11 +1,60 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTheme } from "@/lib/ThemeProvider";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useRouter } from "next/navigation";
 
 export const Profile = () => {
   const { theme, toggleTheme } = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
+  const { user, isAuthenticated, isLoading: authLoading, checkAuthStatus } = useAuthStore();
+  const router = useRouter();
+  const [isSessionChecked, setIsSessionChecked] = useState(false);
+
+  // При монтировании компонента проверяем авторизацию
+  useEffect(() => {
+    // Проверяем наличие сессионной куки
+    const hasSession = document.cookie.includes('sessionid=') || 
+                        document.cookie.includes('dj_session_id=') || 
+                        document.cookie.includes('auth_token=') ||
+                        document.cookie.includes('csrftoken=');
+                        
+    if (hasSession && !isAuthenticated) {
+      // Если есть сессия, но пользователь не авторизован - проверяем статус
+      console.log('В профиле: есть сессия, но пользователь не авторизован. Проверяем...');
+      checkAuthStatus();
+    } else if (!hasSession) {
+      // Если нет сессии - переходим на страницу входа
+      console.log('В профиле: нет сессии, переходим на страницу входа');
+      router.push('/login');
+    }
+    
+    setIsSessionChecked(true);
+  }, []);
+
+  // Эффект для перенаправления, если пользователь не авторизован
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated && isSessionChecked) {
+      console.log('Пользователь не авторизован, перенаправление на страницу входа');
+      router.push('/login');
+    }
+  }, [isAuthenticated, authLoading, router, isSessionChecked]);
+
+  // Отображаем загрузчик, пока проверяем авторизацию
+  if (authLoading || !isSessionChecked || !user) {
+    return (
+      <div className="flex w-full min-h-screen bg-[#0d0d0d] text-white items-center justify-center">
+        <div>Загрузка данных профиля...</div>
+      </div>
+    );
+  }
+
+  const userEmail = user?.email || "N/A";
+  const userName = user?.username || user?.first_name || "Пользователь";
+  const userInitials = userName.substring(0, 2).toUpperCase();
 
   return (
     <div className="flex w-full min-h-screen bg-[#0d0d0d] text-white">
@@ -56,10 +105,10 @@ export const Profile = () => {
       <div className="flex-1 py-4 px-6">
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-3">
-            <div className="bg-purple-600 rounded-full w-10 h-10 flex items-center justify-center text-sm font-medium">КС</div>
+            <div className="bg-purple-600 rounded-full w-10 h-10 flex items-center justify-center text-sm font-medium">{userInitials}</div>
             <div>
-              <p className="text-lg font-medium">Кристина Соколова</p>
-              <p className="text-xs text-gray-400">С нами с 2022 г.</p>
+              <p className="text-lg font-medium">{userName}</p>
+              <p className="text-xs text-gray-400">С нами с {user.date_joined ? new Date(user.date_joined).toLocaleDateString('ru-RU') : 'недавно'}</p>
             </div>
           </div>
           <div className="flex gap-4">
@@ -119,11 +168,13 @@ export const Profile = () => {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-400">ID пользователя</span>
-                <span>99999999999</span>
+                <span>{user.id || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Верификация</span>
-                <span className="text-green-400">Верифицирован</span>
+                <span className={user.is_verified ? "text-green-400" : "text-red-400"}>
+                  {user.is_verified ? "Верифицирован" : "Не верифицирован"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Тип пользователя</span>
@@ -135,7 +186,7 @@ export const Profile = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Почта</span>
-                <span>kristina_sokolova@mail.ru</span>
+                <span>{userEmail}</span>
               </div>
             </div>
           </div>
@@ -147,7 +198,7 @@ export const Profile = () => {
               <div className="flex">
                 <input 
                   type="text" 
-                  value="https://crypto.com/referral/USERNAME" 
+                  value={`https://crypto.com/referral/${user.username || user.id}`}
                   readOnly 
                   className="bg-gray-800 rounded-l-lg px-3 py-2 flex-1 outline-none"
                 />
