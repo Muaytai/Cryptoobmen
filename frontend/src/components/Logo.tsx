@@ -9,7 +9,7 @@ export const Logo = () => {
     <Link href="/" className="no-underline">
       <div className="flex items-center justify-center">
         <SafeImage
-          src="/images/Логотип.png"
+          src="/images/logo.png"
           alt="GX Exchange"
           width={50}
           height={50}

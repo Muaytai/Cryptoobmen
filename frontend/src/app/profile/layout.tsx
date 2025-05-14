@@ -20,11 +20,11 @@ export default function ProfileLayout({children}: {
 }) {
   // Полностью независимый layout без Header и Footer
   return (
-    <html lang="ru" suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning className="dark">
       <head>
         <title>Профиль пользователя</title>
       </head>
-      <body suppressHydrationWarning className={`${inter.className} antialiased bg-[#0d0d0d] text-white`}>
+      <body suppressHydrationWarning className={`${inter.className} antialiased bg-black text-white dark`}>
         <ThemeProvider>
           {/* Здесь нет компонентов Header и Footer */}
           <main className="min-h-screen">

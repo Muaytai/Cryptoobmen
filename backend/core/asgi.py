@@ -8,17 +8,7 @@ https://docs.djangoproject.com/en/5.1/howto/deployment/asgi/
 """
 
 import os
-import sys
-import locale
 from dotenv import load_dotenv
-
-# Для Windows установим правильную локаль
-if sys.platform == 'win32':
-    try:
-        locale.setlocale(locale.LC_ALL, 'Russian_Russia.1251')
-        print(f"ASGI: Локаль установлена: {locale.getlocale()}")
-    except Exception as e:
-        print(f"ASGI Предупреждение: не удалось установить локаль: {e}")
 
 # Загружаем настройки из .env файла
 load_dotenv()

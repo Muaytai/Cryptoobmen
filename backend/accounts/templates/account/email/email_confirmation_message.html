@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Подтвердите ваш E-mail на {{ site_name }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eeeeee;
+        }
+        .header h1 {
+            color: #A259FF; /* Ваш фирменный цвет */
+            margin: 0;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .content p {
+            margin-bottom: 15px;
+        }
+        .button {
+            display: inline-block;
+            background-color: #A259FF; /* Ваш фирменный цвет */
+            color: #ffffff;
+            padding: 12px 25px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .button:hover {
+            background-color: #8e3ee6; /* Более темный оттенок вашего фирменного цвета */
+        }
+        .footer {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #eeeeee;
+            font-size: 0.9em;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ site_name }}</h1>
+        </div>
+        <div class="content">
+            <p>Здравствуйте, {{ user.username }}!</p>
+            <p>Благодарим за регистрацию на сайте {{ site_name }}!</p>
+            <p>Чтобы активировать ваш аккаунт, пожалуйста, нажмите на кнопку ниже или перейдите по следующей ссылке:</p>
+            <p style="text-align: center; margin-top: 25px; margin-bottom: 25px;">
+                <a href="{{ activate_url }}" class="button">Подтвердить E-mail</a>
+            </p>
+            <p><small>Если кнопка не работает, скопируйте и вставьте эту ссылку в адресную строку вашего браузера:<br>{{ activate_url }}</small></p>
+            <p>Если вы не регистрировались на нашем сайте, просто проигнорируйте это письмо.</p>
+        </div>
+        <div class="footer">
+            <p>С уважением,<br>Команда {{ site_name }}</p>
+            <p><a href="http://{{ site_domain }}">{{ site_domain }}</a></p>
+        </div>
+    </div>
+</body>
+</html> 

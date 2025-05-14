@@ -1,21 +1,62 @@
 'use client';
 
-import {useState} from 'react';
-import {useRouter} from 'next/navigation';
+import {useState, useEffect} from 'react';
+import {useRouter, useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
-import {authConfig} from '@/config/auth';
 import styles from './Login.module.css';
 import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
 import {useModal} from "@/utils/modalWindows/generalFunctions";
 import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 
+
 export default function LoginForm() {
     const router = useRouter();
-    const {login, isLoading, error} = useAuthStore();
-    const [credentials, setCredentials] = useState({username: '', password: ''});
+    const searchParams = useSearchParams();
+    const {login, isLoading, error, isAuthenticated, setDisableAutoLogin} = useAuthStore();
+    const [credentials, setCredentials] = useState({email: '', password: ''});
     const [showPassword, setShowPassword] = useState(false);
+    const [redirectPath, setRedirectPath] = useState('/profile');
+    const [loginAttempted, setLoginAttempted] = useState(false);
+
+    // При монтировании компонента сбрасываем флаг блокировки автовхода
+    useEffect(() => {
+        // Очищаем куку disableAutoLogin при загрузке страницы входа
+        document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        localStorage.removeItem('disableAutoLogin');
+        setDisableAutoLogin(false);
+    }, [setDisableAutoLogin]);
+
+    // Получаем параметр redirect из URL
+    useEffect(() => {
+        const redirect = searchParams.get('redirect');
+        if (redirect) {
+            // Удаляем лишние слэши и проверяем валидность пути
+            const sanitizedRedirect = redirect.replace(/^\/+|\/+$/g, '');
+            if (sanitizedRedirect) {
+                setRedirectPath(`/${sanitizedRedirect}`);
+            } else {
+                setRedirectPath('/profile');
+            }
+        } else {
+            setRedirectPath('/profile');
+        }
+    }, [searchParams]);
+
+    // Эффект, который следит за состоянием авторизации и выполняет перенаправление
+    useEffect(() => {
+        if (isAuthenticated && loginAttempted) {
+            console.log('Пользователь авторизован, перенаправление на:', redirectPath);
+            
+            // Убеждаемся, что флаг disableAutoLogin точно снят
+            document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            localStorage.removeItem('disableAutoLogin');
+            
+            // Перенаправляем на нужную страницу
+            router.push(redirectPath);
+        }
+    }, [isAuthenticated, loginAttempted, redirectPath, router]);
 
 
     const modalManagerChangePassword = useModal(false);
@@ -24,16 +65,41 @@ export default function LoginForm() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            setLoginAttempted(true);
+            
+            // Убеждаемся, что флаг disableAutoLogin точно снят перед входом
+            document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            localStorage.removeItem('disableAutoLogin');
+            setDisableAutoLogin(false);
+            
             await login(credentials);
-            router.push('/dashboard');
+            console.log('Вход выполнен успешно, готовимся к перенаправлению в:', redirectPath);
+            
+            // Перенаправление происходит в useEffect выше, после обновления состояния isAuthenticated
         } catch (err) {
             console.error('Ошибка входа:', err);
+            setLoginAttempted(false);
         }
     };
 
     const handleLinkToRegister = () => {
-        router.push("/register");
+        // Явно очищаем cookie disableAutoLogin перед переходом
+        document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        localStorage.removeItem('disableAutoLogin');
+        
+        // Используем window.location вместо router.push для полного обновления страницы
+        window.location.href = '/register';
     }
+
+    const handleGoogleLogin = () => {
+        // Убедитесь, что этот URL соответствует вашему backend urls.py для allauth google login
+        window.location.href = 'http://localhost:8000/accounts/google/login/';
+    };
+
+    const handleYandexLogin = () => {
+        // URL для инициации входа через Яндекс на бэкенде
+        window.location.href = 'http://localhost:8000/accounts/yandex/login/';
+    };
 
     return (
         <div className="flex min-h-screen items-center justify-center">
@@ -64,10 +130,10 @@ export default function LoginForm() {
                         </div>
                         <form className={styles.formStyle} onSubmit={handleSubmit}>
                             <Input
-                                type="text"
-                                placeholder="Введите ваш электронный адрес или телефон"
-                                value={credentials.username}
-                                onChange={(e) => setCredentials({...credentials, username: e.target.value})}
+                                type="email"
+                                placeholder="Введите ваш электронный адрес"
+                                value={credentials.email}
+                                onChange={(e) => setCredentials({...credentials, email: e.target.value})}
                                 required
                             />
                             <div className="relative">
@@ -119,11 +185,19 @@ export default function LoginForm() {
                                 {/* Соцсети */}
 
                                 <div className={styles.socialBtns}>
-                                    <button type="button" className={styles.socialBtn}>
+                                    <button 
+                                        type="button" 
+                                        className={styles.socialBtn} 
+                                        onClick={handleGoogleLogin}
+                                    >
                                         <FaGoogle/> Google
                                     </button>
-                                    <button type="button" className={styles.socialBtn}>
-                                        <FaApple/> Apple
+                                    <button 
+                                        type="button" 
+                                        className={styles.socialBtn} 
+                                        onClick={handleYandexLogin}
+                                    >
+                                        <FaYandex/> Яндекс 
                                     </button>
                                 </div>
                             </div>

@@ -1,19 +1,139 @@
 .header {
+  padding: 12px 24px;
+  background-color: #111014;
+  width: 100%;
+  box-sizing: border-box;
+  color: #fff;
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 18px 32px;
-  background-color: #111014;
-  color: white;
-  position: relative;
-  z-index: 200;
-  transition: background-color 0.3s, color 0.3s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-:global(.light) .header {
-  background-color: #f8f9fa;
-  color: #111827;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+/* Светлая тема применяется только при явном указании класса light */
+.header.light {
+  background-color: #f1f3f6;
+  color: #333;
+}
+
+.logoContainer {
+  margin-right: 16px;
+}
+
+.navigation {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+}
+
+.navLink {
+  font-size: 14px;
+  color: #777777;
+  text-decoration: none;
+  transition: all 0.2s;
+  padding: 6px 12px;
+  border-radius: 8px;
+  display: inline-block;
+}
+
+.navLink:hover {
+  color: #fff;
+  background-color: rgba(155, 129, 248, 0.7);
+}
+
+.activeNavLink {
+  color: #9b81f8;
+}
+
+/* Применяем стили для светлой темы только при наличии класса light */
+.header.light .navLink {
+  color: #555;
+}
+
+.header.light .navLink:hover {
+  color: #fff;
+  background-color: #9b81f8;
+}
+
+.header.light .activeNavLink {
+  color: #7c3aed;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.themeToggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.themeToggle:hover {
+  background-color: rgba(155, 129, 248, 0.2);
+}
+
+.userLink {
+  font-size: 14px;
+  color: #fff;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.header.light .userLink {
+  color: #333;
+}
+
+.userLink:hover {
+  text-decoration: underline;
+  color: #9b81f8;
+}
+
+.logoutButton {
+  padding: 6px 12px;
+  background-color: rgba(220, 38, 38, 0.8);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.logoutButton:hover {
+  background-color: rgb(220, 38, 38);
+}
+
+.loginButton {
+  padding: 6px 12px;
+  background-color: #7c3aed;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.loginButton:hover {
+  background-color: #6d28d9;
+}
+
+.loadingText {
+  font-size: 14px;
+  color: #777777;
+}
+
+.header.light .loadingText {
+  color: #555;
 }
 
 .container {
@@ -35,24 +155,9 @@
   transition: background-color 0.3s;
 }
 
-:global(.light) .nav {
+/* Используем класс .light вместо :global(.light) для согласованности */
+.header.light .nav {
   background-color: rgba(155, 129, 248, 0.1);
-}
-
-.navLink {
-  color: #fff;
-  opacity: 0.8;
-  text-decoration: none;
-  padding: 4px 16px;
-  transition: all 0.2s;
-  font-weight: 500;
-  border-radius: 50px;
-  font-size: 16px;
-}
-
-:global(.light) .navLink {
-  color: #111827;
-  opacity: 0.8;
 }
 
 .navLink:hover {
@@ -61,7 +166,7 @@
   background-color: #9b81f8;
 }
 
-:global(.light) .navLink:hover {
+.header.light .navLink:hover {
   color: #fff;
   background-color: #9b81f8;
 }
@@ -73,51 +178,69 @@
   color: #fff;
 }
 
-.actions {
+.userActions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 1rem;
 }
 
-.themeToggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  display: flex;
-  align-items: center;
+/* Используем конкретные цвета вместо переменных для предсказуемости */
+.userNameLink {
+  color: #ffffff;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  white-space: nowrap;
+}
+
+.header.light .userNameLink {
+  color: #333333;
+}
+
+.userNameLink:hover {
+  background-color: rgba(155, 129, 248, 0.2);
   color: #9b81f8;
 }
 
-.themeToggle svg {
-  fill: none;
-  stroke: #9b81f8;
-  width: 22px;
-  height: 22px;
+.header.light .userNameLink:hover {
+  background-color: rgba(155, 129, 248, 0.1);
+  color: #7c3aed;
 }
 
-.themeIcon {
-  width: 24px;
-  height: 24px;
-}
-
-.loginButton {
+.logoutButton {
   background-color: transparent;
-  color: white;
-  border: 1px solid #9b81f8;
-  padding: 8px 24px;
-  border-radius: 50px;
-  cursor: pointer;
+  color: #aaaaaa;
+  border: 1px solid #333333;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
   font-weight: 500;
-  transition: all 0.2s;
-  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
 }
 
-:global(.light) .loginButton {
-  color: #111827;
+.header.light .logoutButton {
+  color: #666666;
+  border: 1px solid #dddddd;
 }
 
-.loginButton:hover {
-  background-color: #9b81f8;
-  color: white;
+.logoutButton:hover {
+  background-color: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+
+/* Стили для плейсхолдера загрузки аутентификации */
+.authLoadingPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
+  padding: 0.6rem 1.2rem;
+  color: #777777;
+}
+
+.header.light .authLoadingPlaceholder {
+  color: #555555;
 } 
