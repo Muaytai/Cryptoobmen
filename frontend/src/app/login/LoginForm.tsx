@@ -93,13 +93,33 @@ export default function LoginForm() {
     }
 
     const handleGoogleLogin = () => {
-        // Убедитесь, что этот URL соответствует вашему backend urls.py для allauth google login
-        window.location.href = 'http://localhost:8000/accounts/google/login/';
+        // Получаем текущий URL фронтенда для перенаправления
+        const frontendUrl = window.location.origin;
+        // Используем NEXT_PUBLIC_BACKEND_URL без /api суффикса или прямой URL
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        
+        // Используем абсолютный URL фронтенда для перенаправления после социальной авторизации
+        const callbackUrl = encodeURIComponent(`${frontendUrl}/login-success`);
+        
+        console.log('Attempting Google login with URL:', `${backendUrl}/accounts/google/login/?next=${callbackUrl}`);
+        
+        // Перенаправляем на страницу авторизации Google с использованием правильного пути
+        window.location.href = `${backendUrl}/accounts/google/login/?next=${callbackUrl}`;
     };
 
     const handleYandexLogin = () => {
-        // URL для инициации входа через Яндекс на бэкенде
-        window.location.href = 'http://localhost:8000/accounts/yandex/login/';
+        // Получаем текущий URL фронтенда для перенаправления
+        const frontendUrl = window.location.origin;
+        // Используем NEXT_PUBLIC_BACKEND_URL без /api суффикса или прямой URL
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        
+        // Используем абсолютный URL фронтенда для перенаправления после социальной авторизации
+        const callbackUrl = encodeURIComponent(`${frontendUrl}/login-success`);
+        
+        console.log('Attempting Yandex login with URL:', `${backendUrl}/accounts/yandex/login/?next=${callbackUrl}`);
+        
+        // Перенаправляем на страницу авторизации Яндекс с использованием правильного пути
+        window.location.href = `${backendUrl}/accounts/yandex/login/?next=${callbackUrl}`;
     };
 
     return (

@@ -11,8 +11,15 @@ from .serializers import (
 from .models import UserDocument, UserProfile
 from django.db.models import Q
 from django.conf import settings
+from django.http import HttpResponseRedirect
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.views import View
+import logging
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -87,3 +94,37 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         profile.save()
         serializer = self.get_serializer(profile)
         return Response(serializer.data)
+
+def get_tokens_for_user(user):
+    """Создаёт JWT токены для пользователя"""
+    refresh = RefreshToken.for_user(user)
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+    }
+
+@method_decorator(csrf_exempt, name='dispatch')
+class SocialLoginCallbackView(View):
+    """Обрабатывает коллбэк после успешной авторизации через соцсеть"""
+    
+    def get(self, request, *args, **kwargs):
+        """Обрабатывает GET запрос после авторизации через соцсеть"""
+        # Получаем URL для перенаправления из параметра next или используем дефолтный
+        redirect_url = request.GET.get('next', f"{settings.FRONTEND_URL}/profile")
+        
+        # Если пользователь авторизован, генерируем JWT токен и добавляем его к URL
+        if request.user.is_authenticated:
+            try:
+                tokens = get_tokens_for_user(request.user)
+                # Добавляем access token к URL для перенаправления
+                if '?' in redirect_url:
+                    redirect_url = f"{redirect_url}&token={tokens['access']}"
+                else:
+                    redirect_url = f"{redirect_url}?token={tokens['access']}"
+                
+                logger.info(f"Успешная авторизация через соцсеть для пользователя {request.user.email}")
+            except Exception as e:
+                logger.error(f"Ошибка при создании токенов: {str(e)}")
+        
+        # Перенаправляем на фронтенд
+        return HttpResponseRedirect(redirect_url)

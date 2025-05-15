@@ -267,6 +267,11 @@ export const useAuthStore = create<AuthState>()(
       checkAuthStatus: async () => {
         const state = get();
         
+        if (state.isAuthenticated && state.user) {
+          console.log('Пользователь уже аутентифицирован, пропускаем проверку');
+          return;
+        }
+        
         const storedDisableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
         if (state.disableAutoLogin && storedDisableAutoLogin) {
           console.log('Автоматический вход отключен пользователем через флаг');

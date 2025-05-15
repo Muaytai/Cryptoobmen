@@ -16,16 +16,21 @@ import sys
 from datetime import timedelta
 from django.core.exceptions import ImproperlyConfigured
 
+# Загрузка переменных окружения из .env файла
+from dotenv import load_dotenv
+# Путь к файлу .env в корневой директории проекта
+load_dotenv(Path(__file__).resolve().parent.parent / '.env')
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY')
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-default-dev-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
 # Application definition
@@ -71,7 +76,49 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+    # Добавление кэширующего middleware
+    'django.middleware.cache.UpdateCacheMiddleware',
+    'django.middleware.cache.FetchFromCacheMiddleware',
 ]
+
+# Добавляем настройки кэширования с использованием локальной памяти вместо Redis
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
+
+# Настройки кэширования сессий
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_CACHE_ALIAS = 'default'
+
+# Настройки кэширования для DRF
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+    # Настройки кэширования для DRF
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/day',
+        'user': '1000/day'
+    },
+    # Добавление кэширования
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+}
 
 # Отключаем требование слэша в конце URL
 APPEND_SLASH = False
@@ -82,13 +129,20 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [os.path.join(BASE_DIR, 'templates')],
-        'APP_DIRS': True,
+        'APP_DIRS': False,
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.debug',
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+            ],
+            # Включаем кэширование шаблонов
+            'loaders': [
+                ('django.template.loaders.cached.Loader', [
+                    'django.template.loaders.filesystem.Loader',
+                    'django.template.loaders.app_directories.Loader',
+                ]),
             ],
         },
     },
@@ -160,19 +214,6 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# REST Framework настройки
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
-    ),
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
-}
-
 AUTHENTICATION_BACKENDS = (
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
@@ -209,10 +250,15 @@ ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
+ACCOUNT_EMAIL_VERIFICATION = 'mandatory'  # Включаем обязательную верификацию email
 ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https' if not DEBUG else 'http'
+ACCOUNT_LOGOUT_ON_GET = True  # Выход без подтверждения
+
+# Добавляем дополнительную настройку для пропуска верификации для социальных аккаунтов
+SOCIALACCOUNT_EMAIL_VERIFICATION = 'none'  # Отключаем верификацию для социальных аккаунтов
+SOCIALACCOUNT_EMAIL_REQUIRED = True
 
 # Провайдеры социальной аутентификации
 SOCIALACCOUNT_PROVIDERS = {
@@ -228,7 +274,9 @@ SOCIALACCOUNT_PROVIDERS = {
         ],
         'AUTH_PARAMS': {
             'access_type': 'online',
-        }
+        },
+        # Пропускаем страницу подтверждения входа
+        'PROMPT_METHOD': 'none',
     },
     'yandex': {
         'APP': {
@@ -239,6 +287,16 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
+# Настройки для пропуска промежуточных шагов авторизации
+SOCIALACCOUNT_AUTO_SIGNUP = True  # Автоматическая регистрация при первом входе
+SOCIALACCOUNT_LOGIN_ON_GET = True  # Логин по GET-запросу без подтверждения
+# ACCOUNT_EMAIL_VERIFICATION = 'none'  # Отключаем верификацию email (уже установлено выше)
+SOCIALACCOUNT_EMAIL_VERIFICATION = 'none'  # Отключаем верификацию для соцсетей
+ACCOUNT_EMAIL_REQUIRED = True
+SOCIALACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_UNIQUE_EMAIL = True  # Email должен быть уникальным
+SOCIALACCOUNT_QUERY_EMAIL = True  # Запрашивать email у провайдера
+
 # CORS настройки
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
 CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'True') == 'True'
@@ -247,6 +305,7 @@ CORS_ALLOW_CREDENTIALS = os.getenv('CORS_ALLOW_CREDENTIALS', 'True') == 'True'
 REST_AUTH = {
     'USER_DETAILS_SERIALIZER': 'accounts.serializers.UserDetailsSerializer',
     'REGISTER_SERIALIZER': 'accounts.serializers.CustomRegisterSerializer',
+    'LOGIN_SERIALIZER': 'accounts.serializers.CustomLoginSerializer',
     'USE_JWT': True,
     'JWT_AUTH_COOKIE': 'auth', # Имя куки для access token
     'JWT_AUTH_REFRESH_COOKIE': 'refresh-token', # Имя куки для refresh token
@@ -261,15 +320,23 @@ AUTH_USER_MODEL = 'accounts.User'
 
 # Email настройки для уведомлений
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Для разработки
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # Для продакшена
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 # DEFAULT_FROM_EMAIL должен быть адресом, с которого отправляются письма.
 # Если не задан в .env, используется EMAIL_HOST_USER. Если и он не задан, то 'webmaster@localhost'.
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL') or os.getenv('EMAIL_HOST_USER') or 'webmaster@localhost'
 
 ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', 'admin@example.com')
 ADMIN_URL = os.getenv('ADMIN_URL', 'http://localhost:8000/admin/')
+
+# Для отладки перенаправлений
+SOCIALACCOUNT_STORE_TOKENS = True
+
+# Настройка для автоматического связывания существующих аккаунтов
+SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
+SOCIALACCOUNT_AUTO_SIGNUP = True
+SOCIALACCOUNT_STORE_TOKENS = True
