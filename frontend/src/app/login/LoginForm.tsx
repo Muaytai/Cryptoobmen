@@ -7,6 +7,7 @@ import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
 import styles from './Login.module.css';
 import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
+import {TbBrandYandex} from 'react-icons/tb';
 import {useModal} from "@/utils/modalWindows/generalFunctions";
 import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 
@@ -197,7 +198,7 @@ export default function LoginForm() {
                                         className={styles.socialBtn} 
                                         onClick={handleYandexLogin}
                                     >
-                                        <FaYandex/> Яндекс 
+                                        <TbBrandYandex/> Яндекс 
                                     </button>
                                 </div>
                             </div>
