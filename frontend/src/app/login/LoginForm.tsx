@@ -6,7 +6,10 @@ import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
 import styles from './Login.module.css';
-import {FaEye, FaEyeSlash, FaGoogle, FaYandex} from 'react-icons/fa';
+import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
+import {useModal} from "@/utils/modalWindows/generalFunctions";
+import WriteAboutError from "@/components/modalWindows/WriteAboutError";
+
 
 export default function LoginForm() {
     const router = useRouter();
@@ -55,6 +58,10 @@ export default function LoginForm() {
         }
     }, [isAuthenticated, loginAttempted, redirectPath, router]);
 
+
+    const modalManagerChangePassword = useModal(false);
+
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -96,6 +103,14 @@ export default function LoginForm() {
 
     return (
         <div className="flex min-h-screen items-center justify-center">
+            {
+                modalManagerChangePassword.isVisible ?
+                    <WriteAboutError
+                        title={"Вывод средств"}
+                        onHideModalWindow={modalManagerChangePassword.close}
+                    /> :
+                    ""
+            }
             <div className={styles.mainFormWrapper}>
                 <div className={styles.imageWrapper}>
                     <img className={styles.image} src={"/images/chess_mirror.png"}/>
@@ -136,8 +151,11 @@ export default function LoginForm() {
                                 </button>
                             </div>
                             <div className={styles.linkForgotPassword}>
-                                <Link href="/forgot-password" className="text-sm  hover:underline">Забыли
-                                    пароль?</Link>
+                                {/*<Link href="/forgot-password" className="text-sm  hover:underline">Забыли*/}
+                                {/*    пароль?</Link>*/}
+                                <a className="text-sm  hover:underline">Забыли
+                                    пароль?</a>
+
                             </div>
                             {/*<button type="submit" className="button w-full mt-2" disabled={isLoading}>*/}
                             {/*    {isLoading ? 'Вход...' : 'Войти'}*/}
