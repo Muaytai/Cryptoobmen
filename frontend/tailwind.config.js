@@ -28,7 +28,7 @@ module.exports = {
           dark: "#FFFFFF",
         },
         card: {
-          DEFAULT: "#FFFFFF",
+          DEFAULT: "hsl(var(--card) / <alpha-value>)",
           foreground: "#111827",
           dark: "#1A1A1A",
           "dark-foreground": "#FFFFFF",
