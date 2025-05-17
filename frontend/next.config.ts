@@ -20,15 +20,12 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/:path*',
-        destination: 'http://localhost:8000/api/:path*/', // Добавляем слэш в конце каждого запроса
-      },
-      {
         source: '/api/:path*/',
-        destination: 'http://localhost:8000/api/:path*/', // Явно обрабатываем URL с завершающим слэшем
-      },
+        destination: 'http://localhost:8000/api/:path*/',
+      }
     ];
   },
+  trailingSlash: true,
 };
 
 export default nextConfig;

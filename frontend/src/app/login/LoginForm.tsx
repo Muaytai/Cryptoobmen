@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
 import styles from './Login.module.css';
-import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
+import {FaEye, FaEyeSlash, FaGoogle} from 'react-icons/fa';
 import {useModal} from "@/utils/modalWindows/generalFunctions";
 import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 
@@ -48,12 +48,6 @@ export default function LoginForm() {
     useEffect(() => {
         if (isAuthenticated && loginAttempted) {
             console.log('Пользователь авторизован, перенаправление на:', redirectPath);
-            
-            // Убеждаемся, что флаг disableAutoLogin точно снят
-            document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-            localStorage.removeItem('disableAutoLogin');
-            
-            // Перенаправляем на нужную страницу
             router.push(redirectPath);
         }
     }, [isAuthenticated, loginAttempted, redirectPath, router]);
@@ -197,7 +191,7 @@ export default function LoginForm() {
                                         className={styles.socialBtn} 
                                         onClick={handleYandexLogin}
                                     >
-                                        <FaYandex/> Яндекс 
+                                        Яндекс
                                     </button>
                                 </div>
                             </div>

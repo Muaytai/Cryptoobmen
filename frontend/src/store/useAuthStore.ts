@@ -47,6 +47,13 @@ interface AuthState {
   setDisableAutoLogin: (disable: boolean) => void;
 }
 
+// Функция для получения CSRF токена из cookie
+const getCsrfToken = () => {
+  const cookies = document.cookie.split(';');
+  const csrfCookie = cookies.find(cookie => cookie.trim().startsWith('csrftoken='));
+  return csrfCookie ? csrfCookie.split('=')[1] : '';
+};
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -55,64 +62,80 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
       showEmailConfirmedModal: false,
-      disableAutoLogin: true,
+      disableAutoLogin: false,
       
       login: async (credentials: Credentials) => {
+        set({ isLoading: true, error: null });
         try {
-          set({ isLoading: true, error: null, disableAutoLogin: false });
-          localStorage.removeItem('disableAutoLogin');
-          console.log('Отправка запроса на вход:', credentials);
+          const csrfToken = getCsrfToken();
+          console.log('CSRF токен для входа:', csrfToken);
 
-          const response = await fetch('http://localhost:8000/api/auth/login/', {
+          const response = await fetch('/api/auth/login/', {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
             },
             body: JSON.stringify(credentials),
-            credentials: 'include',
-            redirect: 'manual'
           });
 
           console.log('Статус ответа входа:', response.status);
           const responseText = await response.text();
           console.log('Тело ответа входа:', responseText);
-          
+
           if (!response.ok) {
             try {
+              if (!responseText || responseText.trim() === '') {
+                throw new Error(`Ошибка сервера: ${response.status} ${response.statusText}. Сервер вернул пустой ответ.`);
+              }
+              
               const errorData = JSON.parse(responseText);
-              throw new Error(errorData.detail || 'Ошибка авторизации');
+              throw new Error(errorData.detail || 'Ошибка входа');
             } catch (parseError) {
-              throw new Error(`Ошибка авторизации: ${response.status} ${response.statusText}`);
+              if (parseError instanceof SyntaxError) {
+                console.error('Ошибка при разборе ответа:', parseError);
+                throw new Error(`Ошибка сервера: ${response.status} ${response.statusText}. Убедитесь, что сервер Django запущен.`);
+              }
+              throw parseError;
             }
           }
 
           try {
-            const data = JSON.parse(responseText);
-            localStorage.removeItem('disableAutoLogin');
-            
-            if (!data.user) {
-              console.error('Пользовательские данные не получены при входе');
-              await get().checkAuthStatus();
+            let data;
+            if (responseText && responseText.trim() !== '') {
+              data = JSON.parse(responseText);
+              console.log('Успешный ответ входа:', data);
             } else {
-              set({
-                isLoading: false,
-                isAuthenticated: true,
-                user: data.user,
-                disableAutoLogin: false,
-              });
-              console.log('Вход выполнен успешно, данные пользователя:', data.user);
+              console.log('Пустой ответ от сервера, но статус успешный');
+              data = { user: null };
             }
+
+            // Сохраняем токен в localStorage и cookie
+            localStorage.setItem('auth-token', data.token);
+            document.cookie = `auth-token=${data.token}; path=/; max-age=2592000`; // 30 дней
+            
+            set({ 
+              user: data.user,
+              isAuthenticated: true,
+              isLoading: false,
+              error: null,
+              disableAutoLogin: false
+            });
+            
           } catch (parseError) {
             console.error('Ошибка при разборе ответа JSON:', parseError);
             throw new Error('Ошибка при обработке ответа сервера');
           }
         } catch (error) {
-          console.error('Ошибка входа:', error);
-          set({
+          console.error('Login error:', error);
+          set({ 
+            user: null,
+            isAuthenticated: false,
             isLoading: false,
-            error: error instanceof Error ? error.message : 'Ошибка авторизации',
+            error: error instanceof Error ? error.message : 'Произошла ошибка при входе',
+            disableAutoLogin: true
           });
-          throw error;
         }
       },
       
@@ -122,15 +145,21 @@ export const useAuthStore = create<AuthState>()(
           localStorage.setItem('disableAutoLogin', 'true');
           console.log('Отправка запроса на регистрацию:', data);
 
-          const url = 'http://localhost:8000/api/auth/registration/';
+          const url = '/api/auth/registration/';
           console.log('URL для регистрации:', url);
+
+          // Получаем CSRF токен из cookie
+          const csrfToken = getCsrfToken();
+          console.log('CSRF токен для регистрации:', csrfToken);
 
           const response = await fetch(url, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
             },
             body: JSON.stringify(data),
+            credentials: 'include',
             redirect: 'manual'
           });
 
@@ -198,31 +227,32 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         set({ isLoading: true, error: null });
         try {
-          const response = await fetch('http://localhost:8000/api/auth/logout/', { 
+          const response = await fetch('/api/auth/logout/', { 
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             credentials: 'include',
           });
+          
+          console.log('Статус выхода:', response.status);
+          
           if (!response.ok) {
             console.warn('Не удалось выполнить выход на стороне сервера, но клиент будет очищен.');
           }
         } catch (error) {
           console.error('Ошибка при выходе на стороне сервера:', error);
         } finally {
+          // Очищаем все данные авторизации
           localStorage.setItem('disableAutoLogin', 'true');
-          const expirationDate = new Date();
-          expirationDate.setDate(expirationDate.getDate() + 30);
-          document.cookie = `disableAutoLogin=true; expires=${expirationDate.toUTCString()}; path=/;`;
           
-          localStorage.removeItem('auth-storage');
-          
+          // Очищаем куки
           document.cookie = 'sessionid=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-          document.cookie = 'dj_session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-          document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
           document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+          document.cookie = 'auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+          document.cookie = 'refresh-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
           
+          // Очищаем состояние
           set({
             user: null,
             isAuthenticated: false,
@@ -231,18 +261,13 @@ export const useAuthStore = create<AuthState>()(
             disableAutoLogin: true,
           });
           
-          try {
-            const allKeys = Object.keys(localStorage);
-            for (const key of allKeys) {
-              if (key.includes('auth') || key.includes('user') || key.includes('token')) {
-                localStorage.removeItem(key);
-              }
-            }
-          } catch (err) {
-            console.error('Ошибка при очистке localStorage:', err);
-          }
-
+          // Очищаем localStorage
+          localStorage.removeItem('auth-storage');
+          
           console.log('Выход выполнен успешно, все данные очищены');
+          
+          // Перезагружаем страницу для полной очистки состояния
+          window.location.href = '/';
         }
       },
       
@@ -267,75 +292,80 @@ export const useAuthStore = create<AuthState>()(
       checkAuthStatus: async () => {
         const state = get();
         
-        const storedDisableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
-        if (state.disableAutoLogin && storedDisableAutoLogin) {
-          console.log('Автоматический вход отключен пользователем через флаг');
-          return;
-        }
-        
         if (state.isLoading) {
           console.log('Проверка авторизации уже выполняется, пропускаем');
           return;
         }
-        
-        set({ isLoading: true, error: null });
-        try {
-          console.log('Проверка статуса аутентификации...');
-          const response = await fetch('http://localhost:8000/api/auth/user/', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-          });
 
-          const responseText = await response.text();
-          
-          if (response.ok) {
-            try {
-              const userData = JSON.parse(responseText);
-              localStorage.removeItem('disableAutoLogin');
-              set({
-                user: userData,
-                isAuthenticated: true,
-                isLoading: false,
-                error: null,
-                disableAutoLogin: false,
-              });
-              console.log('Пользователь аутентифицирован, данные:', userData);
-            } catch (parseError) {
-              console.error('Ошибка при разборе ответа JSON:', parseError);
-              set({
-                isLoading: false,
-                error: 'Ошибка при обработке ответа сервера',
-              });
-            }
-          } else {
-            set({
-              user: null,
-              isAuthenticated: false,
-              isLoading: false,
-              error: null,
-              disableAutoLogin: true,
-            });
-            localStorage.setItem('disableAutoLogin', 'true');
-            console.log('Пользователь не аутентифицирован или сессия истекла.');
-          }
-        } catch (error) {
-          console.error('Ошибка при проверке статуса аутентификации:', error);
+        // Проверяем наличие токена в localStorage
+        const token = localStorage.getItem('auth-token');
+        
+        if (!token) {
+          console.log('Нет сохраненных данных авторизации');
           set({
             user: null,
             isAuthenticated: false,
             isLoading: false,
-            error: error instanceof Error ? error.message : 'Ошибка проверки статуса',
-            disableAutoLogin: true,
+            error: null,
           });
-          localStorage.setItem('disableAutoLogin', 'true');
+          return;
+        }
+
+        set({ isLoading: true, error: null });
+        
+        try {
+          console.log('Проверка статуса аутентификации...');
+          
+          const response = await fetch('/api/auth/user/', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            credentials: 'include',
+          });
+
+          if (!response.ok) {
+            throw new Error('Не авторизован');
+          }
+
+          const userData = await response.json();
+          
+          // Обновляем cookie при каждой успешной проверке
+          document.cookie = `auth-token=${token}; path=/; max-age=2592000`; // 30 дней
+          
+          set({
+            user: userData,
+            isAuthenticated: true,
+            isLoading: false,
+            error: null,
+            disableAutoLogin: false,
+          });
+          console.log('Пользователь аутентифицирован, данные:', userData);
+          
+        } catch (error) {
+          console.log('Ошибка при проверке статуса:', error);
+          // Очищаем все данные авторизации при ошибке
+          localStorage.removeItem('auth-token');
+          document.cookie = 'auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+          
+          set({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: null,
+          });
         }
       },
     }),
     {
       name: 'auth-storage',
+      // Указываем, какие поля нужно сохранять в localStorage
+      partialize: (state) => ({ 
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+        disableAutoLogin: state.disableAutoLogin
+      }),
     }
   )
 ); 

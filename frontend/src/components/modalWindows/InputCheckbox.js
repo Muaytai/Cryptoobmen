@@ -2,7 +2,7 @@ import React from "react";
 import styles from "./modalCSS/InputCheckbox.module.css"
 
 
-const InputCheckbox = ({idInput, nameInput, valueInput, label = "", typeInput = "checkbox"}) => {
+const InputCheckbox = ({idInput, nameInput, valueInput, label = "", typeInput = "checkbox", onChange}) => {
     return (
         <div className={styles.checkBoxWrapper}>
             <input
@@ -11,6 +11,7 @@ const InputCheckbox = ({idInput, nameInput, valueInput, label = "", typeInput = 
                 name={nameInput}
                 value={valueInput}
                 className={styles.checkbox}
+                onChange={onChange}
             />
             <label
                 className={styles.label}

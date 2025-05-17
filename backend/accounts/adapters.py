@@ -22,6 +22,14 @@ class CustomAccountAdapter(DefaultAccountAdapter):
             UserProfile.objects.create(user=user)
             
         return user
+    
+    def confirm_email(self, request, email_address):
+        """Устанавливает флаг is_verified в True после подтверждения email"""
+        super().confirm_email(request, email_address)
+        # Обновляем поле is_verified у пользователя
+        user = email_address.user
+        user.is_verified = True
+        user.save()
 
 
 class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
