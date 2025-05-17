@@ -72,8 +72,8 @@ export function Header() {
     // Обновляем состояние в store
     setDisableAutoLogin(false);
     
-    // Переходим на страницу входа
-    router.push('/login');
+    // Добавляем параметр force_login для принудительного входа
+    window.location.href = '/login?force_login=true';
   };
 
   // Функция для обработки нажатия на имя пользователя

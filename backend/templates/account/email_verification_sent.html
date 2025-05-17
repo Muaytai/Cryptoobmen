@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Подтверждение Email</title>
+    <meta http-equiv="refresh" content="0;url={{ request.scheme }}://{{ request.get_host }}{% url 'home' %}">
+    <script>
+        // Перенаправляем на фронтенд
+        window.location.href = "{{ FRONTEND_URL }}";
+    </script>
+</head>
+<body>
+    <p>Перенаправление на главную страницу...</p>
+</body>
+</html> 

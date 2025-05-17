@@ -27,6 +27,24 @@ class User(AbstractUser):
     # Дата последнего входа
     last_login_ip = models.GenericIPAddressField(blank=True, null=True)
     
+    # Переопределяем поля groups и user_permissions с уникальными related_name
+    groups = models.ManyToManyField(
+        'auth.Group',
+        verbose_name=_('groups'),
+        blank=True,
+        help_text=_('The groups this user belongs to. A user will get all permissions granted to each of their groups.'),
+        related_name='custom_user_set',
+        related_query_name='custom_user'
+    )
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        verbose_name=_('user permissions'),
+        blank=True,
+        help_text=_('Specific permissions for this user.'),
+        related_name='custom_user_set',
+        related_query_name='custom_user'
+    )
+    
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
     

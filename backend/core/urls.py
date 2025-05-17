@@ -26,9 +26,15 @@ from django.views.generic import TemplateView
 from rest_framework.documentation import include_docs_urls
 from rest_framework import permissions
 from rest_framework.routers import DefaultRouter
+from django.http import HttpResponseRedirect
 
 # Создаем главный роутер
 router = DefaultRouter()
+
+# Функция для перенаправления на фронтенд после авторизации
+def auth_callback(request):
+    """Перенаправляет на эндпоинт обработки социальной авторизации"""
+    return HttpResponseRedirect(f"/api/accounts/social/callback/?next={settings.FRONTEND_URL}/profile")
 
 # Кастомные URL-адреса для регистрации dj_rest_auth, чтобы исправить обработку account-confirm-email
 dj_rest_auth_custom_registration_urls = [
@@ -47,6 +53,9 @@ urlpatterns = [
     
     # Добавляем URL-адреса allauth. Это должно решить проблему NoReverseMatch для 'account_email'
     path('accounts/', include('allauth.urls')),
+
+    # Путь для перенаправления после авторизации через соцсеть
+    path('auth/callback/', auth_callback, name='auth_callback'),
 
     # API endpoints
     path('api/', include(router.urls)),

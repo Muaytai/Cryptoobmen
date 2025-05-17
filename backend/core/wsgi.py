@@ -14,6 +14,11 @@ from dotenv import load_dotenv
 # Загрузка переменных окружения из .env файла
 # Путь к файлу .env относительно текущего файла
 env_path = Path(__file__).resolve().parent.parent / '.env'
+# Пробуем загрузить .env из директории backend
+if not os.path.exists(env_path):
+    # Если файл не найден, пробуем загрузить из корня проекта
+    env_path = Path(__file__).resolve().parent.parent.parent / '.env'
+
 load_dotenv(env_path)
 
 # Установка переменных окружения Django
