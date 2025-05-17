@@ -175,8 +175,19 @@ export default function RegisterForm() {
                                 <InputCheckbox
                                     idInput={"agree"}
                                     nameInput={"agree"}
+<<<<<<< HEAD
                                     valueInput={"true"}
                                     onChange={handleChange}
+=======
+                                    valueInput={"agree"}
+                                    checked={formData.agree}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                        setFormData((prev) => ({
+                                            ...prev,
+                                            agree: e.target.checked
+                                        }));
+                                    }}
+>>>>>>> 63a7ddfc7c6785d7e614d516eed767386405399d
                                 />
                                 <span className={styles.agreeText}>
               Я соглашаюсь с <Link href="/terms" className={styles.link}>Условиями использования</Link> и <Link

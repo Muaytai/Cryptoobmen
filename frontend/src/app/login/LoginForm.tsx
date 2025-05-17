@@ -6,10 +6,10 @@ import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
 import styles from './Login.module.css';
-import {FaEye, FaEyeSlash, FaGoogle} from 'react-icons/fa';
+import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
+import {TbBrandYandex} from 'react-icons/tb';
 import {useModal} from "@/utils/modalWindows/generalFunctions";
 import WriteAboutError from "@/components/modalWindows/WriteAboutError";
-
 
 export default function LoginForm() {
     const router = useRouter();
@@ -52,9 +52,7 @@ export default function LoginForm() {
         }
     }, [isAuthenticated, loginAttempted, redirectPath, router]);
 
-
     const modalManagerChangePassword = useModal(false);
-
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -86,13 +84,33 @@ export default function LoginForm() {
     }
 
     const handleGoogleLogin = () => {
-        // Убедитесь, что этот URL соответствует вашему backend urls.py для allauth google login
-        window.location.href = 'http://localhost:8000/accounts/google/login/';
+        // Получаем текущий URL фронтенда для перенаправления
+        const frontendUrl = window.location.origin;
+        // Используем NEXT_PUBLIC_BACKEND_URL без /api суффикса или прямой URL
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        
+        // Используем абсолютный URL фронтенда для перенаправления после социальной авторизации
+        const callbackUrl = encodeURIComponent(`${frontendUrl}/login-success`);
+        
+        console.log('Attempting Google login with URL:', `${backendUrl}/accounts/google/login/?next=${callbackUrl}`);
+        
+        // Перенаправляем на страницу авторизации Google с использованием правильного пути
+        window.location.href = `${backendUrl}/accounts/google/login/?next=${callbackUrl}`;
     };
 
     const handleYandexLogin = () => {
-        // URL для инициации входа через Яндекс на бэкенде
-        window.location.href = 'http://localhost:8000/accounts/yandex/login/';
+        // Получаем текущий URL фронтенда для перенаправления
+        const frontendUrl = window.location.origin;
+        // Используем NEXT_PUBLIC_BACKEND_URL без /api суффикса или прямой URL
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        
+        // Используем абсолютный URL фронтенда для перенаправления после социальной авторизации
+        const callbackUrl = encodeURIComponent(`${frontendUrl}/login-success`);
+        
+        console.log('Attempting Yandex login with URL:', `${backendUrl}/accounts/yandex/login/?next=${callbackUrl}`);
+        
+        // Перенаправляем на страницу авторизации Яндекс с использованием правильного пути
+        window.location.href = `${backendUrl}/accounts/yandex/login/?next=${callbackUrl}`;
     };
 
     return (
@@ -112,7 +130,6 @@ export default function LoginForm() {
                 <div className={styles.formBox}>
                     <div className={styles.logoWrapper}>
                         <img className={styles.logo} src={"/images/logo.png"}/>
-
                     </div>
 
                     <div className={styles.formBoxWrapper}>
@@ -120,7 +137,6 @@ export default function LoginForm() {
                             <div className={styles.titleLogin}>Вход</div>
                             <div className={styles.titleRegister} onClick={handleLinkToRegister}>Зарегистрироваться
                             </div>
-
                         </div>
                         <form className={styles.formStyle} onSubmit={handleSubmit}>
                             <Input
@@ -139,21 +155,14 @@ export default function LoginForm() {
                                     required
                                 />
                                 <button type="button" onClick={() => setShowPassword(v => !v)}
-                                        // className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary">
                                         className={styles.eyeButton}>
                                     {showPassword ? <FaEyeSlash/> : <FaEye/>}
                                 </button>
                             </div>
                             <div className={styles.linkForgotPassword}>
-                                {/*<Link href="/forgot-password" className="text-sm  hover:underline">Забыли*/}
-                                {/*    пароль?</Link>*/}
                                 <a className="text-sm  hover:underline">Забыли
                                     пароль?</a>
-
                             </div>
-                            {/*<button type="submit" className="button w-full mt-2" disabled={isLoading}>*/}
-                            {/*    {isLoading ? 'Вход...' : 'Войти'}*/}
-                            {/*</button>*/}
                             <button
                                 type="submit"
                                 className={styles.submitBtn}
@@ -168,16 +177,6 @@ export default function LoginForm() {
                                 <div className="flex-1 h-px bg-[#23233a]"/>
                             </div>
                             <div className={styles.socialButtonWrapper}>
-                                {/*<button type="button"*/}
-                                {/*        className="flex-1 button-outline flex items-center justify-center gap-2">*/}
-                                {/*    <FaGoogle/> Google*/}
-                                {/*</button>*/}
-                                {/*<button type="button"*/}
-                                {/*        className="flex-1 button-outline flex items-center justify-center gap-2">*/}
-                                {/*    <FaApple/> Apple*/}
-                                {/*</button>*/}
-                                {/* Соцсети */}
-
                                 <div className={styles.socialBtns}>
                                     <button 
                                         type="button" 
@@ -191,13 +190,10 @@ export default function LoginForm() {
                                         className={styles.socialBtn} 
                                         onClick={handleYandexLogin}
                                     >
-                                        Яндекс
+                                        <TbBrandYandex/> Яндекс 
                                     </button>
                                 </div>
                             </div>
-                            {/*<div className="mt-4 text-center">*/}
-                            {/*    Нет аккаунта? <Link href="/register" className={styles.link}>Зарегистрироваться</Link>*/}
-                            {/*</div>*/}
                         </form>
                     </div>
                 </div>
