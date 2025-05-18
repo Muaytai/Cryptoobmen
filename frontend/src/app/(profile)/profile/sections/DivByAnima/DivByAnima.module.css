@@ -4,9 +4,9 @@
   max-width: 1640px;
   margin: 0 auto;
   padding: 20px;
-  background-color: var(--color-card);
+  /* background-color: var(--color-card); */
   border-radius: 25px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
 }
 
 /* Секция профиля */
@@ -14,7 +14,6 @@
   display: flex;
   align-items: flex-start;
   gap: 20px;
-  margin-bottom: 24px;
 }
 
 .profilePicture {
@@ -69,10 +68,53 @@
 }
 
 /* Сетка карточек */
+/*.cardsGrid {*/
+/*  display: grid;*/
+/*  grid-template-columns: 0.6fr 0.6fr 1.4fr 1.4fr;*/
+/*  gap: 20px;*/
+/*}*/
+
 .cardsGrid {
   display: grid;
-  grid-template-columns: 0.6fr 0.6fr 1.4fr 1.4fr;
+  grid-template-columns: repeat(2, 1fr) repeat(2, 1.6fr);
+  grid-template-rows: 0.4fr repeat(2, 1fr);
   gap: 20px;
+}
+
+.div1 {
+  grid-area: 1 / 1 / 2 / 3;
+}
+
+.div2 {
+  grid-area: 2 / 1 / 3 / 2;
+}
+
+.div3 {
+  grid-area: 2 / 2 / 3 / 3;
+}
+
+.div4 {
+  grid-area: 3 / 1 / 4 / 2;
+}
+
+.div5 {
+  grid-area: 3 / 2 / 4 / 3;
+}
+
+.div6 {
+  grid-area: 1 / 3 / 3 / 4;
+}
+
+.div7 {
+  grid-area: 3 / 3 / 4 / 4;
+}
+
+.div8 {
+  grid-area: 1 / 4 / 3 / 5;
+}
+
+.div9 {
+  grid-area: 3 / 4 / 4 / 5;
 }
 
 .cardUserWrapp {
@@ -82,8 +124,9 @@
 }
 
 .card {
-  background-color: var(--color-card-dark);
-  border-radius: var(--border-radius);
+  /*background-color: var(--color-card-dark);*/
+  background-color: #f3f4f6;
+  border-radius: 15px;
   padding: 20px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
@@ -155,7 +198,6 @@
   gap: 12px;
   margin-top: 12px;
 }
-
 
 .actionButton {
   width: 100%;

@@ -1,0 +1,61 @@
+.header {
+  /*position: absolute;*/
+  /*width: 416px;*/
+  /*height: 48px;*/
+  /*top: 70px;*/
+  /*right: 140px;*/
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-bottom: 30px;
+}
+
+.searchContainer {
+  display: flex;
+  height: 48px;
+}
+
+.searchBox {
+  display: flex;
+  flex-direction: row;
+  position: relative;
+  height: 48px;
+}
+
+.searchInput {
+  width: 96px;
+  height: 40px;
+  background-color: var(--color-card);
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+}
+
+.actionButton {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  background-color: var(--color-card-dark);
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.userProfile {
+  width: 146px;
+  height: 48px;
+  background-color: var(--color-card-dark);
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+}
+
+.userName {
+  margin-left: 8px;
+  font-weight: 500;
+  color: var(--color-text);
+  font-size: 14px;
+}

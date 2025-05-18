@@ -1,7 +1,7 @@
 .container {
   width: 100%;
   max-width: 1642px;
-  margin: 64px auto;
+  margin: 0 auto;
 }
 
 .title {
@@ -145,6 +145,7 @@
 .chartCard {
   width: 100%;
   background-color: var(--color-card);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
   border-radius: 25px;
   padding: 20px;
 }

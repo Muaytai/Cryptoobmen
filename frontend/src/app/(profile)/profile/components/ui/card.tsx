@@ -1,7 +1,6 @@
-"use client";
-
 import * as React from "react";
-import styles from "./card.module.css";
+
+import { cn } from "@/lib/utils";
 
 const Card = React.forwardRef<
   HTMLDivElement,
@@ -9,7 +8,10 @@ const Card = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={`${styles.card} ${className || ''}`}
+    className={cn(
+      "rounded-lg md:rounded-xl border bg-card text-card-foreground shadow",
+      className,
+    )}
     {...props}
   />
 ));
@@ -21,7 +23,7 @@ const CardHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={`${styles.cardHeader} ${className || ''}`}
+    className={cn("flex flex-col space-y-1 md:space-y-1.5 p-4 md:p-6", className)}
     {...props}
   />
 ));
@@ -31,9 +33,9 @@ const CardTitle = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <h3
+  <div
     ref={ref}
-    className={`${styles.cardTitle} ${className || ''}`}
+    className={cn("text-sm md:text-base font-semibold leading-none tracking-tight", className)}
     {...props}
   />
 ));
@@ -45,7 +47,7 @@ const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={`${styles.cardDescription} ${className || ''}`}
+    className={cn("text-xs md:text-sm text-muted-foreground", className)}
     {...props}
   />
 ));
@@ -55,11 +57,7 @@ const CardContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={`${styles.cardContent} ${className || ''}`}
-    {...props}
-  />
+  <div ref={ref} className={cn("p-4 md:p-6 pt-0", className)} {...props} />
 ));
 CardContent.displayName = "CardContent";
 
@@ -69,7 +67,7 @@ const CardFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={`${styles.cardFooter} ${className || ''}`}
+    className={cn("flex items-center p-4 md:p-6 pt-0", className)}
     {...props}
   />
 ));

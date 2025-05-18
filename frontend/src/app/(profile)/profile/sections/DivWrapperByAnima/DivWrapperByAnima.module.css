@@ -2,7 +2,7 @@
   width: 100%;
   max-width: 1642px;
   margin: 0 auto;
-  padding: 64px 0;
+  padding: 100px 0;
 }
 
 .title {
@@ -34,6 +34,7 @@
   background-color: var(--color-card);
   border-radius: 25px;
   padding: 24px;
+  @apply shadow-light;
 }
 
 .cardContent {

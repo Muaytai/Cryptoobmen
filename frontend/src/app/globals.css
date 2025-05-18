@@ -39,6 +39,11 @@ html.light {
     
     --card-bg: 220 20% 97%; /* #F5F7FA */
     --card-bg-hover: 220 20% 92%; /* #E9EDF2 */
+
+    --card: 0, 0%, 100%; /* #FFFFFF */
+
+    --subcard-bg: 220 20% 97%; /* #F3F4F6 */
+    --subcard-text: 0 0% 10%; /* #1A1A1A в HSL (0° 0% 10%) */
     
     --primary: 267 85% 60%; /* #7C3AED */
     --primary-hover: 265 89% 55%; /* #6D28D9 */
