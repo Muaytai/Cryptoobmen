@@ -16,14 +16,48 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Проверяем куки при загрузке и после обновления
   useEffect(() => {
     if (typeof window !== 'undefined' && !isInitialized) {
+      // Проверяем наличие параметра force_login в URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const forceLogin = urlParams.get('force_login') === 'true';
+      
+      // Если установлен force_login, принудительно очищаем все данные
+      if (forceLogin) {
+        console.log('Принудительная очистка данных авторизации');
+        
+        // Очищаем все куки
+        const cookies = [
+          'access_token',
+          'refresh_token',
+          'sessionid',
+          'dj_session_id',
+          'csrftoken',
+          'auth_token',
+          'next_hmr_refresh_hash'
+        ];
+        
+        cookies.forEach(cookie => {
+          document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
+          document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+        });
+        
+        // Очищаем localStorage и sessionStorage
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        // Устанавливаем флаг блокировки автовхода
+        localStorage.setItem('disableAutoLogin', 'true');
+        setDisableAutoLogin(true);
+        
+        setIsInitialized(true);
+        return;
+      }
+      
       // Проверяем флаг disableAutoLogin в localStorage
       const storedDisableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
       
-      // Проверяем наличие сессионной куки
-      const hasSession = document.cookie.includes('sessionid=') || 
-                          document.cookie.includes('dj_session_id=') ||
-                          document.cookie.includes('auth_token=') ||
-                          document.cookie.includes('csrftoken=');
+      // Проверяем наличие JWT токенов
+      const hasSession = document.cookie.includes('auth-token=') || 
+                        document.cookie.includes('refresh-token=');
       
       console.log('AuthProvider init: hasSession =', hasSession, 'disableAutoLogin =', storedDisableAutoLogin);
       
@@ -31,11 +65,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (storedDisableAutoLogin) {
         console.log('Флаг отключения автовхода активен, блокируем автоматический вход');
         
-        // Дополнительно очищаем куки, если есть флаг disableAutoLogin
-        document.cookie = 'sessionid=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        document.cookie = 'dj_session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        // Очищаем JWT куки
+        document.cookie = 'auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        document.cookie = 'refresh-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
         
         // Обновляем состояние
         setDisableAutoLogin(true);
@@ -62,22 +94,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     // Пропускаем страницы логина/регистрации и первую загрузку
     if (!['/login', '/register'].includes(pathname) && isInitialized && !disableAutoLogin) {
-      // Проверяем наличие сессионной куки
-      const hasSession = document.cookie.includes('sessionid=') || 
-                          document.cookie.includes('dj_session_id=') ||
-                          document.cookie.includes('auth_token=') ||
-                          document.cookie.includes('csrftoken=');
+      // Проверяем наличие JWT токенов
+      const hasSession = document.cookie.includes('auth-token=') || 
+                        document.cookie.includes('refresh-token=');
       
-      // Если есть сессионная кука, но не авторизованы в состоянии - проверяем статус
+      // Если есть токены, но не авторизованы в состоянии - проверяем статус
       if (hasSession && !isAuthenticated) {
-        console.log('Есть сессионная кука, но не авторизованы в состоянии - проверяем статус');
+        console.log('Есть JWT токены, но не авторизованы в состоянии - проверяем статус');
         localStorage.removeItem('disableAutoLogin');
         setDisableAutoLogin(false);
         checkAuthStatus();
       }
-      // Если нет сессии, но статус авторизации true - выполняем проверку
+      // Если нет токенов, но статус авторизации true - выполняем проверку
       else if (!hasSession && isAuthenticated) {
-        console.log('Нет сессионной куки, но статус авторизации true - проверяем статус');
+        console.log('Нет JWT токенов, но статус авторизации true - проверяем статус');
         checkAuthStatus();
       }
     }

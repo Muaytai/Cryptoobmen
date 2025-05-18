@@ -1,0 +1,25 @@
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+
+# Игнорируем стандартные файлы и директории
+node_modules/
+.git/
+.idea/
+.vscode/
+
+# Разрешаем все .env файлы для разработки
+!**/.env*
+!.env*
+
+# Игнорируем все, кроме конфигурационных файлов
+.env
+**/.env
+
+# НЕ игнорируем наши рабочие конфиги
+!.env.dev
+!.env.prod
+!.env.backend
+
+# Разрешаем доступ к конфигурационным файлам в IDE
+@frontend/.env.dev
+@frontend/.env.prod
+@backend/.env.backend

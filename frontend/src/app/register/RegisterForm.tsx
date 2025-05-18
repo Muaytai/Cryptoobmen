@@ -71,9 +71,7 @@ export default function RegisterForm() {
                 password2: formData.confirmPassword,
             });
 
-            // console.log('Регистрация успешна, перенаправление на дашборд');
-            // router.push('/dashboard'); // Убираем автоматический редирект
-            setRegistrationMessage('Регистрация почти завершена! Пожалуйста, проверьте вашу почту и перейдите по ссылке для подтверждения email.');
+            setRegistrationMessage('Регистрация успешно завершена! Пожалуйста, проверьте вашу почту для подтверждения email. После подтверждения вы сможете войти в систему.');
 
         } catch (err) {
             console.error('Ошибка регистрации:', err);
@@ -91,10 +89,40 @@ export default function RegisterForm() {
         }
     };
 
+    // Функция для очистки всех данных аутентификации
+    const clearAllAuthData = () => {
+        // Очищаем куки
+        const cookies = [
+            'access_token',
+            'refresh_token',
+            'sessionid',
+            'dj_session_id',
+            'csrftoken',
+            'auth_token',
+            'next_hmr_refresh_hash'
+        ];
+
+        cookies.forEach(cookie => {
+            document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
+            document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+        });
+
+        // Очищаем localStorage и sessionStorage
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // Устанавливаем флаг блокировки автовхода
+        localStorage.setItem('disableAutoLogin', 'true');
+    };
 
     const handleLinkToLogin = () => {
-        router.push("/login");
-    }
+        // Очищаем все данные перед переходом
+        clearAllAuthData();
+        
+        // Добавляем force_login=true для предотвращения автоматического входа
+        router.push('/login?force_login=true');
+    };
+
     return (
         <div className="flex min-h-screen items-center justify-center">
             <div className={styles.mainFormWrapper}>
@@ -173,26 +201,20 @@ export default function RegisterForm() {
                             </div>
                             <div className={styles.checkboxRow}>
                                 <InputCheckbox
-                                    idInput={"agree"}
-                                    nameInput={"agree"}
-<<<<<<< HEAD
-                                    valueInput={"true"}
-                                    onChange={handleChange}
-=======
-                                    valueInput={"agree"}
-                                    checked={formData.agree}
+                                    idInput="agree"
+                                    nameInput="agree"
+                                    valueInput="agree"
                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                                         setFormData((prev) => ({
                                             ...prev,
                                             agree: e.target.checked
                                         }));
                                     }}
->>>>>>> 63a7ddfc7c6785d7e614d516eed767386405399d
                                 />
                                 <span className={styles.agreeText}>
-              Я соглашаюсь с <Link href="/terms" className={styles.link}>Условиями использования</Link> и <Link
+                                    Я соглашаюсь с <Link href="/terms" className={styles.link}>Условиями использования</Link> и <Link
                                     href="/privacy" className={styles.link}>Политикой конфиденциальности</Link>
-            </span>
+                                </span>
                             </div>
                             {(error || passwordError || networkError) && (
                                 <p className={styles.error}>{error || passwordError || networkError}</p>

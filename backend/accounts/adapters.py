@@ -3,7 +3,13 @@ from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from django.conf import settings
 from django.shortcuts import redirect
 from urllib.parse import urlparse
+from allauth.account.utils import user_email
+from allauth.socialaccount.models import SocialLogin
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken
+import uuid
 
+User = get_user_model()
 
 class CustomAccountAdapter(DefaultAccountAdapter):
     """Пользовательский адаптер для обычной регистрации"""
@@ -50,36 +56,79 @@ class CustomAccountAdapter(DefaultAccountAdapter):
 class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
     """Пользовательский адаптер для социальной аутентификации"""
     
+    def pre_social_login(self, request, sociallogin):
+        """Обработка перед социальной авторизацией"""
+        email = sociallogin.account.extra_data.get('email')
+        if email:
+            try:
+                user = User.objects.get(email=email)
+                if not sociallogin.is_existing:
+                    # Привязываем существующего пользователя к соцаккаунту
+                    sociallogin.connect(request, user)
+            except User.DoesNotExist:
+                pass
+
     def populate_user(self, request, sociallogin, data):
         """Заполняет данные пользователя из социальной сети"""
         user = super().populate_user(request, sociallogin, data)
         
+        # Автоматически верифицируем пользователей из соцсетей
+        user.is_verified = True
+        
+        # Получаем данные из соцсети
+        extra_data = sociallogin.account.extra_data
+        
+        # Устанавливаем username до сохранения пользователя
+        email = extra_data.get('email')
+        if email:
+            base_username = email.split('@')[0]
+            # Если base_username пустой, используем часть email до @
+            if not base_username:
+                base_username = 'user'
+            username = base_username
+            counter = 1
+            # Проверяем существование username и добавляем число если занят
+            while User.objects.filter(username=username).exists():
+                username = f"{base_username}{counter}"
+                counter += 1
+            user.username = username
+        else:
+            # Если email не предоставлен, генерируем уникальный username
+            user.username = f"user_{str(uuid.uuid4())[:8]}"
+        
+        # Заполняем дополнительные поля в зависимости от провайдера
         if sociallogin.account.provider == 'google':
-            user.is_verified = True  # Автоматически верифицируем пользователей из Google
-            # Получаем аватар, если есть
-            if 'picture' in sociallogin.account.extra_data:
-                from django.core.files.base import ContentFile
-                from urllib.request import urlopen
+            if 'picture' in extra_data:
                 try:
-                    avatar_url = sociallogin.account.extra_data['picture']
+                    from django.core.files.base import ContentFile
+                    from urllib.request import urlopen
+                    avatar_url = extra_data['picture']
                     response = urlopen(avatar_url)
                     user.avatar.save(
                         f'google_{sociallogin.account.uid}.jpg',
-                        ContentFile(response.read())
+                        ContentFile(response.read()),
+                        save=False
                     )
                 except Exception as e:
-                    # Игнорируем ошибки при загрузке аватара
-                    pass
+                    print(f"Error saving avatar: {str(e)}")
+                    
+            if 'name' in extra_data:
+                user.full_name = extra_data['name']
+            if 'given_name' in extra_data:
+                user.first_name = extra_data['given_name']
+            if 'family_name' in extra_data:
+                user.last_name = extra_data['family_name']
             
         elif sociallogin.account.provider == 'yandex':
-            user.is_verified = True  # Верифицируем пользователей из Яндекс
-            # Обработка аватара для Яндекс
-            if 'default_avatar_id' in sociallogin.account.extra_data:
-                # Логика для получения аватара из Яндекс
-                pass
+            if 'real_name' in extra_data:
+                user.full_name = extra_data['real_name']
+            if 'first_name' in extra_data:
+                user.first_name = extra_data['first_name']
+            if 'last_name' in extra_data:
+                user.last_name = extra_data['last_name']
         
         return user
-    
+
     def save_user(self, request, sociallogin, form=None):
         """Сохраняет пользователя, авторизованного через соцсеть"""
         user = super().save_user(request, sociallogin, form)
@@ -88,6 +137,15 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         from accounts.models import UserProfile
         UserProfile.objects.get_or_create(user=user)
         
+        # Генерируем JWT токены
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+        
+        # Сохраняем токены в сессии
+        request.session['access_token'] = access_token
+        request.session['refresh_token'] = refresh_token
+        
         return user
     
     def get_connect_redirect_url(self, request, socialaccount):
@@ -95,56 +153,41 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         next_url = request.GET.get('next')
         if next_url:
             return next_url
-        return settings.FRONTEND_URL + '/profile'
+        return settings.FRONTEND_URL
     
     def get_login_redirect_url(self, request):
-        """Перенаправляет на endpoint обработки социальной авторизации с токеном"""
+        """Перенаправляет на frontend после социальной авторизации"""
         # Получаем URL для перенаправления из параметра next или используем дефолтный
-        next_url = request.GET.get('next', f"{settings.FRONTEND_URL}/profile")
+        next_url = request.GET.get('next', settings.FRONTEND_URL)
         
-        # Формируем полный URL для перенаправления (включая домен)
-        host = request.get_host()
-        scheme = 'https' if request.is_secure() else 'http'
-        base_url = f"{scheme}://{host}"
-        
-        # Перенаправляем на обработчик социальной авторизации
-        callback_url = f"{base_url}/api/accounts/social/callback/?next={next_url}"
-        
-        return callback_url
+        # Генерируем JWT токены
+        if hasattr(request, 'user') and request.user.is_authenticated:
+            refresh = RefreshToken.for_user(request.user)
+            access_token = str(refresh.access_token)
+            refresh_token = str(refresh)
+            
+            # Устанавливаем куки с токенами
+            response = redirect(next_url)
+            response.set_cookie(
+                'access_token',
+                access_token,
+                httponly=True,
+                secure=settings.SESSION_COOKIE_SECURE,
+                samesite='Lax',
+                max_age=3600  # 1 час
+            )
+            response.set_cookie(
+                'refresh_token',
+                refresh_token,
+                httponly=True,
+                secure=settings.SESSION_COOKIE_SECURE,
+                samesite='Lax',
+                max_age=7 * 24 * 3600  # 7 дней
+            )
+            return response
+            
+        return next_url
     
-    def is_safe_url(self, url):
-        """Переопределяем проверку безопасности URL, разрешая все URL"""
-        # Разрешаем любой URL для перенаправления
-        return True
-        
-    def pre_social_login(self, request, sociallogin):
-        """Действия перед авторизацией через соцсеть"""
-        # Если пользователь уже зарегистрирован с таким email, автоматически соединяем аккаунты
-        if sociallogin.is_existing:
-            return
-            
-        # Если пользователь уже аутентифицирован, соединяем аккаунты
-        if request.user.is_authenticated:
-            sociallogin.connect(request, request.user)
-            return
-            
-        # Проверяем, существует ли пользователь с таким email
-        email = sociallogin.account.extra_data.get('email')
-        if not email:
-            return
-            
-        # Поиск пользователя по email
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        try:
-            user = User.objects.get(email=email)
-            # Если пользователь найден, привязываем социальный аккаунт
-            sociallogin.connect(request, user)
-        except User.DoesNotExist:
-            # Пользователь не найден, продолжаем стандартный процесс регистрации
-            pass
-            
     def is_auto_signup_allowed(self, request, sociallogin):
-        """Проверяет, разрешена ли автоматическая регистрация"""
-        # Всегда разрешаем автоматическую регистрацию, даже если аккаунт уже существует
+        """Всегда разрешаем автоматическую регистрацию"""
         return True 

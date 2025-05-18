@@ -1,29 +1,25 @@
 import React from "react";
-import styles from "./modalCSS/InputCheckbox.module.css"
+import styles from "./ModalWindows.module.css";
 
 interface InputCheckboxProps {
     idInput: string;
     nameInput: string;
-    valueInput: string;
+    valueInput?: string;
     label?: string;
     typeInput?: string;
     checked?: boolean;
     onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
-<<<<<<< HEAD:frontend/src/components/modalWindows/InputCheckbox.js
-const InputCheckbox = ({idInput, nameInput, valueInput, label = "", typeInput = "checkbox", onChange}) => {
-=======
 const InputCheckbox: React.FC<InputCheckboxProps> = ({
-    idInput, 
-    nameInput, 
-    valueInput, 
-    label = "", 
-    typeInput = "checkbox", 
-    checked = false, 
+    idInput,
+    nameInput,
+    valueInput,
+    label = "",
+    typeInput = "checkbox",
+    checked = false,
     onChange = () => {}
 }) => {
->>>>>>> 63a7ddfc7c6785d7e614d516eed767386405399d:frontend/src/components/modalWindows/InputCheckbox.tsx
     return (
         <div className={styles.checkBoxWrapper}>
             <input
@@ -31,16 +27,11 @@ const InputCheckbox: React.FC<InputCheckboxProps> = ({
                 id={idInput}
                 name={nameInput}
                 value={valueInput}
-                className={styles.checkbox}
-<<<<<<< HEAD:frontend/src/components/modalWindows/InputCheckbox.js
-=======
                 checked={checked}
->>>>>>> 63a7ddfc7c6785d7e614d516eed767386405399d:frontend/src/components/modalWindows/InputCheckbox.tsx
                 onChange={onChange}
+                className={styles.checkBox}
             />
-            <label
-                className={styles.label}
-                htmlFor={idInput}>
+            <label htmlFor={idInput} className={styles.checkBoxLabel}>
                 {label}
             </label>
         </div>

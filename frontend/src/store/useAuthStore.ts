@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { api } from '@/lib/api/fetch';
 
 interface User {
   id: string | number;
@@ -30,10 +31,14 @@ interface RegistrationData {
   password2: string;
 }
 
+interface Tokens {
+  access: string;
+  refresh: string;
+}
+
 interface AuthResponse {
   user: User;
   token: string;
-  refresh_token?: string;
 }
 
 interface ErrorResponse {
@@ -51,6 +56,7 @@ interface AuthState {
   error: string | null;
   showEmailConfirmedModal: boolean;
   disableAutoLogin: boolean;
+  tokens: Tokens | null;
   
   login: (credentials: Credentials) => Promise<void>;
   register: (data: RegistrationData) => Promise<void>;
@@ -59,10 +65,8 @@ interface AuthState {
   checkAuthStatus: () => Promise<void>;
   setShowEmailConfirmedModal: (show: boolean) => void;
   setDisableAutoLogin: (disable: boolean) => void;
+  setTokens: (tokens: Tokens) => void;
 }
-
-const TOKEN_NAME = 'auth-token';
-const REFRESH_TOKEN_NAME = 'refresh-token';
 
 const handleApiError = (error: any, defaultMessage: string): string => {
   if (error instanceof Error) {
@@ -75,19 +79,28 @@ const handleApiError = (error: any, defaultMessage: string): string => {
 };
 
 const clearAuthData = () => {
-  localStorage.removeItem(TOKEN_NAME);
-  localStorage.removeItem(REFRESH_TOKEN_NAME);
-  localStorage.removeItem('auth-storage');
+  // Очищаем localStorage и sessionStorage
+  localStorage.clear();
+  sessionStorage.clear();
   
-  // Очищаем куки с учетом всех возможных путей
-  const cookies = ['sessionid', 'csrftoken', 'auth-token', 'refresh-token'];
-  const paths = ['/', '/api', '/accounts'];
-  
+  // Очищаем все куки
+  const cookies = [
+    'access_token',
+    'refresh_token',
+    'sessionid',
+    'dj_session_id',
+    'csrftoken',
+    'auth_token',
+    'next_hmr_refresh_hash'
+  ];
+
   cookies.forEach(cookie => {
-    paths.forEach(path => {
-      document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${path};`;
-    });
+    document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
+    document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
   });
+  
+  // Устанавливаем флаг блокировки автовхода
+  localStorage.setItem('disableAutoLogin', 'true');
 };
 
 export const useAuthStore = create<AuthState>()(
@@ -98,65 +111,44 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
       showEmailConfirmedModal: false,
-      disableAutoLogin: false,
+      disableAutoLogin: true, // По умолчанию автологин отключен
+      tokens: null,
+      
+      setTokens: (tokens: Tokens) => {
+        set({ tokens, isAuthenticated: true });
+        // Сохраняем токены в localStorage
+        localStorage.setItem('access_token', tokens.access);
+        localStorage.setItem('refresh_token', tokens.refresh);
+      },
       
       login: async (credentials: Credentials) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await fetch('/api/auth/login/', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(credentials),
-          });
-
-          const responseText = await response.text();
+          const response = await api.auth.login(credentials.email, credentials.password);
+          const userData = response.data;
           
-          if (!response.ok) {
-            let errorMessage = 'Ошибка входа';
-            try {
-              if (responseText) {
-                const errorData: ErrorResponse = JSON.parse(responseText);
-                errorMessage = errorData.detail || errorData.non_field_errors?.[0] || 'Ошибка входа';
-              }
-            } catch (e) {
-              console.error('Ошибка при разборе ответа:', e);
-            }
-            throw new Error(errorMessage);
-          }
-
-          let data: AuthResponse;
-          try {
-            data = responseText ? JSON.parse(responseText) : { user: null, token: '' };
-          } catch (e) {
-            console.error('Ошибка при разборе JSON:', e);
-            throw new Error('Ошибка при обработке ответа сервера');
-          }
-
-          if (data.token) {
-            localStorage.setItem(TOKEN_NAME, data.token);
-            if (data.refresh_token) {
-              localStorage.setItem(REFRESH_TOKEN_NAME, data.refresh_token);
-            }
-          }
-            
+          // После успешного логина получаем данные пользователя
+          const userResponse = await api.auth.getUser();
+          const user = userResponse.data;
+          
+          // Сбрасываем флаг блокировки автологина только при успешном входе
+          localStorage.removeItem('disableAutoLogin');
+          
           set({ 
-            user: data.user,
+            user,
             isAuthenticated: true,
             isLoading: false,
             error: null,
             disableAutoLogin: false
           });
-          
         } catch (error) {
           console.error('Ошибка входа:', error);
+          clearAuthData();
           set({ 
             user: null,
             isAuthenticated: false,
             isLoading: false,
-            error: handleApiError(error, 'Произошла ошибка при входе'),
+            error: error instanceof Error ? error.message : 'Произошла ошибка при входе',
             disableAutoLogin: true
           });
         }
@@ -165,36 +157,8 @@ export const useAuthStore = create<AuthState>()(
       register: async (data: RegistrationData) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await fetch('/api/auth/registration/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-            credentials: 'include',
-          });
-
-          const responseText = await response.text();
-          
-          if (!response.ok) {
-            let errorMessage = 'Ошибка регистрации';
-            try {
-              if (responseText) {
-                const errorData: ErrorResponse = JSON.parse(responseText);
-                if (errorData.email) errorMessage = `Email: ${errorData.email[0]}`;
-                else if (errorData.username) errorMessage = `Пользователь: ${errorData.username[0]}`;
-                else if (errorData.password) errorMessage = `Пароль: ${errorData.password[0]}`;
-                else if (errorData.non_field_errors) errorMessage = errorData.non_field_errors[0];
-                else if (errorData.detail) errorMessage = errorData.detail;
-              }
-            } catch (e) {
-              console.error('Ошибка при разборе ответа:', e);
-            }
-            throw new Error(errorMessage);
-          }
-
+          await api.post('/auth/registration/', data);
           set({ isLoading: false });
-          
         } catch (error) {
           console.error('Ошибка регистрации:', error);
           set({
@@ -206,22 +170,29 @@ export const useAuthStore = create<AuthState>()(
       },
       
       logout: async () => {
-        set({ isLoading: true, error: null });
+        set({ isLoading: true });
         try {
-          const response = await fetch('/api/auth/logout/', { 
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
+          // Сначала очищаем данные на фронтенде
+          clearAuthData();
+          
+          // Затем делаем запрос на бэкенд для выхода
+          await api.auth.logout();
+          
+          // Устанавливаем состояние после выхода
+          set({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: null,
+            disableAutoLogin: true,
+            tokens: null
           });
           
-          if (!response.ok) {
-            console.warn('Не удалось выполнить выход на сервере');
-          }
+          // Принудительно перезагружаем страницу для очистки всех состояний
+          window.location.href = '/login?force_login=true';
         } catch (error) {
           console.error('Ошибка при выходе:', error);
-        } finally {
+          // Даже при ошибке очищаем все данные
           clearAuthData();
           set({
             user: null,
@@ -229,77 +200,71 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
             error: null,
             disableAutoLogin: true,
+            tokens: null
           });
+          // Перенаправляем на страницу входа
+          window.location.href = '/login?force_login=true';
+        }
+      },
+      
+      checkAuthStatus: async () => {
+        const state = get();
+        const disableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
+        
+        // Не проверяем статус если:
+        // 1. Идет загрузка
+        // 2. Автологин отключен
+        if (state.isLoading || disableAutoLogin) {
+          set({ 
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: null,
+            disableAutoLogin: true,
+            tokens: null
+          });
+          return;
+        }
+        
+        set({ isLoading: true });
+        try {
+          const response = await api.auth.getUser();
+          const user = response.data;
           
-          window.location.href = '/';
+          set({ 
+            user, 
+            isAuthenticated: true, 
+            isLoading: false,
+            error: null,
+            disableAutoLogin: false
+          });
+        } catch (error) {
+          console.error('Ошибка проверки аутентификации:', error);
+          clearAuthData();
+          set({ 
+            user: null, 
+            isAuthenticated: false, 
+            isLoading: false,
+            error: null,
+            disableAutoLogin: true,
+            tokens: null
+          });
         }
       },
       
       clearError: () => set({ error: null }),
-
+      
       setShowEmailConfirmedModal: (show: boolean) => {
         set({ showEmailConfirmedModal: show });
       },
-
+      
       setDisableAutoLogin: (disable: boolean) => {
-        localStorage.setItem('disableAutoLogin', disable.toString());
+        if (disable) {
+          localStorage.setItem('disableAutoLogin', 'true');
+        } else {
+          localStorage.removeItem('disableAutoLogin');
+        }
         set({ disableAutoLogin: disable });
-      },
-
-      checkAuthStatus: async () => {
-        const state = get();
-        
-        if (state.disableAutoLogin || state.isLoading) {
-          return;
-        }
-
-        const token = localStorage.getItem(TOKEN_NAME);
-        if (!token) {
-          set({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: null,
-          });
-          return;
-        }
-
-        set({ isLoading: true, error: null });
-        
-        try {
-          const response = await fetch('/api/auth/user/', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            credentials: 'include',
-          });
-
-          if (!response.ok) {
-            throw new Error('Не авторизован');
-          }
-
-          const userData: User = await response.json();
-          
-          set({
-            user: userData,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null,
-            disableAutoLogin: false,
-          });
-          
-        } catch (error) {
-          console.error('Ошибка проверки статуса:', error);
-          clearAuthData();
-          set({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: null,
-          });
-        }
       },
     }),
     {
@@ -307,7 +272,8 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({ 
         user: state.user,
         isAuthenticated: state.isAuthenticated,
-        disableAutoLogin: state.disableAutoLogin
+        disableAutoLogin: state.disableAutoLogin,
+        tokens: state.tokens
       }),
     }
   )

@@ -64,42 +64,60 @@ export function Header() {
   }, []);
 
   // Функция для обработки нажатия на кнопку "Войти"
-  const handleLogin = () => {
-    // Очищаем cookie disableAutoLogin перед переходом на страницу входа
-    document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-    // Очищаем флаг в localStorage
-    localStorage.removeItem('disableAutoLogin');
-    // Обновляем состояние в store
-    setDisableAutoLogin(false);
-    
-    // Добавляем параметр force_login для принудительного входа
-    window.location.href = '/login?force_login=true';
+  const handleLogin = async () => {
+    try {
+      // Сначала очищаем все куки
+      const cookies = [
+        'access_token',
+        'refresh_token',
+        'sessionid',
+        'dj_session_id',
+        'csrftoken',
+        'auth_token',
+        'next_hmr_refresh_hash'
+      ];
+
+      cookies.forEach(cookie => {
+        document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
+        document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+      });
+
+      // Очищаем localStorage
+      localStorage.clear();
+      sessionStorage.clear();
+
+      // Очищаем состояние в store
+      setDisableAutoLogin(true);
+      
+      // Принудительно очищаем состояние пользователя
+      useAuthStore.setState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null,
+        disableAutoLogin: true
+      });
+
+      // Переходим на страницу логина с параметром force_login
+      router.push('/login?force_login=true');
+    } catch (error) {
+      console.error('Ошибка при очистке данных:', error);
+      router.push('/login?force_login=true');
+    }
   };
 
   // Функция для обработки нажатия на имя пользователя
   const handleProfileClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    // Проверяем наличие сессионной куки
-    const hasSession = document.cookie.includes('sessionid=') || 
-                        document.cookie.includes('dj_session_id=') || 
-                        document.cookie.includes('auth_token=') ||
-                        document.cookie.includes('csrftoken=');
-    
-    // Если есть сессия - сбрасываем флаг блокировки автологина
-    if (hasSession) {
-      document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-      localStorage.removeItem('disableAutoLogin');
-      setDisableAutoLogin(false);
+    // Переходим на страницу профиля только если пользователь аутентифицирован
+    if (isAuthenticated && user) {
+      router.push('/profile');
+    } else {
+      router.push('/login');
     }
-    
-    // Переходим на страницу профиля
-    router.push('/profile');
   };
 
   const handleLogout = async () => {
-    // Явно устанавливаем флаг в localStorage перед разлогиниванием
-    localStorage.setItem('disableAutoLogin', 'true');
-    
     try {
       // Блокируем использование кнопки на время выхода
       console.log('Выход из аккаунта...');
@@ -107,23 +125,14 @@ export function Header() {
       // Вызываем logout из стора
       await logout();
       
-      // Дополнительная проверка и очистка куки
-      document.cookie = 'sessionid=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-      document.cookie = 'dj_session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-      document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-      document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-      
-      // Убедимся, что все состояния очищены
-      localStorage.removeItem('auth-storage');
-      
       console.log('Выход успешно выполнен');
       
-      // Принудительно обновляем страницу, чтобы сбросить все состояния приложения
-      window.location.href = '/';
+      // Используем роутер для навигации
+      router.push('/');
     } catch (error) {
       console.error('Ошибка при выходе:', error);
-      // В случае ошибки всё равно принудительно обновляем страницу
-      window.location.href = '/';
+      // В случае ошибки всё равно перенаправляем на главную
+      router.push('/');
     }
   };
 
