@@ -1,0 +1,16 @@
+.checkBoxWrapper {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.checkBox {
+    margin-right: 0.5rem;
+    cursor: pointer;
+}
+
+.checkBoxLabel {
+    font-size: 0.875rem;
+    color: #666;
+    cursor: pointer;
+} 

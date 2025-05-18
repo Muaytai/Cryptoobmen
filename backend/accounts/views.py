@@ -109,22 +109,45 @@ class SocialLoginCallbackView(View):
     
     def get(self, request, *args, **kwargs):
         """Обрабатывает GET запрос после авторизации через соцсеть"""
-        # Получаем URL для перенаправления из параметра next или используем дефолтный
-        redirect_url = request.GET.get('next', f"{settings.FRONTEND_URL}/profile")
-        
-        # Если пользователь авторизован, генерируем JWT токен и добавляем его к URL
-        if request.user.is_authenticated:
-            try:
+        try:
+            # Получаем URL для перенаправления из параметра next или используем дефолтный
+            next_url = request.GET.get('next', f"{settings.FRONTEND_URL}/profile")
+            
+            # Если пользователь авторизован, генерируем JWT токены
+            if request.user.is_authenticated:
                 tokens = get_tokens_for_user(request.user)
-                # Добавляем access token к URL для перенаправления
-                if '?' in redirect_url:
-                    redirect_url = f"{redirect_url}&token={tokens['access']}"
-                else:
-                    redirect_url = f"{redirect_url}?token={tokens['access']}"
+                
+                # Создаем response для редиректа
+                response = HttpResponseRedirect(next_url)
+                
+                # Устанавливаем куки с токенами
+                response.set_cookie(
+                    settings.SIMPLE_JWT['AUTH_COOKIE'],
+                    tokens['access'],
+                    max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
+                    path='/',
+                    httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+                    samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
+                    secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE']
+                )
+                
+                response.set_cookie(
+                    'refresh_token',
+                    tokens['refresh'],
+                    max_age=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds(),
+                    path='/',
+                    httponly=True,
+                    samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
+                    secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE']
+                )
                 
                 logger.info(f"Успешная авторизация через соцсеть для пользователя {request.user.email}")
-            except Exception as e:
-                logger.error(f"Ошибка при создании токенов: {str(e)}")
-        
-        # Перенаправляем на фронтенд
-        return HttpResponseRedirect(redirect_url)
+                return response
+            
+            # Если пользователь не авторизован, перенаправляем на страницу входа
+            logger.warning("Попытка социальной авторизации без пользователя")
+            return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?error=auth_failed")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обработке социальной авторизации: {str(e)}")
+            return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?error=server_error")

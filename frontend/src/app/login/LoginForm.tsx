@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
 import styles from './Login.module.css';
-import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
+import {FaEye, FaEyeSlash, FaGoogle} from 'react-icons/fa';
 import {TbBrandYandex} from 'react-icons/tb';
 import {useModal} from "@/utils/modalWindows/generalFunctions";
 import WriteAboutError from "@/components/modalWindows/WriteAboutError";
@@ -14,60 +14,58 @@ import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 export default function LoginForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const {login, isLoading, error, isAuthenticated, setDisableAutoLogin} = useAuthStore();
+    const {login, isLoading, error, setDisableAutoLogin, setTokens} = useAuthStore();
     const [credentials, setCredentials] = useState({email: '', password: ''});
     const [showPassword, setShowPassword] = useState(false);
-    const [redirectPath, setRedirectPath] = useState('/profile');
     const [loginAttempted, setLoginAttempted] = useState(false);
-
-    // При монтировании компонента сбрасываем флаг блокировки автовхода
-    useEffect(() => {
-        // Очищаем куку disableAutoLogin при загрузке страницы входа
-        document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        localStorage.removeItem('disableAutoLogin');
-        setDisableAutoLogin(false);
-    }, [setDisableAutoLogin]);
-
-    // Получаем параметр redirect из URL
-    useEffect(() => {
-        const redirect = searchParams.get('redirect');
-        if (redirect) {
-            // Удаляем лишние слэши и проверяем валидность пути
-            const sanitizedRedirect = redirect.replace(/^\/+|\/+$/g, '');
-            if (sanitizedRedirect) {
-                setRedirectPath(`/${sanitizedRedirect}`);
-            } else {
-                setRedirectPath('/profile');
-            }
-        } else {
-            setRedirectPath('/profile');
-        }
-    }, [searchParams]);
-
-    // Эффект, который следит за состоянием авторизации и выполняет перенаправление
-    useEffect(() => {
-        if (isAuthenticated && loginAttempted) {
-            console.log('Пользователь авторизован, перенаправление на:', redirectPath);
-            router.push(redirectPath);
-        }
-    }, [isAuthenticated, loginAttempted, redirectPath, router]);
-
     const modalManagerChangePassword = useModal(false);
+
+    // Функция для очистки всех данных аутентификации
+    const clearAllAuthData = () => {
+        // Очищаем куки
+        const cookies = [
+            'access_token',
+            'refresh_token',
+            'sessionid',
+            'dj_session_id',
+            'csrftoken',
+            'auth_token',
+            'next_hmr_refresh_hash'
+        ];
+
+        cookies.forEach(cookie => {
+            document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
+            document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+        });
+
+        // Очищаем localStorage и sessionStorage
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // Устанавливаем флаг блокировки автовхода
+        localStorage.setItem('disableAutoLogin', 'true');
+        setDisableAutoLogin(true);
+    };
+
+    // При монтировании компонента проверяем force_login и токены
+    useEffect(() => {
+        const forceLogin = searchParams.get('force_login');
+        
+        if (forceLogin === 'true') {
+            clearAllAuthData();
+        } else {
+            // Если нет force_login, просто сбрасываем флаг автовхода
+            localStorage.removeItem('disableAutoLogin');
+            setDisableAutoLogin(false);
+        }
+    }, [searchParams, setDisableAutoLogin]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
             setLoginAttempted(true);
-            
-            // Убеждаемся, что флаг disableAutoLogin точно снят перед входом
-            document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-            localStorage.removeItem('disableAutoLogin');
-            setDisableAutoLogin(false);
-            
             await login(credentials);
-            console.log('Вход выполнен успешно, готовимся к перенаправлению в:', redirectPath);
-            
-            // Перенаправление происходит в useEffect выше, после обновления состояния isAuthenticated
+            console.log('Вход выполнен успешно');
         } catch (err) {
             console.error('Ошибка входа:', err);
             setLoginAttempted(false);
@@ -75,43 +73,46 @@ export default function LoginForm() {
     };
 
     const handleLinkToRegister = () => {
-        // Явно очищаем cookie disableAutoLogin перед переходом
-        document.cookie = 'disableAutoLogin=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        localStorage.removeItem('disableAutoLogin');
+        // Очищаем все данные перед переходом
+        clearAllAuthData();
         
-        // Используем window.location вместо router.push для полного обновления страницы
-        window.location.href = '/register';
-    }
+        // Добавляем force_login=true для предотвращения автоматического входа
+        router.push('/register?force_login=true');
+    };
 
     const handleGoogleLogin = () => {
-        // Получаем текущий URL фронтенда для перенаправления
-        const frontendUrl = window.location.origin;
-        // Используем NEXT_PUBLIC_BACKEND_URL без /api суффикса или прямой URL
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+        const next = `${frontendUrl}/login`;
         
-        // Используем абсолютный URL фронтенда для перенаправления после социальной авторизации
-        const callbackUrl = encodeURIComponent(`${frontendUrl}/login-success`);
+        // Очищаем все данные перед авторизацией
+        clearAllAuthData();
         
-        console.log('Attempting Google login with URL:', `${backendUrl}/accounts/google/login/?next=${callbackUrl}`);
-        
-        // Перенаправляем на страницу авторизации Google с использованием правильного пути
-        window.location.href = `${backendUrl}/accounts/google/login/?next=${callbackUrl}`;
+        window.location.href = `${backendUrl}/accounts/google/login/?process=login&next=${encodeURIComponent(next)}`;
     };
 
     const handleYandexLogin = () => {
-        // Получаем текущий URL фронтенда для перенаправления
-        const frontendUrl = window.location.origin;
-        // Используем NEXT_PUBLIC_BACKEND_URL без /api суффикса или прямой URL
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+        const next = `${frontendUrl}/login`;
         
-        // Используем абсолютный URL фронтенда для перенаправления после социальной авторизации
-        const callbackUrl = encodeURIComponent(`${frontendUrl}/login-success`);
+        // Очищаем все данные перед авторизацией
+        clearAllAuthData();
         
-        console.log('Attempting Yandex login with URL:', `${backendUrl}/accounts/yandex/login/?next=${callbackUrl}`);
-        
-        // Перенаправляем на страницу авторизации Яндекс с использованием правильного пути
-        window.location.href = `${backendUrl}/accounts/yandex/login/?next=${callbackUrl}`;
+        window.location.href = `${backendUrl}/accounts/yandex/login/?process=login&next=${encodeURIComponent(next)}`;
     };
+
+    // Проверяем наличие ошибок в URL при загрузке страницы
+    useEffect(() => {
+        const error = searchParams.get('error');
+        if (error === 'auth_failed') {
+            console.error('Ошибка авторизации через соцсеть');
+            // Можно показать сообщение пользователю
+        } else if (error === 'server_error') {
+            console.error('Ошибка сервера при авторизации');
+            // Можно показать сообщение пользователю
+        }
+    }, [searchParams]);
 
     return (
         <div className="flex min-h-screen items-center justify-center">

@@ -8,7 +8,7 @@ from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Путь к файлу .env в корневой директории проекта
-load_dotenv(Path(__file__).resolve().parent.parent / '.env')
+load_dotenv(Path(__file__).resolve().parent.parent / '.env.backend')
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -66,6 +66,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.middleware.JWTCookieMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
@@ -78,7 +79,7 @@ MIDDLEWARE = [
 # Настройки безопасности
 SECURE_SSL_REDIRECT = not DEBUG
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -106,34 +107,19 @@ SESSION_COOKIE_AGE = 1209600  # 2 недели
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_NAME = 'sessionid'
 SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = False
 SESSION_COOKIE_DOMAIN = None
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Важно для безопасности
 
 # Настройки REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/day',
-        'user': '1000/day'
-    },
-    'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
-    ],
-    'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
-    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
+    'EXCEPTION_HANDLER': 'rest_framework.views.exception_handler',
 }
 
 ROOT_URLCONF = 'core.urls'
@@ -227,78 +213,6 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000' if DEBUG else N
 if not FRONTEND_URL and not DEBUG:
     raise ImproperlyConfigured('FRONTEND_URL must be set in production')
 
-# JWT настройки
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
-    'VERIFYING_KEY': None,
-    'AUTH_HEADER_TYPES': ('Bearer',),
-    'USER_ID_FIELD': 'id',
-    'USER_ID_CLAIM': 'user_id',
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    'TOKEN_TYPE_CLAIM': 'token_type',
-    'JTI_CLAIM': 'jti',
-    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
-    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
-    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
-}
-
-# REST Auth настройки
-REST_AUTH = {
-    'USE_JWT': True,
-    'JWT_AUTH_COOKIE': 'auth-token',
-    'JWT_AUTH_REFRESH_COOKIE': 'refresh-token',
-    'JWT_AUTH_HTTPONLY': True,
-    'JWT_AUTH_SAMESITE': 'Lax',
-    'JWT_AUTH_SECURE': not DEBUG,
-    'SESSION_LOGIN': False,
-    'USER_DETAILS_SERIALIZER': 'accounts.serializers.UserDetailsSerializer',
-}
-
-# AllAuth настройки
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
-ACCOUNT_USERNAME_REQUIRED = True
-ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
-SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https' if not DEBUG else 'http'
-ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
-ACCOUNT_CONFIRM_EMAIL_ON_GET = True
-ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
-ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = f"{FRONTEND_URL}/?email_confirmed=true"
-ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = f"{FRONTEND_URL}/?email_confirmed=true"
-LOGIN_REDIRECT_URL = f'{FRONTEND_URL}/login-success/'
-
-# Социальные провайдеры
-SOCIALACCOUNT_PROVIDERS = {
-    'google': {
-        'APP': {
-            'client_id': os.getenv('GOOGLE_CLIENT_ID'),
-            'secret': os.getenv('GOOGLE_CLIENT_SECRET'),
-            'key': ''
-        },
-        'SCOPE': [
-            'profile',
-            'email',
-        ],
-        'AUTH_PARAMS': {
-            'access_type': 'online',
-        }
-    },
-    'yandex': {
-        'APP': {
-            'client_id': os.getenv('YANDEX_CLIENT_ID'),
-            'secret': os.getenv('YANDEX_CLIENT_SECRET'),
-            'key': ''
-        }
-    }
-}
-
 # CORS настройки
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
 CORS_ALLOW_CREDENTIALS = True
@@ -320,6 +234,8 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'access-control-allow-credentials',
+    'access-control-allow-origin',
 ]
 
 # CSRF настройки
@@ -388,4 +304,89 @@ LOGGING = {
             'propagate': True,
         },
     },
+}
+
+# JWT настройки
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    
+    'AUTH_COOKIE': 'access_token',  
+    'AUTH_COOKIE_DOMAIN': None,
+    'AUTH_COOKIE_SECURE': False,
+    'AUTH_COOKIE_HTTP_ONLY': True,
+    'AUTH_COOKIE_PATH': '/',
+    'AUTH_COOKIE_SAMESITE': 'Lax',
+}
+
+# REST Auth настройки
+REST_AUTH = {
+    'USE_JWT': True,
+    'JWT_AUTH_COOKIE': SIMPLE_JWT['AUTH_COOKIE'],
+    'JWT_AUTH_REFRESH_COOKIE': 'refresh_token',
+    'JWT_AUTH_HTTPONLY': SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+    'JWT_AUTH_SAMESITE': SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
+    'JWT_AUTH_SECURE': SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+    'SESSION_LOGIN': False,
+}
+
+# AllAuth настройки
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_EMAIL_VERIFICATION = 'optional'  # Для соцсетей не требуем подтверждения email
+ACCOUNT_USERNAME_REQUIRED = False  # Не требуем username при регистрации через соцсети
+ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
+SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https' if not DEBUG else 'http'
+ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
+ACCOUNT_CONFIRM_EMAIL_ON_GET = True
+ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
+ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = f"{FRONTEND_URL}/profile"
+ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = f"{FRONTEND_URL}/profile"
+LOGIN_REDIRECT_URL = f'{FRONTEND_URL}/profile'
+
+# Настройки для социальной авторизации
+SOCIALACCOUNT_AUTO_SIGNUP = True  # Автоматическая регистрация через соцсети
+SOCIALACCOUNT_EMAIL_REQUIRED = True
+SOCIALACCOUNT_EMAIL_VERIFICATION = 'none'  # Не требуем подтверждения email для соцсетей
+SOCIALACCOUNT_QUERY_EMAIL = True  # Запрашиваем email у провайдера
+SOCIALACCOUNT_LOGIN_ON_GET = True  # Авторизация без подтверждения
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP': {
+            'client_id': os.getenv('GOOGLE_CLIENT_ID'),
+            'secret': os.getenv('GOOGLE_CLIENT_SECRET'),
+            'key': ''
+        },
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+            'prompt': 'select_account'
+        }
+    },
+    'yandex': {
+        'APP': {
+            'client_id': os.getenv('YANDEX_CLIENT_ID'),
+            'secret': os.getenv('YANDEX_CLIENT_SECRET'),
+            'key': ''
+        }
+    }
 }

@@ -2,8 +2,17 @@
 venv/
 venv_main/
 env/
+
+# Все .env файлы (исключаем из Git)
 .env
 **/.env
+.env.*
+**/.env.*
+
+# Но разрешаем примеры конфигураций
+!.env.example
+!frontend/.env.example
+!backend/.env.example
 
 # Python кэш
 __pycache__/
@@ -59,4 +68,6 @@ core/local_settings.py
 **/docker/**/.env*
 postgres/data/
 docker-compose.local.yml
-
+.env.backend
+.env.dev
+.env.prod
