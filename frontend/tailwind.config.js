@@ -29,6 +29,7 @@ module.exports = {
         },
         card: {
           DEFAULT: "hsl(var(--card) / <alpha-value>)",
+          hover: "hsl(var(--subcard-bg) / <alpha-value>)",
           foreground: "#111827",
           dark: "#1A1A1A",
           "dark-foreground": "#FFFFFF",
