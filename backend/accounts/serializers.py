@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
 from allauth.account.adapter import get_adapter
 from dj_rest_auth.registration.serializers import RegisterSerializer
+from dj_rest_auth.serializers import LoginSerializer
 from .models import UserProfile, UserDocument
 
 User = get_user_model()
@@ -90,3 +91,24 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             profile.save()
         
         return instance 
+
+
+class CustomLoginSerializer(LoginSerializer):
+    """Кастомный сериализатор для логина, использующий email вместо username"""
+    username = None  # Отключаем поле username
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(style={'input_type': 'password'})
+
+    def validate(self, attrs):
+        # Здесь переносим email в поле username для стандартной аутентификации
+        email = attrs.get('email')
+        password = attrs.get('password')
+        
+        # Проверяем, что email и пароль указаны
+        if email and password:
+            # Подготавливаем данные для стандартной аутентификации
+            attrs['username'] = email  # Django будет искать пользователя по username
+            return super().validate(attrs)
+        else:
+            msg = 'Необходимо указать "email" и "password".'
+            raise serializers.ValidationError(msg, code='authorization') 

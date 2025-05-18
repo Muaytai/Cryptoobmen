@@ -5,14 +5,71 @@ import { SocialButtons } from '@/components/ui/SocialButtons';
 import chessImage from '../../public/images/chess.png';
 import { useEffect, useState, CSSProperties } from 'react';
 import { useTheme } from '@/lib/ThemeProvider';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useAuthStore } from '@/store/useAuthStore';
+
+// Простое модальное окно (вам нужно будет стилизовать его)
+const EmailConfirmedModal = ({ onClose }: { onClose: () => void }) => {
+  const { user } = useAuthStore();
+  const router = useRouter();
+
+  const handleGoToLogin = () => {
+    onClose();
+    router.push('/login?redirect=profile');
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+      backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', 
+      alignItems: 'center', justifyContent: 'center', zIndex: 1000
+    }}>
+      <div style={{
+        backgroundColor: '#2d2c3a', // Темный фон для модалки
+        color: 'white', 
+        padding: '30px', borderRadius: '12px', textAlign: 'center', 
+        maxWidth: '400px', width: '90%'
+      }}>
+        <h2 style={{ fontSize: '24px', marginBottom: '15px' }}>Регистрация успешна!</h2>
+        <p style={{ marginBottom: '10px' }}>
+          {user?.username || 'Ваш email'}, ваш адрес электронной почты был успешно подтвержден.
+        </p>
+        <p style={{ marginBottom: '25px' }}>Добро пожаловать на платформу!</p>
+        <button 
+          onClick={handleGoToLogin} 
+          style={{
+            background: '#A259FF', color: '#fff', padding: '10px 20px', 
+            border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px'
+          }}
+        >
+          Войти
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export default function HomePage() {
+  const searchParams = useSearchParams();
+  // Используем отдельные селекторы useAuthStore, чтобы не возвращать новый объект на каждом рендере
+  const showEmailConfirmedModal = useAuthStore((state) => state.showEmailConfirmedModal);
+  const setShowEmailConfirmedModal = useAuthStore((state) => state.setShowEmailConfirmedModal);
+  const checkAuthStatus = useAuthStore((state) => state.checkAuthStatus);
+
   const [deviceType, setDeviceType] = useState('desktop');
   const [styleLoaded, setStyleLoaded] = useState(false);
   const { theme } = useTheme();
-  const [forceUpdate, setForceUpdate] = useState(0);
-  const [isDarkMode, setIsDarkMode] = useState(true); // По умолчанию темная тема
+  const isDarkMode = theme === 'dark'; // Используем тему напрямую из ThemeProvider
   const [styles, setStyles] = useState<Record<string, CSSProperties>>({});
+
+  useEffect(() => {
+    checkAuthStatus();
+
+    const emailConfirmed = searchParams.get('email_confirmed');
+    if (emailConfirmed === 'true') {
+      setShowEmailConfirmedModal(true);
+    }
+  }, [searchParams, setShowEmailConfirmedModal, checkAuthStatus]);
 
   // Определяем тип устройства с более точной градацией
   useEffect(() => {
@@ -38,15 +95,6 @@ export default function HomePage() {
     // Очищаем обработчики событий
     return () => window.removeEventListener('resize', checkDevice);
   }, []);
-
-  // Обновляем состояние isDarkMode при изменении темы
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      setIsDarkMode(document.documentElement.classList.contains('dark'));
-    }
-    // Вызываем перерендер компонента для обновления стилей
-    setForceUpdate(prev => prev + 1);
-  }, [theme]);
 
   // Добавляем стили для мобильной адаптации и темной/светлой темы
   useEffect(() => {
@@ -105,7 +153,6 @@ export default function HomePage() {
       const isMobile = deviceType === 'mobile' || deviceType === 'mobile-small';
       const isSmallMobile = deviceType === 'mobile-small';
       const isTablet = deviceType === 'tablet';
-      const isDarkModeValue = typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : isDarkMode;
       
       return {
         // Контейнер с основным контентом
@@ -135,7 +182,7 @@ export default function HomePage() {
         heading: {
           fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
           fontWeight: 700,
-          color: isDarkModeValue ? '#fff' : '#111827',
+          color: isDarkMode ? '#ffffff' : '#333333',
           marginBottom: isMobile ? 16 : 24,
           lineHeight: isMobile ? 1.3 : 1.2,
           maxWidth: '100%',
@@ -149,13 +196,11 @@ export default function HomePage() {
           display: 'inline' as const,
           fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
           wordBreak: 'break-word' as const,
-          hyphens: 'auto' as const,
-          color: isDarkModeValue ? '#fff' : '#111827'
         } as CSSProperties,
         
         // Span с выделенным цветом в заголовке
         headingColoredSpan: {
-          color: '#b48afd',
+          color: '#8b21fe',
           whiteSpace: 'normal' as const,
           display: 'inline' as const,
           fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
@@ -165,7 +210,7 @@ export default function HomePage() {
         
         // Подзаголовок
         subtitle: {
-          color: isDarkModeValue ? '#bdbdbd' : '#666666',
+          color: isDarkMode ? '#bdbdbd' : '#666666',
           fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 20 : 24,
           marginBottom: isMobile ? 30 : 48
         } as CSSProperties,
@@ -197,7 +242,7 @@ export default function HomePage() {
         // Кнопка дополнительного действия
         secondaryButton: {
           border: '1px solid #a259ff',
-          color: isDarkModeValue ? '#fff' : '#7C3AED',
+          color: isDarkMode ? '#fff' : '#7C3AED',
           borderRadius: 12,
           padding: isSmallMobile ? '10px 20px' : isMobile ? '12px 24px' : '16px 36px',
           fontWeight: 500,
@@ -269,7 +314,7 @@ export default function HomePage() {
           width: 48,
           height: 48,
           borderRadius: 12,
-          background: isDarkModeValue ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)',
+          background: isDarkMode ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -289,7 +334,7 @@ export default function HomePage() {
 
     // Обновляем стили
     setStyles(getResponsiveStyles());
-  }, [deviceType, forceUpdate]); // Изменяем зависимость на forceUpdate вместо isDarkMode
+  }, [deviceType, isDarkMode]);
 
   // Базовые стили для инициализации на сервере
   const defaultStyles: Record<string, CSSProperties> = {
@@ -329,11 +374,12 @@ export default function HomePage() {
         backgroundColor: isDarkMode ? '#111014' : 'white',
         color: isDarkMode ? 'white' : '#111827'
       } as CSSProperties}>
+        {showEmailConfirmedModal && <EmailConfirmedModal onClose={() => setShowEmailConfirmedModal(false)} />}
         <div style={currentStyles.contentContainer}>
           {/* Левая колонка */}
           <div style={currentStyles.textContainer}>
             <h1 style={currentStyles.heading}>
-              <span style={currentStyles.headingSpan}>Инвестируй и получай</span>{' '}
+              <span style={currentStyles.headingSpan}>Инвестируй и получай </span>
               <span style={currentStyles.headingColoredSpan}>от 10% годовых в USDT</span>
             </h1>
             <div style={currentStyles.subtitle}>

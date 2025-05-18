@@ -1,79 +1,204 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import {useState, useEffect} from 'react';
+import {useRouter, useSearchParams} from 'next/navigation';
 import Link from 'next/link';
-import { useAuthStore } from '@/store/useAuthStore';
-import { Input } from '@/components/ui/Input';
-import { authConfig } from '@/config/auth';
+import {useAuthStore} from '@/store/useAuthStore';
+import {Input} from '@/components/ui/Input';
 import styles from './Login.module.css';
-import { FaEye, FaEyeSlash, FaGoogle, FaApple } from 'react-icons/fa';
+import {FaEye, FaEyeSlash, FaGoogle} from 'react-icons/fa';
+import {TbBrandYandex} from 'react-icons/tb';
+import {useModal} from "@/utils/modalWindows/generalFunctions";
+import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 
 export default function LoginForm() {
-  const router = useRouter();
-  const { login, isLoading, error } = useAuthStore();
-  const [credentials, setCredentials] = useState({ username: '', password: '' });
-  const [showPassword, setShowPassword] = useState(false);
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const {login, isLoading, error, setDisableAutoLogin, setTokens} = useAuthStore();
+    const [credentials, setCredentials] = useState({email: '', password: ''});
+    const [showPassword, setShowPassword] = useState(false);
+    const [loginAttempted, setLoginAttempted] = useState(false);
+    const modalManagerChangePassword = useModal(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await login(credentials);
-      router.push('/dashboard');
-    } catch (err) {
-      console.error('Ошибка входа:', err);
-    }
-  };
+    // Функция для очистки всех данных аутентификации
+    const clearAllAuthData = () => {
+        // Очищаем куки
+        const cookies = [
+            'access_token',
+            'refresh_token',
+            'sessionid',
+            'dj_session_id',
+            'csrftoken',
+            'auth_token',
+            'next_hmr_refresh_hash'
+        ];
 
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className={styles.formBox}>
-        <div className={styles.title}>Вход</div>
-        <form onSubmit={handleSubmit}>
-          <Input
-            type="text"
-            placeholder="Email или телефон"
-            value={credentials.username}
-            onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
-            required
-          />
-          <div className="relative">
-            <Input
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Пароль"
-              value={credentials.password}
-              onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
-              required
-            />
-            <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary">
-              {showPassword ? <FaEyeSlash /> : <FaEye />}
-            </button>
-          </div>
-          <div className="flex justify-between items-center mt-2 mb-4">
-            <Link href="/forgot-password" className="text-sm text-primary hover:underline">Забыли пароль?</Link>
-          </div>
-          <button type="submit" className="button w-full mt-2" disabled={isLoading}>
-            {isLoading ? 'Вход...' : 'Войти'}
-          </button>
-          {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
-          <div className="flex items-center my-6">
-            <div className="flex-1 h-px bg-[#23233a]" />
-            <span className="mx-4 text-gray-400 text-sm">или</span>
-            <div className="flex-1 h-px bg-[#23233a]" />
-          </div>
-          <div className="flex gap-4">
-            <button type="button" className="flex-1 button-outline flex items-center justify-center gap-2">
-              <FaGoogle /> Google
-            </button>
-            <button type="button" className="flex-1 button-outline flex items-center justify-center gap-2">
-              <FaApple /> Apple
-            </button>
-          </div>
-          <div className="mt-4 text-center">
-            Нет аккаунта? <Link href="/register" className={styles.link}>Зарегистрироваться</Link>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-} 
+        cookies.forEach(cookie => {
+            document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
+            document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+        });
+
+        // Очищаем localStorage и sessionStorage
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // Устанавливаем флаг блокировки автовхода
+        localStorage.setItem('disableAutoLogin', 'true');
+        setDisableAutoLogin(true);
+    };
+
+    // При монтировании компонента проверяем force_login и токены
+    useEffect(() => {
+        const forceLogin = searchParams.get('force_login');
+        
+        if (forceLogin === 'true') {
+            clearAllAuthData();
+        } else {
+            // Если нет force_login, просто сбрасываем флаг автовхода
+            localStorage.removeItem('disableAutoLogin');
+            setDisableAutoLogin(false);
+        }
+    }, [searchParams, setDisableAutoLogin]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            setLoginAttempted(true);
+            await login(credentials);
+            console.log('Вход выполнен успешно');
+        } catch (err) {
+            console.error('Ошибка входа:', err);
+            setLoginAttempted(false);
+        }
+    };
+
+    const handleLinkToRegister = () => {
+        // Очищаем все данные перед переходом
+        clearAllAuthData();
+        
+        // Добавляем force_login=true для предотвращения автоматического входа
+        router.push('/register?force_login=true');
+    };
+
+    const handleGoogleLogin = () => {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+        const next = `${frontendUrl}/login`;
+        
+        // Очищаем все данные перед авторизацией
+        clearAllAuthData();
+        
+        window.location.href = `${backendUrl}/accounts/google/login/?process=login&next=${encodeURIComponent(next)}`;
+    };
+
+    const handleYandexLogin = () => {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+        const next = `${frontendUrl}/login`;
+        
+        // Очищаем все данные перед авторизацией
+        clearAllAuthData();
+        
+        window.location.href = `${backendUrl}/accounts/yandex/login/?process=login&next=${encodeURIComponent(next)}`;
+    };
+
+    // Проверяем наличие ошибок в URL при загрузке страницы
+    useEffect(() => {
+        const error = searchParams.get('error');
+        if (error === 'auth_failed') {
+            console.error('Ошибка авторизации через соцсеть');
+            // Можно показать сообщение пользователю
+        } else if (error === 'server_error') {
+            console.error('Ошибка сервера при авторизации');
+            // Можно показать сообщение пользователю
+        }
+    }, [searchParams]);
+
+    return (
+        <div className="flex min-h-screen items-center justify-center">
+            {
+                modalManagerChangePassword.isVisible ?
+                    <WriteAboutError
+                        title={"Вывод средств"}
+                        onHideModalWindow={modalManagerChangePassword.close}
+                    /> :
+                    ""
+            }
+            <div className={styles.mainFormWrapper}>
+                <div className={styles.imageWrapper}>
+                    <img className={styles.image} src={"/images/chess_mirror.png"}/>
+                </div>
+                <div className={styles.formBox}>
+                    <div className={styles.logoWrapper}>
+                        <img className={styles.logo} src={"/images/logo.png"}/>
+                    </div>
+
+                    <div className={styles.formBoxWrapper}>
+                        <div className={styles.titleWrapper}>
+                            <div className={styles.titleLogin}>Вход</div>
+                            <div className={styles.titleRegister} onClick={handleLinkToRegister}>Зарегистрироваться
+                            </div>
+                        </div>
+                        <form className={styles.formStyle} onSubmit={handleSubmit}>
+                            <Input
+                                type="email"
+                                placeholder="Введите ваш электронный адрес"
+                                value={credentials.email}
+                                onChange={(e) => setCredentials({...credentials, email: e.target.value})}
+                                required
+                            />
+                            <div className="relative">
+                                <Input
+                                    type={showPassword ? 'text' : 'password'}
+                                    placeholder="Введите пароль"
+                                    value={credentials.password}
+                                    onChange={(e) => setCredentials({...credentials, password: e.target.value})}
+                                    required
+                                />
+                                <button type="button" onClick={() => setShowPassword(v => !v)}
+                                        className={styles.eyeButton}>
+                                    {showPassword ? <FaEyeSlash/> : <FaEye/>}
+                                </button>
+                            </div>
+                            <div className={styles.linkForgotPassword}>
+                                <a className="text-sm  hover:underline">Забыли
+                                    пароль?</a>
+                            </div>
+                            <button
+                                type="submit"
+                                className={styles.submitBtn}
+                                disabled={isLoading}
+                            >
+                                {isLoading ? 'Загрузка...' : 'Войти'}
+                            </button>
+                            {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
+                            <div className="flex items-center my-6">
+                                <div className="flex-1 h-px bg-[#23233a]"/>
+                                <span className="mx-4 text-gray-400 text-sm">или</span>
+                                <div className="flex-1 h-px bg-[#23233a]"/>
+                            </div>
+                            <div className={styles.socialButtonWrapper}>
+                                <div className={styles.socialBtns}>
+                                    <button 
+                                        type="button" 
+                                        className={styles.socialBtn} 
+                                        onClick={handleGoogleLogin}
+                                    >
+                                        <FaGoogle/> Google
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        className={styles.socialBtn} 
+                                        onClick={handleYandexLogin}
+                                    >
+                                        <TbBrandYandex/> Яндекс 
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

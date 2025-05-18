@@ -7,14 +7,7 @@ import Link from 'next/link';
 
 export default function AboutPage() {
   const { theme } = useTheme();
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  // Обновляем состояние isDarkMode при изменении темы
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      setIsDarkMode(document.documentElement.classList.contains('dark'));
-    }
-  }, [theme]);
+  const isDarkMode = theme === 'dark'; // Используем тему напрямую из ThemeProvider
 
   return (
     <div className={`${isDarkMode ? 'bg-[#111014] text-white' : 'bg-white text-gray-900'}`}>

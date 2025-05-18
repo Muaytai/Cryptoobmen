@@ -1,21 +1,52 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { api } from '@/lib/api/fetch';
 
 interface User {
-  id: string;
+  id: string | number;
   username: string;
   email: string;
+  first_name?: string;
+  last_name?: string;
+  avatar?: string;
+  phone_number?: string;
+  is_verified?: boolean;
+  kyc_verified?: boolean;
+  telegram_id?: string;
+  date_joined?: string;
+  has_2fa?: boolean;
+  notify_via_email?: boolean;
+  notify_via_telegram?: boolean;
 }
 
 interface Credentials {
-  username: string;
+  email: string;
   password: string;
 }
 
 interface RegistrationData {
   username: string;
   email: string;
-  password: string;
+  password1: string;
+  password2: string;
+}
+
+interface Tokens {
+  access: string;
+  refresh: string;
+}
+
+interface AuthResponse {
+  user: User;
+  token: string;
+}
+
+interface ErrorResponse {
+  detail?: string;
+  email?: string[];
+  username?: string[];
+  password?: string[];
+  non_field_errors?: string[];
 }
 
 interface AuthState {
@@ -23,12 +54,54 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  showEmailConfirmedModal: boolean;
+  disableAutoLogin: boolean;
+  tokens: Tokens | null;
   
   login: (credentials: Credentials) => Promise<void>;
   register: (data: RegistrationData) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   clearError: () => void;
+  checkAuthStatus: () => Promise<void>;
+  setShowEmailConfirmedModal: (show: boolean) => void;
+  setDisableAutoLogin: (disable: boolean) => void;
+  setTokens: (tokens: Tokens) => void;
 }
+
+const handleApiError = (error: any, defaultMessage: string): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  return defaultMessage;
+};
+
+const clearAuthData = () => {
+  // Очищаем localStorage и sessionStorage
+  localStorage.clear();
+  sessionStorage.clear();
+  
+  // Очищаем все куки
+  const cookies = [
+    'access_token',
+    'refresh_token',
+    'sessionid',
+    'dj_session_id',
+    'csrftoken',
+    'auth_token',
+    'next_hmr_refresh_hash'
+  ];
+
+  cookies.forEach(cookie => {
+    document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
+    document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+  });
+  
+  // Устанавливаем флаг блокировки автовхода
+  localStorage.setItem('disableAutoLogin', 'true');
+};
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -37,167 +110,171 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      showEmailConfirmedModal: false,
+      disableAutoLogin: true, // По умолчанию автологин отключен
+      tokens: null,
+      
+      setTokens: (tokens: Tokens) => {
+        set({ tokens, isAuthenticated: true });
+        // Сохраняем токены в localStorage
+        localStorage.setItem('access_token', tokens.access);
+        localStorage.setItem('refresh_token', tokens.refresh);
+      },
       
       login: async (credentials: Credentials) => {
+        set({ isLoading: true, error: null });
         try {
-          set({ isLoading: true, error: null });
-          console.log('Отправка запроса на вход:', credentials);
-
-          const response = await fetch('/api/auth/login/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(credentials),
-            // Убедимся, что Next.js не делает автоматический редирект
-            redirect: 'manual'
-          });
-
-          console.log('Статус ответа входа:', response.status);
-          const responseText = await response.text();
-          console.log('Тело ответа входа:', responseText);
+          const response = await api.auth.login(credentials.email, credentials.password);
+          const userData = response.data;
           
-          if (!response.ok) {
-            try {
-              const errorData = JSON.parse(responseText);
-              throw new Error(errorData.detail || 'Ошибка авторизации');
-            } catch (parseError) {
-              throw new Error(`Ошибка авторизации: ${response.status} ${response.statusText}`);
-            }
-          }
-
-          try {
-            const data = JSON.parse(responseText);
-            // Сохраняем токен (JWT)
-            if (data.access) {
-              localStorage.setItem('access', data.access);
-            }
-            set({
-              isLoading: false,
-              isAuthenticated: true,
-              user: data.user || null,
-            });
-          } catch (parseError) {
-            console.error('Ошибка при разборе ответа JSON:', parseError);
-            throw new Error('Ошибка при обработке ответа сервера');
-          }
+          // После успешного логина получаем данные пользователя
+          const userResponse = await api.auth.getUser();
+          const user = userResponse.data;
+          
+          // Сбрасываем флаг блокировки автологина только при успешном входе
+          localStorage.removeItem('disableAutoLogin');
+          
+          set({ 
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+            error: null,
+            disableAutoLogin: false
+          });
         } catch (error) {
           console.error('Ошибка входа:', error);
-          set({
+          clearAuthData();
+          set({ 
+            user: null,
+            isAuthenticated: false,
             isLoading: false,
-            error: error instanceof Error ? error.message : 'Ошибка авторизации',
+            error: error instanceof Error ? error.message : 'Произошла ошибка при входе',
+            disableAutoLogin: true
           });
-          throw error;
         }
       },
       
       register: async (data: RegistrationData) => {
+        set({ isLoading: true, error: null });
         try {
-          set({ isLoading: true, error: null });
-          console.log('Отправка запроса на регистрацию:', data);
-
-          // Создаем URL с явным слэшем в конце
-          const url = '/api/auth/registration/';
-          console.log('URL для регистрации:', url);
-
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-            // Убедимся, что Next.js не делает автоматический редирект
-            redirect: 'manual'
-          });
-
-          console.log('Статус ответа регистрации:', response.status);
-          const responseText = await response.text();
-          console.log('Тело ответа регистрации:', responseText);
-
-          if (!response.ok) {
-            try {
-              // Проверяем, не пустая ли строка
-              if (!responseText || responseText.trim() === '') {
-                throw new Error(`Ошибка сервера: ${response.status} ${response.statusText}. Сервер вернул пустой ответ.`);
-              }
-              
-              const errorData = JSON.parse(responseText);
-              // Обработка ошибок валидации от Django Rest Framework
-              if (errorData.email) {
-                throw new Error(`Email: ${errorData.email[0]}`);
-              }
-              if (errorData.username) {
-                throw new Error(`Пользователь: ${errorData.username[0]}`); 
-              }
-              if (errorData.password) {
-                throw new Error(`Пароль: ${errorData.password[0]}`);
-              }
-              if (errorData.non_field_errors) {
-                throw new Error(errorData.non_field_errors[0]);
-              }
-              throw new Error(errorData.detail || 'Ошибка регистрации');
-            } catch (parseError) {
-              if (parseError instanceof SyntaxError) {
-                // Если не можем распарсить JSON, значит, бэкенд вернул не JSON
-                console.error('Ошибка при разборе ответа:', parseError);
-                throw new Error(`Ошибка сервера: ${response.status} ${response.statusText}. Убедитесь, что сервер Django запущен.`);
-              }
-              throw parseError; // Пробрасываем ошибки, которые уже были обработаны выше
-            }
-          }
-
-          try {
-            // Пробуем распарсить успешный ответ
-            let responseData;
-            
-            // Проверяем, не пустой ли ответ
-            if (responseText && responseText.trim() !== '') {
-              responseData = JSON.parse(responseText);
-              console.log('Успешный ответ регистрации:', responseData);
-            } else {
-              console.log('Пустой ответ от сервера, но статус успешный');
-              responseData = {};
-            }
-            
-            // Если регистрация успешна, выполняем вход с теми же данными
-            await get().login({
-              username: data.email,
-              password: data.password
-            });
-            
-            set({
-              isLoading: false,
-            });
-          } catch (parseError) {
-            console.error('Ошибка при разборе ответа JSON:', parseError);
-            throw new Error('Ошибка при обработке ответа сервера');
-          }
+          await api.post('/auth/registration/', data);
+          set({ isLoading: false });
         } catch (error) {
           console.error('Ошибка регистрации:', error);
           set({
             isLoading: false,
-            error: error instanceof Error ? error.message : 'Ошибка регистрации',
+            error: handleApiError(error, 'Ошибка регистрации'),
           });
           throw error;
         }
       },
       
-      logout: () => {
-        // В реальном приложении здесь будет запрос к API для уничтожения токена:
-        // fetch('/api/auth/logout/', { method: 'POST' });
-        localStorage.removeItem('access');
-        set({
-          user: null,
-          isAuthenticated: false,
-          error: null,
-        });
+      logout: async () => {
+        set({ isLoading: true });
+        try {
+          // Сначала очищаем данные на фронтенде
+          clearAuthData();
+          
+          // Затем делаем запрос на бэкенд для выхода
+          await api.auth.logout();
+          
+          // Устанавливаем состояние после выхода
+          set({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: null,
+            disableAutoLogin: true,
+            tokens: null
+          });
+          
+          // Принудительно перезагружаем страницу для очистки всех состояний
+          window.location.href = '/login?force_login=true';
+        } catch (error) {
+          console.error('Ошибка при выходе:', error);
+          // Даже при ошибке очищаем все данные
+          clearAuthData();
+          set({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: null,
+            disableAutoLogin: true,
+            tokens: null
+          });
+          // Перенаправляем на страницу входа
+          window.location.href = '/login?force_login=true';
+        }
+      },
+      
+      checkAuthStatus: async () => {
+        const state = get();
+        const disableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
+        
+        // Не проверяем статус если:
+        // 1. Идет загрузка
+        // 2. Автологин отключен
+        if (state.isLoading || disableAutoLogin) {
+          set({ 
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: null,
+            disableAutoLogin: true,
+            tokens: null
+          });
+          return;
+        }
+        
+        set({ isLoading: true });
+        try {
+          const response = await api.auth.getUser();
+          const user = response.data;
+          
+          set({ 
+            user, 
+            isAuthenticated: true, 
+            isLoading: false,
+            error: null,
+            disableAutoLogin: false
+          });
+        } catch (error) {
+          console.error('Ошибка проверки аутентификации:', error);
+          clearAuthData();
+          set({ 
+            user: null, 
+            isAuthenticated: false, 
+            isLoading: false,
+            error: null,
+            disableAutoLogin: true,
+            tokens: null
+          });
+        }
       },
       
       clearError: () => set({ error: null }),
+      
+      setShowEmailConfirmedModal: (show: boolean) => {
+        set({ showEmailConfirmedModal: show });
+      },
+      
+      setDisableAutoLogin: (disable: boolean) => {
+        if (disable) {
+          localStorage.setItem('disableAutoLogin', 'true');
+        } else {
+          localStorage.removeItem('disableAutoLogin');
+        }
+        set({ disableAutoLogin: disable });
+      },
     }),
     {
       name: 'auth-storage',
-      // В production необходимо добавить шифрование для безопасного хранения
+      partialize: (state) => ({ 
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+        disableAutoLogin: state.disableAutoLogin,
+        tokens: state.tokens
+      }),
     }
   )
 ); 

@@ -1,4 +1,4 @@
-import Modal from "./Modal";
+import Modal from "./mainModalWrapper/Modal";
 import React from "react";
 
 const SingleMessageWindow = (props) => {

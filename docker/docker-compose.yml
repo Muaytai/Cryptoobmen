@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # Nginx сервис
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./data/static:/usr/share/nginx/static
+      - ./data/media:/usr/share/nginx/media
+      - ./data/certbot/www:/var/www/certbot
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/django_static:/django_static
+      - ./data/django_media:/django_media
+    depends_on:
+      - backend-prootzyvy
+      - frontend-prootzyvy
+      - backend-crypto
+      - frontend-crypto
+
+  # Certbot для SSL
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./data/certbot/www:/var/www/certbot
+      - ./data/certbot/conf:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  # Prootzyvy сервисы
+  backend-prootzyvy:
+    image: prootzyvy-backend:latest  # Укажите правильный образ для вашего бэкенда
+    restart: always
+    container_name: prootzyvy-backend
+    volumes:
+      - ./data/django_static:/app/static
+      - ./data/django_media:/app/media
+    environment:
+      - DEBUG=0
+      - DATABASE_URL=postgresql://user:password@db-prootzyvy:5432/db_name
+      # Другие переменные окружения для бэкенда
+    depends_on:
+      - db-prootzyvy
+
+  frontend-prootzyvy:
+    image: prootzyvy-frontend:latest  # Укажите правильный образ для вашего фронтенда
+    restart: always
+    container_name: prootzyvy-frontend
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://prootzyvy.com/api/v1
+      # Другие переменные окружения для фронтенда
+
+  db-prootzyvy:
+    image: postgres:14-alpine
+    restart: always
+    container_name: prootzyvy-db
+    volumes:
+      - postgres_data_prootzyvy:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=user
+      - POSTGRES_DB=db_name
+
+  # Cryptoobmen сервисы
+  backend-crypto:
+    image: cryptoobmen-backend:latest  # Укажите правильный образ для вашего бэкенда
+    restart: always
+    container_name: crypto-backend
+    volumes:
+      - ./data/static:/app/static
+      - ./data/media:/app/media
+    environment:
+      - DEBUG=0
+      - DATABASE_URL=postgresql://user:password@db-crypto:5432/db_name
+      # Другие переменные окружения для бэкенда
+    depends_on:
+      - db-crypto
+
+  frontend-crypto:
+    image: cryptoobmen-frontend:latest  # Укажите правильный образ для вашего фронтенда
+    restart: always
+    container_name: crypto-frontend
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://194.15.46.70/api
+      # Другие переменные окружения для фронтенда
+
+  db-crypto:
+    image: postgres:14-alpine
+    restart: always
+    container_name: crypto-db
+    volumes:
+      - postgres_data_crypto:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=user
+      - POSTGRES_DB=db_name
+
+volumes:
+  postgres_data_prootzyvy:
+  postgres_data_crypto: 

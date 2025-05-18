@@ -1,12 +1,12 @@
 .closeButton {
     font-size: 44px;
-    font-weight: 600;
-    color: #12f7d6;
+    font-weight: 200;
+    color: #A2A2B3;
 
     cursor: pointer;
     position: absolute;
-    top: -70px;
-    right: -5px;
+    top: -35px;
+    right: 50px;
 }
 
 .closeButton:hover {

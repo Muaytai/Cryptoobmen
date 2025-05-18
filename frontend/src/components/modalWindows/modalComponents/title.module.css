@@ -1,0 +1,15 @@
+
+.PageTitle * {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  padding-bottom: 20px;
+}
+@media(max-width:435px){
+  .PageTitle *{
+    font-size: 14px;
+    margin: 14px;
+    max-width: 300px;
+    
+  }
+}

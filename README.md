@@ -198,3 +198,103 @@ docker-compose -f docker-compose.prod.yml ps  # Статус контейнер�
 - [Backend документация](./backend/README.md)
 - [Frontend документация](./frontend/README.md)
 - [Docker документация](./docker/local/README.md)
+
+# Многосайтовая конфигурация с Nginx и Docker
+
+Этот репозиторий содержит конфигурацию для запуска нескольких веб-сайтов (prootzyvy.com и cryptoobmen) на одном сервере с использованием Docker и Nginx.
+
+## Структура проекта
+
+```
+docker/
+├── docker-compose.yml           # Основной файл для запуска всех сервисов
+├── nginx/                       # Настройки Nginx
+│   ├── Dockerfile               # Dockerfile для Nginx
+│   └── conf.d/                  # Директория с конфигурациями сайтов
+│       ├── nginx.conf           # Общие настройки Nginx
+│       ├── prootzyvy.conf       # Конфигурация для prootzyvy.com
+│       └── cryptoobmen.conf     # Конфигурация для cryptoobmen
+├── data/                        # Директория для хранения данных
+    ├── django_static/           # Статические файлы Django для prootzyvy
+    ├── django_media/            # Медиафайлы Django для prootzyvy
+    ├── static/                  # Статические файлы для cryptoobmen
+    ├── media/                   # Медиафайлы для cryptoobmen
+    └── certbot/                 # SSL сертификаты
+```
+
+## Особенности конфигурации
+
+1. **Два изолированных проекта:**
+   - prootzyvy.com - доступен по доменному имени prootzyvy.com
+   - cryptoobmen - доступен по IP 194.15.46.70
+
+2. **Общий Nginx:**
+   - Маршрутизация запросов на основе домена и IP
+   - Общие настройки безопасности и производительности
+
+3. **Отдельные базы данных:**
+   - Каждый проект использует свою базу данных PostgreSQL
+
+## Запуск проекта
+
+1. Клонируйте репозиторий
+   ```bash
+   git clone <url-репозитория>
+   cd <директория-проекта>
+   ```
+
+2. Настройте переменные окружения (отредактируйте docker-compose.yml):
+   - Укажите правильные имена образов для ваших проектов
+   - Настройте пароли для баз данных
+   - Установите другие необходимые переменные окружения
+
+3. Создайте необходимые директории для данных:
+   ```bash
+   mkdir -p docker/data/{django_static,django_media,static,media,certbot/www,certbot/conf}
+   ```
+
+4. Запустите проект:
+   ```bash
+   cd docker
+   docker-compose up -d
+   ```
+
+## SSL-сертификаты
+
+Для настройки SSL:
+1. Инициализация certbot (для prootzyvy.com):
+   ```bash
+   docker-compose run --rm certbot certonly --webroot -w /var/www/certbot -d prootzyvy.com -d www.prootzyvy.com
+   ```
+
+2. Для cryptoobmen (после получения домена):
+   ```bash
+   docker-compose run --rm certbot certonly --webroot -w /var/www/certbot -d your-domain.com
+   ```
+
+3. После настройки SSL для cryptoobmen, раскомментируйте секцию HTTPS в `docker/nginx/conf.d/cryptoobmen.conf`
+
+## Управление
+
+- Просмотр логов всех контейнеров:
+  ```bash
+  docker-compose logs -f
+  ```
+
+- Перезапуск Nginx:
+  ```bash
+  docker-compose restart nginx
+  ```
+
+- Остановка всех сервисов:
+  ```bash
+  docker-compose down
+  ```
+
+## Обслуживание
+
+- Обновление проектов (пример для prootzyvy):
+  ```bash
+  docker-compose pull backend-prootzyvy frontend-prootzyvy
+  docker-compose up -d --no-deps backend-prootzyvy frontend-prootzyvy
+  ```

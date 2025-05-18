@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
@@ -49,55 +49,139 @@ const SunIcon = () => (
 
 export function Header() {
   const router = useRouter();
-  const { user, logout } = useAuthStore();
+  const pathname = usePathname();
+  const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const logout = useAuthStore((state) => state.logout);
+  const isLoading = useAuthStore((state) => state.isLoading);
+  const setDisableAutoLogin = useAuthStore((state) => state.setDisableAutoLogin);
   const { theme, toggleTheme } = useTheme();
+  const [isClientMounted, setIsClientMounted] = useState(false);
 
-  // Эффект для применения класса темы к документу
+  // Отмечаем, что компонент монтирован для предотвращения проблем с гидратацией
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (theme === 'dark') {
-        document.documentElement.classList.add('dark');
-        document.documentElement.classList.remove('light');
-        document.body.style.backgroundColor = '#0A0A0A';
-        document.body.style.color = 'white';
-      } else {
-        document.documentElement.classList.add('light');
-        document.documentElement.classList.remove('dark');
-        document.body.style.backgroundColor = 'white';
-        document.body.style.color = '#111827';
-      }
-    }
-  }, [theme]);
+    setIsClientMounted(true);
+  }, []);
 
-  const handleLogout = () => {
-    logout();
-    router.push('/');
+  // Функция для обработки нажатия на кнопку "Войти"
+  const handleLogin = async () => {
+    try {
+      // Сначала очищаем все куки
+      const cookies = [
+        'access_token',
+        'refresh_token',
+        'sessionid',
+        'dj_session_id',
+        'csrftoken',
+        'auth_token',
+        'next_hmr_refresh_hash'
+      ];
+
+      cookies.forEach(cookie => {
+        document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
+        document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+      });
+
+      // Очищаем localStorage
+      localStorage.clear();
+      sessionStorage.clear();
+
+      // Очищаем состояние в store
+      setDisableAutoLogin(true);
+      
+      // Принудительно очищаем состояние пользователя
+      useAuthStore.setState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null,
+        disableAutoLogin: true
+      });
+
+      // Переходим на страницу логина с параметром force_login
+      router.push('/login?force_login=true');
+    } catch (error) {
+      console.error('Ошибка при очистке данных:', error);
+      router.push('/login?force_login=true');
+    }
   };
 
+  // Функция для обработки нажатия на имя пользователя
+  const handleProfileClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // Переходим на страницу профиля только если пользователь аутентифицирован
+    if (isAuthenticated && user) {
+      router.push('/profile');
+    } else {
+      router.push('/login');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      // Блокируем использование кнопки на время выхода
+      console.log('Выход из аккаунта...');
+      
+      // Вызываем logout из стора
+      await logout();
+      
+      console.log('Выход успешно выполнен');
+      
+      // Используем роутер для навигации
+      router.push('/');
+    } catch (error) {
+      console.error('Ошибка при выходе:', error);
+      // В случае ошибки всё равно перенаправляем на главную
+      router.push('/');
+    }
+  };
+
+  // Используем тему напрямую из ThemeProvider для определения отображения
+  const isDarkMode = theme === 'dark';
+
   return (
-    <header className={styles.header}>
-      <div className={styles.container}>
+    <header className={`${styles.header} ${!isDarkMode ? styles.light : ''}`}>
+      {/* Логотип слева */}
+      <div className={styles.logoContainer}>
         <LogoComponent />
       </div>
-      
-      <nav className={styles.nav}>
-        <NavLink href="/" isDefault={true}>Главная</NavLink>
+      {/* Навигация посередине */}
+      <nav className={styles.navigation}>
+        <NavLink href="/" isDefault>Главная</NavLink>
         <NavLink href="/about">О нас</NavLink>
         <NavLink href="/reviews">Отзывы</NavLink>
         <NavLink href="/faq">FAQ</NavLink>
       </nav>
-      
+      {/* Кнопки действий справа */}
       <div className={styles.actions}>
         <button 
           onClick={toggleTheme} 
-          className={styles.themeToggle}
+          className={styles.themeToggle} 
           aria-label="Переключить тему"
         >
-          {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
+          {isDarkMode ? <MoonIcon /> : <SunIcon />}
         </button>
-        <Link href="/login">
-          <button className={styles.loginButton}>Войти</button>
-        </Link>
+        {isClientMounted && !isLoading ? (
+          isAuthenticated && user ? (
+            <div className={styles.actions}>
+              <button 
+                onClick={handleProfileClick} 
+                className={styles.userLink}
+              >
+                {user.username || user.email}
+              </button>
+              <button onClick={handleLogout} className={styles.logoutButton}>
+                Выйти
+              </button>
+            </div>
+          ) : (
+            <button onClick={handleLogin} className={styles.loginButton}>
+              Войти
+            </button>
+          )
+        ) : isClientMounted && isLoading ? (
+          <div className={styles.loadingText}>Загрузка...</div>
+        ) : null}
       </div>
     </header>
   );
