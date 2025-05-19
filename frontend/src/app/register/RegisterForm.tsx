@@ -204,6 +204,7 @@ export default function RegisterForm() {
                                     idInput="agree"
                                     nameInput="agree"
                                     valueInput="agree"
+                                    checked={formData.agree}
                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                                         setFormData((prev) => ({
                                             ...prev,
