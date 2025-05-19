@@ -19,7 +19,7 @@ const WriteUs = (props) => {
         props.closeSendData();
         props.openConfirm();
     }
-    const [credentials, setCredentials] = useState({username: '', password: ''});
+    const [credentials, setCredentials] = useState({account: '', balance: '', });
     const route = useRouter();
     const toUserAgreement = () => {
         route.push("/politic")
@@ -56,10 +56,10 @@ const WriteUs = (props) => {
                     onChange={(e) => setCredentials({...credentials, username: e.target.value})}
                     required
                 />
-                <span className={styles.helptext}><strong>Минимальная сумма вывода - 5 USDT:</strong><p>{props.errorURLPage}</p></span>
-
-                <span className={styles.helptext}><strong>Максимальная сумма вывода - 100.000 USDT</strong><p>{props.errorURLPage}</p></span>
-
+                    <span
+                        className={styles.helptext}><strong>Минимальная сумма вывода - 5 USDT:</strong><p>{props.errorURLPage}</p></span>
+                    <span
+                        className={styles.helptext}><strong>Максимальная сумма вывода - 100.000 USDT</strong><p>{props.errorURLPage}</p></span>
                 <Button
                     type="primary centering"
                     size="small"
@@ -68,10 +68,10 @@ const WriteUs = (props) => {
                 >
                     <span>Отправить</span>
                 </Button>
-                <span className={styles.helptext}><strong>Вывод производится в течении 5 дней</strong><p>{props.errorURLPage}</p></span>
-
-                <span className={styles.helptext}><strong>Комиссия сервиса на вывод - 5%</strong><p>{props.errorURLPage}</p></span>
-
+                    <span
+                        className={styles.helptext}><strong>Вывод производится в течении 5 дней</strong><p>{props.errorURLPage}</p></span>
+                    <span
+                        className={styles.helptext}><strong>Комиссия сервиса на вывод - 5%</strong><p>{props.errorURLPage}</p></span>
 
             </div>
             {/*</ModalWrapper>*/}
