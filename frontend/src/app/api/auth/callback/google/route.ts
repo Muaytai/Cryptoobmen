@@ -47,6 +47,7 @@ export async function GET(request: Request) {
     // Здесь нужно отправить данные на бэкенд для создания/входа пользователя
     const backendResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/google`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
