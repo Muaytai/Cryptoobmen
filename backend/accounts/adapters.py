@@ -1,6 +1,7 @@
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from django.conf import settings
+from django.contrib.sites.shortcuts import get_current_site
 from django.shortcuts import redirect
 from urllib.parse import urlparse
 from allauth.account.utils import user_email
@@ -51,6 +52,26 @@ class CustomAccountAdapter(DefaultAccountAdapter):
         """Переопределяем проверку безопасности URL, разрешая все URL"""
         # Разрешаем любой URL для перенаправления
         return True
+
+    def get_email_confirmation_url(self, request, emailconfirmation):
+        """Возвращает URL для подтверждения email на фронтенде"""
+        return f"{settings.FRONTEND_URL}/verify-email/{emailconfirmation.key}/"
+    
+    def send_confirmation_mail(self, request, emailconfirmation, signup):
+        """Отправляет письмо с подтверждением"""
+        current_site = get_current_site(request)
+        activate_url = self.get_email_confirmation_url(request, emailconfirmation)
+        ctx = {
+            "user": emailconfirmation.email_address.user,
+            "activate_url": activate_url,
+            "current_site": current_site,
+            "key": emailconfirmation.key,
+        }
+        if signup:
+            email_template = "account/email/email_confirmation_signup"
+        else:
+            email_template = "account/email/email_confirmation"
+        self.send_mail(email_template, emailconfirmation.email_address.email, ctx)
 
 
 class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
