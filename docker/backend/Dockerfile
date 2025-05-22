@@ -50,4 +50,6 @@ RUN python manage.py collectstatic --noinput
 USER app
 
 # Запуск gunicorn с указанным числом процессов
-CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]
+CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]", "--timeout", "120"]
+
+
