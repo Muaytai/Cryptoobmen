@@ -1,0 +1,46 @@
+services:
+  # Nginx сервис для Cryptoobmen
+  nginx:
+    build:
+      context: ./docker/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./static:/usr/share/nginx/static
+      - ./media:/usr/share/nginx/media
+    depends_on:
+      - crypto-backend
+      - crypto-frontend
+    restart: always
+
+  # Бэкенд Cryptoobmen
+  crypto-backend:
+    build:
+      context: ./backend
+    volumes:
+      - ./backend:/app
+      - ./static:/app/static
+      - ./media:/app/media
+    environment:
+      - DEBUG=0
+    restart: always
+
+  # Фронтенд Cryptoobmen
+  crypto-frontend:
+    build:
+      context: ./frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=production
+    restart: always
+
+# volumes:
+#   postgres_data:
+
+networks:
+  cryptoobmen-network:
+    driver: bridge 
