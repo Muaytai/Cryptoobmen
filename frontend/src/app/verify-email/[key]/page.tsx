@@ -1,17 +1,22 @@
 import { Suspense } from 'react';
 import VerifyEmailClient from './VerifyEmailClient';
+import { Metadata } from 'next';
 
-interface Props {
-  params: { key: string };
-}
+export const metadata: Metadata = {
+  title: 'Подтверждение Email | Cryptoobmen',
+  description: 'Подтверждение электронной почты для регистрации на платформе'
+};
 
-export default async function VerifyEmail({ params }: Props) {
-  // Получаем параметры асинхронно
-  const resolvedParams = await Promise.resolve(params);
+export default async function VerifyEmail({
+  params,
+}: {
+  params: Promise<{ key: string }>
+}) {
+  const { key } = await params;
   
   return (
     <Suspense fallback={<div>Загрузка...</div>}>
-      <VerifyEmailClient emailKey={resolvedParams.key} />
+      <VerifyEmailClient emailKey={key} />
     </Suspense>
   );
 } 
