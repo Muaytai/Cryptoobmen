@@ -1,0 +1,13 @@
+.container {
+  display: flex;
+  justify-content: space-between;
+  margin: 20px 0;
+}
+
+.infoItem {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--color-text);
+  font-size: 14px;
+}
