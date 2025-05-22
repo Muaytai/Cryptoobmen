@@ -28,10 +28,15 @@ module.exports = {
           dark: "#FFFFFF",
         },
         card: {
-          DEFAULT: "#FFFFFF",
+          DEFAULT: "hsl(var(--card) / <alpha-value>)",
+          hover: "hsl(var(--subcard-bg) / <alpha-value>)",
           foreground: "#111827",
           dark: "#1A1A1A",
           "dark-foreground": "#FFFFFF",
+        },
+        subcard: {
+          DEFAULT: 'hsl(var(--subcard-bg) / <alpha-value>)',
+          text: 'hsl(var(--subcard-text) / <alpha-value>)',  // Цвет текста
         },
         muted: {
           DEFAULT: "#F3F4F6",
@@ -54,6 +59,10 @@ module.exports = {
         lg: "0.5rem",
         md: "0.375rem",
         sm: "0.25rem",
+      },
+      boxShadow: {
+        'light': '0 0 20px rgba(0, 0, 0, 0.3)',
+        'dark': 'none'
       },
     },
   },
