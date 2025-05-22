@@ -26,8 +26,10 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install gunicorn
 
+
 # Копирование .env файла для продакшена
 COPY docker/backend/.env.prod /app/.env
+
 
 # Копирование исходного кода
 COPY backend/ .
@@ -46,10 +48,17 @@ RUN echo "Проверка переменных окружения:" && \
     python -c "import os; print(f'Python читает SECRET_KEY: {os.getenv(\"SECRET_KEY\") is not None}')"
 RUN python manage.py collectstatic --noinput
 
+# Удаление временного .env файла
+RUN rm -f /app/.env
+
 # Переключение на непривилегированного пользователя
 USER app
 
 # Запуск gunicorn с указанным числом процессов
+
 CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]", "--timeout", "120"]
+
+
+
 
 
