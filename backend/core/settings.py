@@ -10,22 +10,11 @@ from dotenv import load_dotenv
 # Определяем, какой файл с переменными окружения использовать
 if os.environ.get('ENV_FILE'):  # Если переменная ENV_FILE установлена (в Docker)
     env_path = Path(__file__).resolve().parent.parent / os.environ.get('ENV_FILE')
-    print(f"Загрузка переменных из {env_path} (указан в ENV_FILE)")
+    
 else:  # Локальная разработка
     env_path = Path(__file__).resolve().parent.parent / '.env.backend'
-    print(f"Загрузка переменных из {env_path} (файл по умолчанию для разработки)")
-
-# Загружаем переменные окружения
-if env_path.exists():
-    load_dotenv(env_path)
-    print(f"Файл {env_path} загружен успешно")
-else:
-    print(f"ВНИМАНИЕ: Файл {env_path} не найден")
-
-# Проверка загруженных переменных
-print(f"DEBUG установлен в: {os.getenv('DEBUG', 'не установлено')}")
-print(f"SECRET_KEY установлен: {'да' if os.getenv('SECRET_KEY') else 'нет'}")
-
+    
+   
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
