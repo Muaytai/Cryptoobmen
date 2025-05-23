@@ -2,6 +2,7 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV ENV_FILE=.env.prod
 
 # Установка зависимостей
 RUN apt-get update && apt-get install -y \
@@ -26,7 +27,7 @@ RUN pip install --upgrade pip && \
     pip install gunicorn
 
 # Копирование .env файла для продакшена
-COPY docker/backend/.env.prod /app/.env
+COPY docker/backend/.env.prod /app/.env.prod
 
 # Копирование исходного кода
 COPY backend/ .
