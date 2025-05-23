@@ -8,6 +8,7 @@ services:
       - "443:443"
     volumes:
       - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./docker/nginx/scripts:/usr/local/bin
       - ./static:/usr/share/nginx/static
       - ./media:/usr/share/nginx/media
       - ./docker/nginx/ssl:/etc/nginx/ssl
@@ -19,6 +20,7 @@ services:
     restart: always
     networks:
       - cryptoobmen-network
+    command: /bin/sh -c "nginx -g 'daemon off;' & sleep 3600 && /usr/local/bin/renew-certs.sh && while :; do sleep 24h & wait $${!}; /usr/local/bin/renew-certs.sh; done & wait"
 
   # PostgreSQL база данных
   postgres:

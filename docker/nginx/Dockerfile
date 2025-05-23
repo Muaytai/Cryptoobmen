@@ -1,7 +1,7 @@
 FROM nginx:1.25.5-alpine
 
 # Установка необходимых инструментов для работы с сертификатами
-RUN apk add --no-cache openssl certbot certbot-nginx
+RUN apk add --no-cache openssl certbot certbot-nginx bash
 
 # Удаление дефолтной nginx конфигурации
 RUN rm /etc/nginx/conf.d/default.conf
@@ -33,6 +33,10 @@ RUN mkdir -p /etc/nginx/ssl/live/kripto-obmen.com && \
     -keyout /etc/nginx/ssl/live/kripto-obmen.com/privkey.pem \
     -out /etc/nginx/ssl/live/kripto-obmen.com/fullchain.pem \
     -subj "/C=RU/ST=Moscow/L=Moscow/O=Cryptoobmen/CN=kripto-obmen.com"
+
+# Создание скрипта для обновления сертификатов
+COPY scripts/renew-certs.sh /usr/local/bin/renew-certs.sh
+RUN chmod +x /usr/local/bin/renew-certs.sh
 
 USER nginx
 
