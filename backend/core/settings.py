@@ -10,14 +10,12 @@ from dotenv import load_dotenv
 # Определяем, какой файл с переменными окружения использовать
 if os.environ.get('ENV_FILE'):  # Если переменная ENV_FILE установлена (в Docker)
     env_path = Path(__file__).resolve().parent.parent / os.environ.get('ENV_FILE')
-
-    
-else:  # Локальная разработка
-    env_path = Path(__file__).resolve().parent.parent / '.env.backend'
-     
 else:  # Локальная разработка
     env_path = Path(__file__).resolve().parent.parent / '.env.backend'
    
+# Загружаем переменные окружения
+load_dotenv(dotenv_path=env_path)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
