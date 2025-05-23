@@ -50,8 +50,11 @@ services:
       context: .
       dockerfile: ./docker/frontend/Dockerfile
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      # Монтируем только необходимые файлы для разработки, но не перезаписываем node_modules
+      - ./frontend/public:/app/public
+      - ./frontend/src:/app/src
+      - ./frontend/components:/app/components
+      - ./frontend/types:/app/types
     environment:
       - NODE_ENV=production
     env_file:
