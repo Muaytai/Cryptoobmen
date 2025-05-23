@@ -1,1 +1,0 @@
-export { DivByAnima } from "./DivByAnima";
