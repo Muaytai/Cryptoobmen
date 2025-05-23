@@ -38,19 +38,13 @@ WORKDIR /app
 # Создание пользователя без прав администратора
 RUN addgroup --system app && adduser --system --group app
 
-# Копирование только необходимых файлов из этапа сборки
-COPY --from=builder /app/next.config.ts ./
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
+# Копирование только необходимых файлов из этапа сборки с правильными правами
+COPY --from=builder --chown=app:app /app/next.config.ts ./
+COPY --from=builder --chown=app:app /app/public ./public
+COPY --from=builder --chown=app:app /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/.env.production ./
-
-# Настройка разрешений - оптимизированная версия
-RUN chown -R app:app /app/next.config.ts /app/package.json /app/.env.production \
-    && chown -R app:app /app/public /app/.next \
-    && find /app/node_modules -type d -exec chmod 755 {} \; \
-    && find /app/node_modules -type f -exec chmod 644 {} \;
+COPY --from=builder --chown=app:app /app/package.json ./package.json
+COPY --from=builder --chown=app:app /app/.env.production ./
 
 # Переключение на непривилегированного пользователя
 USER app
