@@ -33,7 +33,9 @@ COPY docker/backend/.env.prod /app/.env.prod
 COPY backend/ .
 
 # Настройка разрешений и создание директорий
-RUN mkdir -p /app/static /app/media /app/logs && \
+RUN mkdir -p /app/static /app/media && \
+    mkdir -p /app/logs && \
+    touch /app/logs/django.log && \
     chown -R app:app /app
 
 # Сбор статических файлов для продакшена
