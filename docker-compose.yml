@@ -29,6 +29,7 @@ services:
       - ./backend:/app
       - ./static:/app/static
       - ./media:/app/media
+      - ./backend/logs:/app/logs
     environment:
       - DEBUG=0
       - REDIS_HOST=redis
