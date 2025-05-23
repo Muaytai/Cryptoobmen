@@ -1,7 +1,7 @@
 FROM nginx:1.25.5-alpine
 
-# Установка необходимых инструментов для работы с сертификатами
-RUN apk add --no-cache openssl certbot certbot-nginx bash
+# Установка необходимых инструментов
+RUN apk add --no-cache bash openssl
 
 # Удаление дефолтной nginx конфигурации
 RUN rm /etc/nginx/conf.d/default.conf
@@ -12,9 +12,7 @@ COPY conf.d/ /etc/nginx/conf.d/
 # Создание необходимых каталогов
 RUN mkdir -p /usr/share/nginx/static \
     /usr/share/nginx/media \
-    /etc/nginx/ssl \
-    /var/www/certbot \
-    /etc/letsencrypt
+    /etc/nginx/ssl/cloudflare
 
 # Установка прав
 RUN chown -R nginx:nginx /usr/share/nginx/static \
@@ -23,20 +21,8 @@ RUN chown -R nginx:nginx /usr/share/nginx/static \
     /var/log/nginx \
     /etc/nginx/conf.d \
     /etc/nginx/ssl \
-    /var/www/certbot \
     && touch /var/run/nginx.pid \
     && chown -R nginx:nginx /var/run/nginx.pid
-
-# Создание временного самоподписанного сертификата (до получения Let's Encrypt)
-RUN mkdir -p /etc/nginx/ssl/live/tkxn.org && \
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout /etc/nginx/ssl/live/tkxn.org/privkey.pem \
-    -out /etc/nginx/ssl/live/tkxn.org/fullchain.pem \
-    -subj "/C=RU/ST=Moscow/L=Moscow/O=Cryptoobmen/CN=tkxn.org"
-
-# Создание скрипта для обновления сертификатов
-COPY scripts/renew-certs.sh /usr/local/bin/renew-certs.sh
-RUN chmod +x /usr/local/bin/renew-certs.sh
 
 USER nginx
 
