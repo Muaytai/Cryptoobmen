@@ -28,11 +28,11 @@ RUN chown -R nginx:nginx /usr/share/nginx/static \
     && chown -R nginx:nginx /var/run/nginx.pid
 
 # Создание временного самоподписанного сертификата (до получения Let's Encrypt)
-RUN mkdir -p /etc/nginx/ssl/live/kripto-obmen.com && \
+RUN mkdir -p /etc/nginx/ssl/live/tkxn.org && \
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout /etc/nginx/ssl/live/kripto-obmen.com/privkey.pem \
-    -out /etc/nginx/ssl/live/kripto-obmen.com/fullchain.pem \
-    -subj "/C=RU/ST=Moscow/L=Moscow/O=Cryptoobmen/CN=kripto-obmen.com"
+    -keyout /etc/nginx/ssl/live/tkxn.org/privkey.pem \
+    -out /etc/nginx/ssl/live/tkxn.org/fullchain.pem \
+    -subj "/C=RU/ST=Moscow/L=Moscow/O=Cryptoobmen/CN=tkxn.org"
 
 # Создание скрипта для обновления сертификатов
 COPY scripts/renew-certs.sh /usr/local/bin/renew-certs.sh

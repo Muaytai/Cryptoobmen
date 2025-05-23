@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://kripto-obmen.com/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tkxn.org/api';
 
 interface ApiResponse<T = any> {
   data: T;
