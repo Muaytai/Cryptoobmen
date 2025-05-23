@@ -46,8 +46,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/.env.production ./
 
-# Настройка разрешений
-RUN chown -R app:app /app
+# Настройка разрешений - оптимизированная версия
+RUN chown -R app:app /app/next.config.ts /app/package.json /app/.env.production \
+    && chown -R app:app /app/public /app/.next \
+    && find /app/node_modules -type d -exec chmod 755 {} \; \
+    && find /app/node_modules -type f -exec chmod 644 {} \;
 
 # Переключение на непривилегированного пользователя
 USER app
