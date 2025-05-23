@@ -38,16 +38,14 @@ RUN mkdir -p /app/static /app/media && \
     touch /app/logs/django.log && \
     chown -R app:app /app
 
-# Выполнение миграций и сбор статических файлов для продакшена
+# Выполнение сбора статических файлов для продакшена
 ENV DEBUG=False
-RUN python manage.py migrate --noinput
 RUN python manage.py collectstatic --noinput
 
 # Переключение на непривилегированного пользователя
 USER app
 
-# Запуск gunicorn с указанным числом процессов
-CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]
+
 
 
 

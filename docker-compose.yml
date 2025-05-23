@@ -6,6 +6,8 @@ services:
       args:
         - ADMIN_USER=${EMAIL_HOST_USER:-admin}
         - ADMIN_PASSWORD=${EMAIL_HOST_PASSWORD:-admin}
+    env_file:
+      - ./docker/backend/.env.prod
     ports:
       - "80:80"
       - "443:443"
@@ -47,6 +49,14 @@ services:
     external_links:
       - cryptoobmen-postgres:postgres
       - cryptoobmen-redis:redis
+    command: >
+      bash -c "
+        echo 'Waiting for PostgreSQL...' &&
+        while ! pg_isready -h postgres -p 5432 -q; do sleep 1; done &&
+        echo 'PostgreSQL started' &&
+        python manage.py migrate --noinput &&
+        gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+      "
 
   # Фронтенд Cryptoobmen
   crypto-frontend:
