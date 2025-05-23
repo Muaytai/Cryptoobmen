@@ -38,8 +38,9 @@ RUN mkdir -p /app/static /app/media && \
     touch /app/logs/django.log && \
     chown -R app:app /app
 
-# Сбор статических файлов для продакшена
+# Выполнение миграций и сбор статических файлов для продакшена
 ENV DEBUG=False
+RUN python manage.py migrate --noinput
 RUN python manage.py collectstatic --noinput
 
 # Переключение на непривилегированного пользователя

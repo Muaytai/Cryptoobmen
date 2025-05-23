@@ -1,18 +1,23 @@
-FROM nginx:1.25.5-alpine
+FROM nginx:1.25-alpine
 
-# Установка необходимых инструментов
-RUN apk add --no-cache bash openssl
+# Установка необходимых пакетов
+RUN apk add --no-cache openssl apache2-utils
 
-# Удаление дефолтной nginx конфигурации
-RUN rm /etc/nginx/conf.d/default.conf
+# Создание директории для SSL сертификатов
+RUN mkdir -p /etc/nginx/ssl/cloudflare
 
-# Копирование конфигураций сайта
-COPY conf.d/ /etc/nginx/conf.d/
+# Создание файла с паролем для базовой аутентификации
+RUN htpasswd -bc /etc/nginx/.htpasswd admin CryptoAdmin2025
 
-# Создание необходимых каталогов
-RUN mkdir -p /usr/share/nginx/static \
-    /usr/share/nginx/media \
-    /etc/nginx/ssl/cloudflare
+# Копирование конфигурационных файлов
+COPY ./conf.d/ /etc/nginx/conf.d/
+
+# Копирование скриптов
+COPY ./scripts/ /usr/local/bin/
+RUN chmod +x /usr/local/bin/*.sh
+
+# Создание директорий для статических файлов
+RUN mkdir -p /usr/share/nginx/static /usr/share/nginx/media
 
 # Установка прав
 RUN chown -R nginx:nginx /usr/share/nginx/static \
@@ -27,7 +32,7 @@ RUN chown -R nginx:nginx /usr/share/nginx/static \
 USER nginx
 
 # Порты, которые будет слушать Nginx
-EXPOSE 80 443
+EXPOSE 80 443 8080
 
 # Запуск Nginx
 CMD ["nginx", "-g", "daemon off;"] 
