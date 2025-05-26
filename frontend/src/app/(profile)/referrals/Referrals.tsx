@@ -84,7 +84,7 @@ export const Referrals = (): JSX.Element => {
               <img
                 className="w-[14px] h-[14px] md:w-[18px] md:h-[18px] ml-2"
                 alt="Copy"
-                src="/profile/vector-7_2.svg"
+                src="/images/profile/vector-7_2.svg"
               />
             </div>
           </CardContent>

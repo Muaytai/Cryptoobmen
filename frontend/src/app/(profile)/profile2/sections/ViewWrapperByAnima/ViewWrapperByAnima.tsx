@@ -156,7 +156,7 @@ export const ViewWrapperByAnima = (): JSX.Element => {
             <div className="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-0 mb-6 md:mb-8">
               <div className="flex items-center gap-3 md:gap-5">
                 <div
-                  className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-gray-800 rounded-3xl bg-[url(/profile/vector-5_1.svg)] bg-[100%_100%]"/>
+                  className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-gray-800 rounded-3xl bg-[url(/images/profile/vector-5_1.svg)] bg-[100%_100%]"/>
                 <div>
                   <p
                     className="text-lg md:text-xl font-normal text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica]">
