@@ -55,6 +55,10 @@ module.exports = {
         md: "0.375rem",
         sm: "0.25rem",
       },
+      boxShadow: {
+        'light': '0 0 20px rgba(0, 0, 0, 0.3)',
+        'dark': 'none'
+      },
     },
   },
   plugins: [],

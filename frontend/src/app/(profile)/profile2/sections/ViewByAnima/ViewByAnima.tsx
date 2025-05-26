@@ -75,7 +75,7 @@ export const ViewByAnima = (): JSX.Element => {
             <img
               className="w-[100px] md:w-[156px] h-[108px] md:h-[169px] mx-auto mt-4 md:mt-6"
               alt="Gift Box"
-              src="/profile/vector-1.svg"
+              src="/images/profile/vector-1.svg"
             />
 
             <div className="px-2 md:px-5 mt-4 md:mt-8">
@@ -121,7 +121,7 @@ export const ViewByAnima = (): JSX.Element => {
                   <img
                     className="w-[30px] h-[30px]"
                     alt="User Icon"
-                    src="/profile/vector.svg"
+                    src="/images/profile/vector.svg"
                   />
                 </div>
                 <div className="font-medium text-subcard-text/60 text-base md:text-lg">

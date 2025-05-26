@@ -21,7 +21,7 @@ const cryptoData = [
     id: "btc",
     name: "BTC",
     fullName: "Bitcoin",
-    image: "/profile/image-2-2.png",
+    image: "/images/profile/image-2-2.png",
     data: [
       { date: '06:00', value: 76000 },
       { date: '12:00', value: 77000 },
@@ -33,7 +33,7 @@ const cryptoData = [
     id: "eth",
     name: "ETH",
     fullName: "Ethereum",
-    image: "/profile/image-2-1.png",
+    image: "/images/profile/image-2-1.png",
     data: [
       { date: '06:00', value: 1400 },
       { date: '12:00', value: 1500 },

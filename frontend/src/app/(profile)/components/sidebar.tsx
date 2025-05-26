@@ -1,6 +1,6 @@
 "use client";
 
-import React, { JSX, useState } from "react";
+import React, {JSX} from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -8,17 +8,17 @@ import styles from "./sidebar.module.css";
 
 const navItems = [
   {
-    icon: "/profile/vector-5.svg",
+    icon: "/images/profile/vector-5.svg",
     alt: "Profile",
-    path: "/profile",
+    path: "/profile2",
   },
   {
-    icon: "/profile/vector-9.svg",
+    icon: "/images/profile/vector-9.svg",
     alt: "Referrals",
     path: "/referrals",
   },
   {
-    icon: "/profile/vector-4.svg",
+    icon: "/images/profile/vector-4.svg",
     alt: "Details",
     path: "/details",
   },
@@ -26,13 +26,6 @@ const navItems = [
 
 export const SideBar = (): JSX.Element => {
   const pathname = usePathname();
-  const [activeItem, setActiveItem] = useState(0);
-
-  // При клике на элемент сайдбара
-  const handleItemClick = (index: number) => {
-    setActiveItem(index);
-    // Здесь может быть логика перехода на другую страницу
-  };
 
   return (
     <div className={styles.sidebar}>
@@ -42,7 +35,7 @@ export const SideBar = (): JSX.Element => {
             key={line}
             className={styles.iconSidebar}
             alt={`Menu line ${line}`}
-            src="/profile/line-153.svg"
+            src="/images/profile/line-153.svg"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: line * 0.1 }}
@@ -52,10 +45,10 @@ export const SideBar = (): JSX.Element => {
 
       <div className={styles.navItems}>
         {navItems.map((item, index) => {
-          const isActive = pathname === item.path;
+          const isActive = pathname?.startsWith(item.path);
 
           return (
-            <Link href={item.path} key={index} passHref>
+            <Link href={item.path} key={index}>
               <motion.div
                 className={`${styles.navItem} ${
                   isActive ? styles.navItemActive : ""

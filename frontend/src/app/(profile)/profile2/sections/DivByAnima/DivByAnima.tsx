@@ -9,7 +9,7 @@ export const DivByAnima = (): JSX.Element => {
   const userData = {
     name: "Кристина Соколова",
     welcomeMessage: "С возвращением!",
-    profileImage: "/profile/rectangle-12960.png",
+    profileImage: "/images/profile/rectangle-12960.png",
     uid: "9999999999",
     verificationType: "Верифицирован",
     userType: "Личный",
@@ -51,7 +51,7 @@ export const DivByAnima = (): JSX.Element => {
               <img
                 className={styles.editIcon}
                 alt="Edit"
-                src="/profile/edit-2.png"
+                src="/images/profile/edit-2.png"
               />
             </div>
           </div>
@@ -70,7 +70,7 @@ export const DivByAnima = (): JSX.Element => {
               <img
                 className="w-[14px] h-[14px] md:w-[18px] md:h-[18px]"
                 alt="Copy"
-                src="/profile/vector-7_1.svg"
+                src="/images/profile/vector-7_1.svg"
               />
             </div>
           </CardContent>
@@ -102,7 +102,7 @@ export const DivByAnima = (): JSX.Element => {
               <img
                 className="w-[18px] h-[18px] md:w-[22px] md:h-[22px]"
                 alt="Verified"
-                src="/profile/vector-6_1.svg"
+                src="/images/profile/vector-6_1.svg"
               />
             </div>
           </CardContent>
@@ -133,7 +133,7 @@ export const DivByAnima = (): JSX.Element => {
               <img
                 className="w-[24px] h-4 md:w-[34px] md:h-5 ml-2"
                 alt="Vector"
-                src="/profile/vector-12.svg"
+                src="/images/profile/vector-12.svg"
               />
             </div>
 
@@ -181,7 +181,7 @@ export const DivByAnima = (): JSX.Element => {
               <img
                 className="w-4 h-2 md:w-5 md:h-3 ml-2"
                 alt="Email"
-                src="/profile/vector-8_1.svg"
+                src="/images/profile/vector-8_1.svg"
               />
             </div>
           </CardContent>
@@ -199,7 +199,7 @@ export const DivByAnima = (): JSX.Element => {
               <img
                 className="w-[24px] h-3 md:w-[34px] md:h-4 ml-2"
                 alt="Vector"
-                src="/profile/vector-10.svg"
+                src="/images/profile/vector-10.svg"
               />
             </div>
 
@@ -241,7 +241,7 @@ export const DivByAnima = (): JSX.Element => {
               <img
                 className="w-[14px] h-[14px] md:w-[18px] md:h-[18px] ml-2"
                 alt="Copy"
-                src="/profile/vector-7_2.svg"
+                src="/images/profile/vector-7_2.svg"
               />
             </div>
           </CardContent>

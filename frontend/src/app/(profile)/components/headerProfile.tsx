@@ -2,8 +2,8 @@
 
 import React, { JSX } from "react";
 import styles from "./headerProfile.module.css";
-import { Button } from "../profile/components/ui/button";
-import { Avatar, AvatarImage, AvatarFallback } from "../profile/components/ui/avatar";
+import { Button } from "../profile2/components/ui/button";
+import { Avatar, AvatarImage, AvatarFallback } from "../profile2/components/ui/avatar";
 
 export const HeaderProfile = (): JSX.Element => {
   return (
@@ -13,13 +13,13 @@ export const HeaderProfile = (): JSX.Element => {
           <img
             className={styles.iconMedium}
             alt="Messages"
-            src="/profile/vector-7.svg"
+            src="/images/profile/vector-7.svg"
           />
         </Button>
 
         <div className={styles.userProfile}>
           <Avatar className={styles.avatar}>
-            <AvatarImage src="/profile/rectangle-12960.png" alt="User" />
+            <AvatarImage src="/images/profile/rectangle-12960.png" alt="User" />
             <AvatarFallback className={styles.avatarFallback}>
               КР
             </AvatarFallback>
@@ -31,7 +31,7 @@ export const HeaderProfile = (): JSX.Element => {
           <img
             className={styles.iconMedium}
             alt="Settings"
-            src="/profile/vector-3.svg"
+            src="/images/profile/vector-3.svg"
           />
         </Button>
       </div>
