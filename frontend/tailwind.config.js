@@ -16,7 +16,7 @@ module.exports = {
           hover: "#9333EA",
         },
         accent: {
-          DEFAULT: "#8B5CF6", // индиго
+          DEFAULT: "#8B5CF6",   // индиго
           hover: "#7C3AED",
         },
         background: {
