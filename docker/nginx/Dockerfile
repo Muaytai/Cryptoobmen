@@ -1,28 +1,16 @@
-FROM nginx:1.25.5-alpine
+FROM nginx:1.23
 
-# Удаление дефолтной nginx конфигурации
-RUN rm /etc/nginx/conf.d/default.conf
+# Установка необходимых пакетов
+RUN apt-get update && apt-get install -y \
+    apache2-utils \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Копирование основного конфигурационного файла
-COPY conf.d/nginx.conf /etc/nginx/nginx.conf
+# Аргументы для учетных данных
+ARG ADMIN_USER=admin
+ARG ADMIN_PASSWORD=admin
 
-# Создание необходимых каталогов одной командой для уменьшения слоев
-RUN mkdir -p /usr/share/nginx/static \
-    /usr/share/nginx/media
+# Создание файла с паролем для базовой аутентификации
+RUN htpasswd -bc /etc/nginx/.htpasswd ${ADMIN_USER} ${ADMIN_PASSWORD}
 
-# Установка прав одной командой для уменьшения слоев
-RUN chown -R nginx:nginx /usr/share/nginx/static \
-    /usr/share/nginx/media \
-    /var/cache/nginx \
-    /var/log/nginx \
-    /etc/nginx/conf.d \
-    && touch /var/run/nginx.pid \
-    && chown -R nginx:nginx /var/run/nginx.pid
-
-USER nginx
-
-# Порты, которые будет слушать Nginx
-EXPOSE 80 443
-
-# Запуск Nginx
 CMD ["nginx", "-g", "daemon off;"] 

@@ -1,6 +1,6 @@
 'use client';
 
-import {useState, useEffect} from 'react';
+import {useState, useEffect, Suspense} from 'react';
 import {useRouter, useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
@@ -11,7 +11,8 @@ import {TbBrandYandex} from 'react-icons/tb';
 import {useModal} from "@/utils/modalWindows/generalFunctions";
 import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 
-export default function LoginForm() {
+// Компонент, использующий useSearchParams
+const LoginFormWithSearchParams = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const {login, isLoading, error, setDisableAutoLogin, setTokens} = useAuthStore();
@@ -200,5 +201,14 @@ export default function LoginForm() {
                 </div>
             </div>
         </div>
+    );
+};
+
+// Основной компонент, который оборачивает содержимое в Suspense
+export default function LoginForm() {
+    return (
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Загрузка...</div>}>
+            <LoginFormWithSearchParams />
+        </Suspense>
     );
 }

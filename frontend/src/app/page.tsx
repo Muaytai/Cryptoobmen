@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { SocialButtons } from '@/components/ui/SocialButtons';
 import chessImage from '../../public/images/chess.png';
-import { useEffect, useState, CSSProperties } from 'react';
+import { useEffect, useState, CSSProperties, Suspense } from 'react';
 import { useTheme } from '@/lib/ThemeProvider';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -49,7 +49,8 @@ const EmailConfirmedModal = ({ onClose }: { onClose: () => void }) => {
   );
 };
 
-export default function HomePage() {
+// Компонент с использованием useSearchParams
+const HomePageContent = () => {
   const searchParams = useSearchParams();
   // Используем отдельные селекторы useAuthStore, чтобы не возвращать новый объект на каждом рендере
   const showEmailConfirmedModal = useAuthStore((state) => state.showEmailConfirmedModal);
@@ -490,5 +491,14 @@ export default function HomePage() {
         </div>
       </main>
     </div>
+  );
+};
+
+// Основной компонент, который оборачивает содержимое в Suspense
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Загрузка...</div>}>
+      <HomePageContent />
+    </Suspense>
   );
 }

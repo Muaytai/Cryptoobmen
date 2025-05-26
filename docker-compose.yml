@@ -3,44 +3,97 @@ services:
   nginx:
     build:
       context: ./docker/nginx
+      args:
+        - ADMIN_USER=${EMAIL_HOST_USER:-admin}
+        - ADMIN_PASSWORD=${EMAIL_HOST_PASSWORD:-admin}
+    env_file:
+      - ./docker/backend/.env.prod
     ports:
       - "80:80"
       - "443:443"
+      - "8080:8080"
     volumes:
       - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./docker/nginx/scripts:/usr/local/bin
       - ./static:/usr/share/nginx/static
       - ./media:/usr/share/nginx/media
+      - ./docker/nginx/ssl:/etc/nginx/ssl
     depends_on:
       - crypto-backend
       - crypto-frontend
+      - pgadmin
     restart: always
+    networks:
+      - cryptoobmen_network
+    command: nginx -g 'daemon off;'
 
   # Бэкенд Cryptoobmen
   crypto-backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: ./docker/backend/Dockerfile
     volumes:
       - ./backend:/app
       - ./static:/app/static
       - ./media:/app/media
+      - ./backend/logs:/app/logs
     environment:
       - DEBUG=0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    env_file:
+      - ./docker/backend/.env.prod
     restart: always
+    networks:
+      - cryptoobmen_network
+    external_links:
+      - cryptoobmen-postgres:postgres
+      - cryptoobmen-redis:redis
+    command: >
+      bash -c "
+        echo 'Waiting for PostgreSQL...' &&
+        while ! pg_isready -h postgres -p 5432 -q; do sleep 1; done &&
+        echo 'PostgreSQL started' &&
+        python manage.py migrate --noinput &&
+        gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+      "
 
   # Фронтенд Cryptoobmen
   crypto-frontend:
     build:
-      context: ./frontend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      context: .
+      dockerfile: ./docker/frontend/Dockerfile
+    # В продакшене не монтируем исходники, используем только собранные файлы
     environment:
       - NODE_ENV=production
+    env_file:
+      - ./frontend/.env.production
     restart: always
+    networks:
+      - cryptoobmen_network
 
-# volumes:
-#   postgres_data:
+  # pgAdmin для управления базой данных
+  pgadmin:
+    image: dpage/pgadmin4
+    env_file:
+      - ./docker/backend/.env.prod
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${EMAIL_HOST_USER}
+      - PGADMIN_DEFAULT_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - PGADMIN_LISTEN_PORT=80
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: always
+    networks:
+      - cryptoobmen_network
+    external_links:
+      - cryptoobmen-postgres:postgres
 
 networks:
-  cryptoobmen-network:
-    driver: bridge 
+  cryptoobmen_network:
+    name: cryptoobmen_network
+    driver: bridge
+    external: true
+
+volumes:
+  pgadmin_data: 

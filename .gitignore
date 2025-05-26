@@ -71,3 +71,4 @@ docker-compose.local.yml
 .env.backend
 .env.dev
 .env.prod
+.cursorignore

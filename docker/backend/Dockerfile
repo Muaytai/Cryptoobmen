@@ -1,7 +1,8 @@
-FROM python:3.13.3-slim
+FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV ENV_FILE=.env.prod
 
 # Установка зависимостей
 RUN apt-get update && apt-get install -y \
@@ -17,21 +18,36 @@ RUN apt-get update && apt-get install -y \
 RUN addgroup --system app && adduser --system --group app
 
 # Рабочая директория
-WORKDIR /usr/src/app
+WORKDIR /app
 
-# Обновление pip и установка зависимостей
+# Копирование и установка зависимостей отдельно для кэширования слоев
 COPY backend/requirements.txt .
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install gunicorn
+
+# Копирование .env файла для продакшена
+COPY docker/backend/.env.prod /app/.env.prod
 
 # Копирование исходного кода
 COPY backend/ .
 
-# Сбор статических файлов
+# Настройка разрешений и создание директорий
+RUN mkdir -p /app/static /app/media && \
+    mkdir -p /app/logs && \
+    touch /app/logs/django.log && \
+    chown -R app:app /app
+
+# Выполнение сбора статических файлов для продакшена
+ENV DEBUG=False
 RUN python manage.py collectstatic --noinput
 
 # Переключение на непривилегированного пользователя
 USER app
 
-# Запуск gunicorn с указанным числом процессов
-CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"] 
+
+
+
+
+
+
