@@ -1,0 +1,16 @@
+.separator {
+  flex-shrink: 0;
+  background-color: var(--border-color, #e5e7eb); /* или нужный цвет */
+}
+
+/* Горизонтальный сепаратор */
+.horizontal {
+  height: 1px;
+  width: 100%;
+}
+
+/* Вертикальный сепаратор */
+.vertical {
+  width: 1px;
+  height: 100%;
+}
