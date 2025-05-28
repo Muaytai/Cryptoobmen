@@ -404,3 +404,5 @@ SOCIALACCOUNT_PROVIDERS = {
         }
     }
 }
+
+ADMIN_URL = 'admin/'
