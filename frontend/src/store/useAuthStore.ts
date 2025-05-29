@@ -211,10 +211,27 @@ export const useAuthStore = create<AuthState>()(
         const state = get();
         const disableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
         
+        // Проверяем наличие токенов в куки
+        const hasAccessTokenCookie = document.cookie.includes('access_token=');
+        const hasRefreshTokenCookie = document.cookie.includes('refresh_token=');
+        
+        // Проверяем наличие токенов в localStorage
+        const accessToken = localStorage.getItem('access_token');
+        const refreshToken = localStorage.getItem('refresh_token');
+        
+        console.log('Проверка токенов в checkAuthStatus:', {
+          hasAccessTokenCookie,
+          hasRefreshTokenCookie,
+          hasAccessTokenLocal: !!accessToken,
+          hasRefreshTokenLocal: !!refreshToken,
+          disableAutoLogin
+        });
+        
         // Не проверяем статус если:
         // 1. Идет загрузка
-        // 2. Автологин отключен
-        if (state.isLoading || disableAutoLogin) {
+        // 2. Автологин отключен и нет токенов
+        if (state.isLoading || (disableAutoLogin && !hasAccessTokenCookie && !hasRefreshTokenCookie && !accessToken && !refreshToken)) {
+          console.log('Пропускаем проверку аутентификации');
           set({ 
             user: null,
             isAuthenticated: false,
@@ -226,10 +243,27 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
         
+        // Если есть токены, но они не установлены в состоянии - устанавливаем их
+        if ((hasAccessTokenCookie || accessToken) && !state.tokens) {
+          console.log('Устанавливаем токены в состояние');
+          set({
+            tokens: {
+              access: accessToken || '',
+              refresh: refreshToken || ''
+            }
+          });
+        }
+        
         set({ isLoading: true });
         try {
+          console.log('Отправляем запрос на получение данных пользователя');
           const response = await api.auth.getUser();
           const user = response.data;
+          
+          console.log('Получены данные пользователя:', user);
+          
+          // Сбрасываем флаг блокировки автологина
+          localStorage.removeItem('disableAutoLogin');
           
           set({ 
             user, 
@@ -240,15 +274,30 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch (error) {
           console.error('Ошибка проверки аутентификации:', error);
-          clearAuthData();
-          set({ 
-            user: null, 
-            isAuthenticated: false, 
-            isLoading: false,
-            error: null,
-            disableAutoLogin: true,
-            tokens: null
-          });
+          
+          // Проверяем, не является ли ошибка связанной с истекшим токеном
+          const errorObj = error as any;
+          const isTokenError = errorObj.response && (errorObj.response.status === 401 || errorObj.response.status === 403);
+          
+          if (isTokenError) {
+            console.log('Ошибка токена, очищаем данные аутентификации');
+            clearAuthData();
+            set({ 
+              user: null, 
+              isAuthenticated: false, 
+              isLoading: false,
+              error: null,
+              disableAutoLogin: true,
+              tokens: null
+            });
+          } else {
+            // Если это не ошибка токена, то может быть проблема с сетью или сервером
+            console.log('Ошибка не связана с токеном, сохраняем текущее состояние');
+            set({ 
+              isLoading: false,
+              error: 'Ошибка связи с сервером. Пожалуйста, попробуйте позже.'
+            });
+          }
         }
       },
       

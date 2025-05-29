@@ -56,8 +56,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const storedDisableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
       
       // Проверяем наличие JWT токенов
-      const hasSession = document.cookie.includes('auth-token=') || 
-                        document.cookie.includes('refresh-token=');
+      // Добавляем более подробную проверку для отладки
+      console.log('Проверяем куки:', document.cookie);
+      
+      const hasAccessToken = document.cookie.includes('access_token=');
+      const hasRefreshToken = document.cookie.includes('refresh_token=');
+      const hasOldAuthToken = document.cookie.includes('auth-token=');
+      const hasOldRefreshToken = document.cookie.includes('refresh-token=');
+      
+      console.log('Результаты проверки куки:', {
+        hasAccessToken,
+        hasRefreshToken,
+        hasOldAuthToken,
+        hasOldRefreshToken
+      });
+      
+      const hasSession = hasAccessToken || hasRefreshToken || hasOldAuthToken || hasOldRefreshToken;
       
       console.log('AuthProvider init: hasSession =', hasSession, 'disableAutoLogin =', storedDisableAutoLogin);
       
@@ -68,6 +82,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Очищаем JWT куки
         document.cookie = 'auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
         document.cookie = 'refresh-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        document.cookie = 'refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        
+        // Дополнительно очищаем куки с разными параметрами path и domain
+        document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax';
+        document.cookie = 'refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax';
+        document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax';
+        document.cookie = 'refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax';
         
         // Обновляем состояние
         setDisableAutoLogin(true);
@@ -92,11 +114,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Эффект для проверки авторизации при смене страницы
   useEffect(() => {
+    // Проверяем все куки для отладки
+    console.log('Все куки:', document.cookie);
+    
+    // Проверяем токены в localStorage
+    console.log('Токены в localStorage:', {
+      access_token: localStorage.getItem('access_token'),
+      refresh_token: localStorage.getItem('refresh_token')
+    });
+    
     // Пропускаем страницы логина/регистрации и первую загрузку
     if (!['/login', '/register'].includes(pathname) && isInitialized && !disableAutoLogin) {
       // Проверяем наличие JWT токенов
       const hasSession = document.cookie.includes('auth-token=') || 
-                        document.cookie.includes('refresh-token=');
+                        document.cookie.includes('refresh-token=') ||
+                        document.cookie.includes('access_token=') ||
+                        document.cookie.includes('refresh_token=');
+      
+      console.log('Проверка сессии:', { hasSession, pathname, isAuthenticated });
       
       // Если есть токены, но не авторизованы в состоянии - проверяем статус
       if (hasSession && !isAuthenticated) {

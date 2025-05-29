@@ -1,18 +1,21 @@
-from django.shortcuts import render
-from rest_framework import viewsets, permissions, status, generics
+from django.shortcuts import render, get_object_or_404
+from rest_framework import viewsets, permissions, status, generics, filters
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
-from django.db.models import Q, F
+from django.db.models import Q, F, Sum
 from decimal import Decimal
 import requests
 from datetime import datetime
 from django.conf import settings
+from django.utils import timezone
 
-from .models import Cryptocurrency, CryptoPrice, ExchangePair, UserWallet
+from .models import (Cryptocurrency, CryptoPrice, ExchangePair, UserWallet,
+                    InvestmentPlan, UserInvestment, CardDeposit)
 from .serializers import (
     CryptocurrencySerializer, CryptoPriceSerializer, ExchangePairSerializer,
-    UserWalletSerializer, ExchangeCalculatorSerializer
+    UserWalletSerializer, ExchangeCalculatorSerializer, InvestmentPlanSerializer,
+    UserInvestmentSerializer, CardDepositSerializer
 )
 
 
@@ -168,4 +171,345 @@ class ExchangeCalculatorAPIView(generics.GenericAPIView):
             "fee_percentage": fee_percentage,
             "fee_amount": round(fee_amount, 8),
             "fee_usd": round(fee_amount * from_price.price_usd, 2)
+        })
+
+
+class InvestmentPlanViewSet(viewsets.ModelViewSet):
+    """API для работы с инвестиционными планами"""
+    queryset = InvestmentPlan.objects.filter(is_active=True)
+    serializer_class = InvestmentPlanSerializer
+    permission_classes = [AllowAny]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['name', 'description', 'crypto__name', 'crypto__symbol']
+    
+    def get_permissions(self):
+        """Определяем права доступа в зависимости от действия"""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdminUser()]
+        return [AllowAny()]
+    
+    @action(detail=False, methods=['get'])
+    def by_crypto(self, request):
+        """Возвращает инвестиционные планы для конкретной криптовалюты"""
+        crypto_id = request.query_params.get('crypto_id')
+        if not crypto_id:
+            return Response({"error": "Необходимо указать crypto_id"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        plans = InvestmentPlan.objects.filter(crypto_id=crypto_id, is_active=True)
+        serializer = self.get_serializer(plans, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def calculate_return(self, request, pk=None):
+        """Рассчитывает ожидаемый доход для заданной суммы инвестиции"""
+        plan = self.get_object()
+        amount = request.query_params.get('amount')
+        
+        if not amount:
+            return Response({"error": "Необходимо указать сумму инвестиции"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            amount = Decimal(amount)
+        except:
+            return Response({"error": "Некорректная сумма инвестиции"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Проверяем минимальную и максимальную сумму
+        if amount < plan.min_investment:
+            return Response({"error": f"Минимальная сумма инвестиции: {plan.min_investment} {plan.crypto.symbol}"}, 
+                           status=status.HTTP_400_BAD_REQUEST)
+        
+        if amount > plan.max_investment:
+            return Response({"error": f"Максимальная сумма инвестиции: {plan.max_investment} {plan.crypto.symbol}"},
+                           status=status.HTTP_400_BAD_REQUEST)
+        
+        # Рассчитываем ожидаемый доход
+        interest_decimal = plan.interest_rate / Decimal('100.0')
+        expected_return = amount * interest_decimal
+        total_return = amount + expected_return
+        
+        # Получаем текущий курс к USD
+        latest_price = CryptoPrice.objects.filter(crypto=plan.crypto).order_by('-timestamp').first()
+        usd_value = 0
+        if latest_price:
+            usd_value = amount * latest_price.price_usd
+        
+        return Response({
+            "plan": InvestmentPlanSerializer(plan).data,
+            "investment_amount": amount,
+            "interest_rate": plan.interest_rate,
+            "expected_return": expected_return,
+            "total_return": total_return,
+            "duration_days": plan.get_duration_in_days(),
+            "usd_value": round(usd_value, 2)
+        })
+
+
+class UserInvestmentViewSet(viewsets.ModelViewSet):
+    """АРI для работы с инвестициями пользователей"""
+    serializer_class = UserInvestmentSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Пользователь может видеть только свои инвестиции"""
+        return UserInvestment.objects.filter(user=self.request.user)
+    
+    def create(self, request, *args, **kwargs):
+        """Создание новой инвестиции"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Получаем данные из запроса
+        plan_id = serializer.validated_data.get('plan').id
+        wallet_id = serializer.validated_data.get('wallet').id
+        amount = serializer.validated_data.get('amount')
+        
+        # Проверяем, что кошелек принадлежит пользователю
+        wallet = get_object_or_404(UserWallet, id=wallet_id, user=request.user)
+        plan = get_object_or_404(InvestmentPlan, id=plan_id, is_active=True)
+        
+        # Проверяем, что валюты кошелька и плана совпадают
+        if wallet.crypto.id != plan.crypto.id:
+            return Response(
+                {"error": f"Кошелек должен быть в той же валюте, что и план ({plan.crypto.symbol})"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Проверяем минимальную и максимальную сумму
+        if amount < plan.min_investment:
+            return Response(
+                {"error": f"Минимальная сумма инвестиции: {plan.min_investment} {plan.crypto.symbol}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if amount > plan.max_investment:
+            return Response(
+                {"error": f"Максимальная сумма инвестиции: {plan.max_investment} {plan.crypto.symbol}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Проверяем, что на балансе достаточно средств
+        if wallet.available_balance < amount:
+            return Response(
+                {"error": f"Недостаточно средств на балансе. Доступно: {wallet.available_balance} {wallet.crypto.symbol}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Создаем инвестицию
+        investment = serializer.save(user=request.user)
+        
+        # Обновляем баланс кошелька
+        wallet.available_balance -= amount
+        wallet.locked_balance += amount
+        wallet.save()
+        
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['post'])
+    def withdraw_early(self, request, pk=None):
+        """Досрочное закрытие инвестиции"""
+        investment = self.get_object()
+        
+        # Проверяем, что инвестиция активна
+        if investment.status != 'active':
+            return Response(
+                {"error": "Эта инвестиция уже закрыта или отменена"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Проверяем, разрешен ли досрочный вывод
+        if not investment.plan.early_withdrawal_allowed:
+            return Response(
+                {"error": "Досрочный вывод не разрешен для этого плана"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Рассчитываем прогресс и фактический доход
+        progress = investment.get_progress_percentage() / 100.0
+        expected_return = investment.expected_return
+        
+        # Рассчитываем доход с учетом прогресса и комиссии за досрочный вывод
+        actual_return = expected_return * progress
+        
+        # Применяем комиссию за досрочный вывод
+        fee_percentage = investment.plan.early_withdrawal_fee
+        fee_amount = (actual_return * fee_percentage) / 100
+        actual_return -= fee_amount
+        
+        # Обновляем инвестицию
+        investment.status = 'withdrawn'
+        investment.actual_return = actual_return
+        investment.completed_date = timezone.now()
+        investment.save()
+        
+        # Возвращаем средства на баланс кошелька
+        wallet = investment.wallet
+        return_amount = investment.amount + actual_return
+        
+        wallet.locked_balance -= investment.amount
+        wallet.available_balance += return_amount
+        wallet.save()
+        
+        return Response({
+            "message": "Инвестиция успешно закрыта",
+            "investment": UserInvestmentSerializer(investment).data,
+            "withdrawn_amount": return_amount,
+            "fee_amount": fee_amount
+        })
+    
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Статистика по инвестициям пользователя"""
+        # Получаем все инвестиции пользователя
+        investments = UserInvestment.objects.filter(user=request.user)
+        
+        # Статистика по активным инвестициям
+        active_investments = investments.filter(status='active')
+        active_count = active_investments.count()
+        active_amount = active_investments.aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Статистика по завершенным инвестициям
+        completed_investments = investments.filter(status__in=['completed', 'withdrawn'])
+        completed_count = completed_investments.count()
+        completed_amount = completed_investments.aggregate(total=Sum('amount'))['total'] or 0
+        total_return = completed_investments.aggregate(total=Sum('actual_return'))['total'] or 0
+        
+        # Общая статистика
+        total_count = investments.count()
+        total_amount = investments.aggregate(total=Sum('amount'))['total'] or 0
+        
+        return Response({
+            "active_investments": {
+                "count": active_count,
+                "total_amount": active_amount,
+                "expected_return": active_investments.aggregate(total=Sum('expected_return'))['total'] or 0
+            },
+            "completed_investments": {
+                "count": completed_count,
+                "total_amount": completed_amount,
+                "total_return": total_return
+            },
+            "total_investments": {
+                "count": total_count,
+                "total_amount": total_amount
+            }
+        })
+
+
+class CardDepositViewSet(viewsets.ModelViewSet):
+    """АРI для пополнения кошелька с банковской карты"""
+    serializer_class = CardDepositSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Пользователь может видеть только свои пополнения"""
+        return CardDeposit.objects.filter(user=self.request.user)
+    
+    def create(self, request, *args, **kwargs):
+        """Создание нового пополнения"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Получаем данные из запроса
+        wallet_id = serializer.validated_data.get('wallet').id
+        amount = serializer.validated_data.get('amount')
+        currency = serializer.validated_data.get('currency')
+        
+        # Проверяем, что кошелек принадлежит пользователю
+        wallet = get_object_or_404(UserWallet, id=wallet_id, user=request.user)
+        
+        # Получаем текущий курс криптовалюты к USD
+        latest_price = CryptoPrice.objects.filter(crypto=wallet.crypto).order_by('-timestamp').first()
+        if not latest_price:
+            return Response(
+                {"error": "Не удалось получить текущий курс криптовалюты"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Здесь должен быть запрос к сервису обмена валют для получения курса фиатной валюты к USD
+        # Для простоты используем фиксированный курс
+        fiat_to_usd_rate = 0.01  # Примерный курс RUB к USD
+        if currency == 'USD':
+            fiat_to_usd_rate = 1.0
+        elif currency == 'EUR':
+            fiat_to_usd_rate = 1.1  # Примерный курс EUR к USD
+        
+        # Рассчитываем количество криптовалюты
+        usd_amount = amount * fiat_to_usd_rate
+        crypto_amount = usd_amount / latest_price.price_usd
+        
+        # Рассчитываем комиссию (примерно 1%)
+        fee_percentage = 1.0
+        fee_amount = (amount * fee_percentage) / 100
+        
+        # Создаем запись о пополнении
+        deposit = serializer.save(
+            user=request.user,
+            crypto_amount=crypto_amount,
+            exchange_rate=latest_price.price_usd,
+            fee=fee_amount,
+            status='processing'  # В реальном приложении здесь был бы запрос к платежному шлюзу
+        )
+        
+        # В реальном приложении здесь был бы редирект на страницу оплаты
+        # Для демонстрации сразу подтверждаем платеж и зачисляем средства
+        deposit.status = 'completed'
+        deposit.completed_at = timezone.now()
+        deposit.payment_id = f"demo-{uuid.uuid4().hex[:8]}"
+        deposit.card_last4 = '1234'  # В реальном приложении это были бы данные от платежного шлюза
+        deposit.card_brand = 'Visa'
+        deposit.save()
+        
+        # Зачисляем средства на баланс кошелька
+        wallet.balance += crypto_amount
+        wallet.available_balance += crypto_amount
+        wallet.save()
+        
+        return Response({
+            "message": "Пополнение успешно завершено",
+            "deposit": CardDepositSerializer(deposit).data
+        }, status=status.HTTP_201_CREATED)
+    
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Статистика по пополнениям пользователя"""
+        deposits = CardDeposit.objects.filter(user=request.user)
+        
+        # Статистика по завершенным пополнениям
+        completed_deposits = deposits.filter(status='completed')
+        completed_count = completed_deposits.count()
+        completed_amount = completed_deposits.aggregate(total=Sum('amount'))['total'] or 0
+        completed_crypto = completed_deposits.aggregate(total=Sum('crypto_amount'))['total'] or 0
+        
+        # Статистика по обрабатываемым пополнениям
+        processing_deposits = deposits.filter(status='processing')
+        processing_count = processing_deposits.count()
+        processing_amount = processing_deposits.aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Статистика по неудачным пополнениям
+        failed_deposits = deposits.filter(status__in=['failed', 'cancelled'])
+        failed_count = failed_deposits.count()
+        failed_amount = failed_deposits.aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Общая статистика
+        total_count = deposits.count()
+        total_amount = deposits.aggregate(total=Sum('amount'))['total'] or 0
+        
+        return Response({
+            "completed_deposits": {
+                "count": completed_count,
+                "total_amount": completed_amount,
+                "total_crypto": completed_crypto
+            },
+            "processing_deposits": {
+                "count": processing_count,
+                "total_amount": processing_amount
+            },
+            "failed_deposits": {
+                "count": failed_count,
+                "total_amount": failed_amount
+            },
+            "total_deposits": {
+                "count": total_count,
+                "total_amount": total_amount
+            }
         })

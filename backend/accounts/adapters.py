@@ -55,7 +55,24 @@ class CustomAccountAdapter(DefaultAccountAdapter):
 
     def get_email_confirmation_url(self, request, emailconfirmation):
         """Возвращает URL для подтверждения email на фронтенде"""
-        return f"{settings.FRONTEND_URL}/verify-email/{emailconfirmation.key}/"
+        # Сначала получаем ключ подтверждения
+        key = emailconfirmation.key
+        
+        # Получаем email-адрес и пользователя
+        email_address = emailconfirmation.email_address
+        user = email_address.user
+        
+        # Подтверждаем email сразу
+        email_address.verified = True
+        email_address.set_as_primary(conditional=True)
+        email_address.save()
+        
+        # Устанавливаем флаг is_verified для пользователя
+        user.is_verified = True
+        user.save()
+        
+        # Возвращаем URL фронтенда с параметром verified=true
+        return f"{settings.FRONTEND_URL}/verify-email?verified=true"
     
     def send_confirmation_mail(self, request, emailconfirmation, signup):
         """Отправляет письмо с подтверждением"""

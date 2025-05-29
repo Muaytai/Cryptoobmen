@@ -55,6 +55,10 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.yandex',
+    
+    # Приложения для безопасности
+    'django_recaptcha',  # django-recaptcha
+    'axes',  # django-axes для защиты от перебора паролей
 
     # Наши приложения
     'accounts',
@@ -80,12 +84,13 @@ MIDDLEWARE = [
     'core.middleware.CorsMiddleware',
     'django.middleware.cache.UpdateCacheMiddleware',
     'django.middleware.cache.FetchFromCacheMiddleware',
+    'axes.middleware.AxesMiddleware',  # Должен быть последним
 ]
 
 # Настройки безопасности
 SECURE_SSL_REDIRECT = not DEBUG
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -93,6 +98,20 @@ X_FRAME_OPTIONS = 'DENY'
 SECURE_HSTS_SECONDS = 3153600 if not DEBUG else 0
 SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
 SECURE_HSTS_PRELOAD = not DEBUG
+
+# Настройки reCAPTCHA
+RECAPTCHA_PUBLIC_KEY = os.getenv('RECAPTCHA_SITE_KEY', '')
+RECAPTCHA_PRIVATE_KEY = os.getenv('RECAPTCHA_SECRET_KEY', '')
+RECAPTCHA_REQUIRED_SCORE = float(os.getenv('RECAPTCHA_REQUIRED_SCORE', '0.85'))
+RECAPTCHA_DEFAULT_ACTION = 'generic'
+RECAPTCHA_DOMAIN = 'www.recaptcha.net'  # Для работы в России
+
+# Настройки Axes (защита от перебора паролей)
+AXES_FAILURE_LIMIT = int(os.getenv('AXES_FAILURE_LIMIT', '5'))
+AXES_COOLOFF_TIME = int(os.getenv('AXES_COOLOFF_TIME', '1'))  # в часах
+AXES_LOCKOUT_TEMPLATE = 'account_locked.html'
+AXES_LOCK_OUT_BY_COMBINATION_USER_AND_IP = True  # Блокировка по комбинации пользователь+IP
+AXES_RESET_ON_SUCCESS = True  # Сброс счетчика при успешном входе
 
 # Настройки кэширования
 CACHES = {
@@ -126,6 +145,18 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     'EXCEPTION_HANDLER': 'rest_framework.views.exception_handler',
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': os.getenv('THROTTLE_ANON_RATE', '100/day'),
+        'user': os.getenv('THROTTLE_USER_RATE', '1000/day'),
+        'login': os.getenv('THROTTLE_LOGIN_RATE', '5/minute'),
+        'register': os.getenv('THROTTLE_REGISTER_RATE', '10/hour'),
+        'dj_rest_auth': '5/minute',
+    }
 }
 
 ROOT_URLCONF = 'core.urls'
@@ -210,14 +241,21 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Настройки аутентификации
 AUTHENTICATION_BACKENDS = (
+    # AxesStandaloneBackend должен быть первым
+    'axes.backends.AxesStandaloneBackend',
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
 )
 
-# Frontend URL
+# Frontend и Backend URLs
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000' if DEBUG else None)
 if not FRONTEND_URL and not DEBUG:
     raise ImproperlyConfigured('FRONTEND_URL must be set in production')
+
+# Backend URL для формирования ссылок в письмах
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000' if DEBUG else None)
+if not BACKEND_URL and not DEBUG:
+    raise ImproperlyConfigured('BACKEND_URL must be set in production')
 
 # CORS настройки
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
