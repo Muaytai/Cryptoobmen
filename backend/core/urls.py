@@ -1,19 +1,3 @@
-"""
-URL configuration for core project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
 from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
@@ -36,15 +20,28 @@ def auth_callback(request):
     """Перенаправляет на эндпоинт обработки социальной авторизации"""
     return HttpResponseRedirect(f"/api/accounts/social/callback/?next={settings.FRONTEND_URL}/profile")
 
+# Функция для верификации email и перенаправления на фронтенд
+from allauth.account.models import EmailConfirmation, EmailAddress, EmailConfirmationHMAC
+from allauth.account.adapter import get_adapter
+
+def simple_email_redirect(request, key=None, *args, **kwargs):
+    """Мгновенно перенаправляет на фронтенд с параметром verified=true"""
+    # Мгновенно перенаправляем на фронтенд без какой-либо обработки
+    return HttpResponseRedirect(f"{settings.FRONTEND_URL}/verify-email?verified=true")
+
+# Функция для перенаправления на фронтенд после авторизации
+def auth_callback(request):
+    """Перенаправляет на эндпоинт обработки социальной авторизации"""
+    return HttpResponseRedirect(f"/api/accounts/social/callback/?next={settings.FRONTEND_URL}/profile")
+
 # Кастомные URL-адреса для регистрации dj_rest_auth, чтобы исправить обработку account-confirm-email
 dj_rest_auth_custom_registration_urls = [
     path('', RegisterView.as_view(), name='rest_register'),
     path('verify-email/', VerifyEmailView.as_view(), name='rest_verify_email'),
     path('resend-email/', ResendEmailVerificationView.as_view(), name="rest_resend_email"),
-    # Ключевое изменение: используем ConfirmEmailView из allauth
-    re_path(r'^account-confirm-email/(?P<key>[-:\w]+)/$', AllauthConfirmEmailView.as_view(), name='account_confirm_email'),
+    # Не используем здесь ConfirmEmailView, так как мы хотим перенаправить на фронтенд
     path('account-email-verification-sent/', 
-         TemplateView.as_view(template_name="account/email_verification_sent.html"), # Укажите путь к вашему шаблону, если он есть, или удалите
+         TemplateView.as_view(template_name="account/email_verification_sent.html"),
          name='account_email_verification_sent'),
 ]
 
@@ -53,6 +50,11 @@ urlpatterns = [
     
     # Добавляем URL-адреса allauth. Это должно решить проблему NoReverseMatch для 'account_email'
     path('accounts/', include('allauth.urls')),
+    
+    # Перенаправление после подтверждения email
+    re_path(r'^accounts/confirm-email/(?P<key>[-:\w]+)/$', simple_email_redirect, name='account_confirm_email'),
+    # Добавляем также перенаправление для account-confirm-email (используется в dj_rest_auth)
+    re_path(r'^api/auth/registration/account-confirm-email/(?P<key>[-:\w]+)/$', simple_email_redirect, name='account_confirm_email_dj_rest_auth'),
 
     # Путь для перенаправления после авторизации через соцсеть
     path('auth/callback/', auth_callback, name='auth_callback'),

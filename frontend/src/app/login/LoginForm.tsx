@@ -19,6 +19,7 @@ const LoginFormWithSearchParams = () => {
     const [credentials, setCredentials] = useState({email: '', password: ''});
     const [showPassword, setShowPassword] = useState(false);
     const [loginAttempted, setLoginAttempted] = useState(false);
+    const [verificationSuccess, setVerificationSuccess] = useState(false);
     const modalManagerChangePassword = useModal(false);
 
     // Функция для очистки всех данных аутентификации
@@ -48,9 +49,10 @@ const LoginFormWithSearchParams = () => {
         setDisableAutoLogin(true);
     };
 
-    // При монтировании компонента проверяем force_login и токены
+    // При монтировании компонента проверяем force_login, verified и токены
     useEffect(() => {
         const forceLogin = searchParams.get('force_login');
+        const verified = searchParams.get('verified');
         
         if (forceLogin === 'true') {
             clearAllAuthData();
@@ -58,6 +60,15 @@ const LoginFormWithSearchParams = () => {
             // Если нет force_login, просто сбрасываем флаг автовхода
             localStorage.removeItem('disableAutoLogin');
             setDisableAutoLogin(false);
+        }
+        
+        // Проверяем, пришли ли мы после успешной верификации email
+        if (verified === 'true') {
+            setVerificationSuccess(true);
+            // Скрываем сообщение через 5 секунд
+            setTimeout(() => {
+                setVerificationSuccess(false);
+            }, 5000);
         }
     }, [searchParams, setDisableAutoLogin]);
 
@@ -140,6 +151,12 @@ const LoginFormWithSearchParams = () => {
                             <div className={styles.titleRegister} onClick={handleLinkToRegister}>Зарегистрироваться
                             </div>
                         </div>
+                        
+                        {verificationSuccess && (
+                            <div className="bg-green-500 text-white p-3 rounded-lg mb-4 text-center">
+                                Email успешно подтвержден! Теперь вы можете войти в систему.
+                            </div>
+                        )}
                         <form className={styles.formStyle} onSubmit={handleSubmit}>
                             <Input
                                 type="email"

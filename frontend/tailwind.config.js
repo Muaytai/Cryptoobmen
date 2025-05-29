@@ -16,7 +16,7 @@ module.exports = {
           hover: "#9333EA",
         },
         accent: {
-          DEFAULT: "#8B5CF6", // индиго
+          DEFAULT: "#8B5CF6", //  индиго
           hover: "#7C3AED",
         },
         background: {
@@ -54,6 +54,10 @@ module.exports = {
         lg: "0.5rem",
         md: "0.375rem",
         sm: "0.25rem",
+      },
+      boxShadow: {
+        'light': '0 0 20px rgba(0, 0, 0, 0.3)',
+        'dark': 'none'
       },
     },
   },

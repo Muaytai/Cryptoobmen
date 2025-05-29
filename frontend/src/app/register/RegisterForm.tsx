@@ -84,6 +84,9 @@ export default function RegisterForm() {
                 } else if (err.message.includes('сервер вернул пустой ответ')) {
                     setNetworkError('Сервер вернул пустой ответ. Проверьте настройки Django и логи сервера.');
                 }
+                else if (err.message.includes('')) {
+                    setNetworkError('Пользователь с таким email уже существует.');
+                }
             }
             // Другие ошибки обрабатываются в useAuthStore и отображаются через error
         }

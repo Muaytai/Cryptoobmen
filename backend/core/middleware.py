@@ -4,9 +4,11 @@ from django.conf import settings
 import re
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError, AuthenticationFailed
 from django.contrib.auth import logout
+import logging
 
+logger = logging.getLogger(__name__)
 
 class JWTCookieMiddleware:
     def __init__(self, get_response):
@@ -61,9 +63,18 @@ class JWTCookieMiddleware:
                 user = self.jwt_auth.get_user(validated_token)
                 request.user = user
                 request.META['HTTP_AUTHORIZATION'] = f"{settings.SIMPLE_JWT['AUTH_HEADER_TYPES'][0]} {access_token}"
-            except (InvalidToken, TokenError):
-                self._remove_auth_cookies(request)
+            except (InvalidToken, TokenError, AuthenticationFailed) as e:
+                logger.warning(f"Ошибка аутентификации JWT: {str(e)}")
+                # При ошибке аутентификации просто сбрасываем пользователя
+                # Куки будут удалены при следующем запросе на выход или при выходе из фронтенда
                 request.user = None
+                if 'HTTP_AUTHORIZATION' in request.META:
+                    del request.META['HTTP_AUTHORIZATION']
+            except Exception as e:
+                logger.error(f"Непредвиденная ошибка при аутентификации JWT: {str(e)}")
+                request.user = None
+                if 'HTTP_AUTHORIZATION' in request.META:
+                    del request.META['HTTP_AUTHORIZATION']
 
     def _remove_auth_cookies(self, response):
         cookies_to_delete = [
@@ -76,15 +87,32 @@ class JWTCookieMiddleware:
             'next_hmr_refresh_hash'
         ]
         
+        # Добавляем имя куки из настроек, если оно не включено в список
+        if settings.SIMPLE_JWT.get('AUTH_COOKIE') and settings.SIMPLE_JWT['AUTH_COOKIE'] not in cookies_to_delete:
+            cookies_to_delete.append(settings.SIMPLE_JWT['AUTH_COOKIE'])
+        
         for cookie in cookies_to_delete:
             if cookie:
+                # Удаляем куки с разными параметрами path и domain для большей надежности
+                # Сначала с текущими настройками
                 response.delete_cookie(
                     cookie,
                     path='/',
                     domain=None,
                     samesite='Lax'
                 )
+                
+                # Затем с корневым путем
+                response.delete_cookie(
+                    cookie,
+                    path='/',
+                    domain=None
+                )
+                
+                # И наконец без дополнительных параметров
+                response.delete_cookie(cookie)
         
+        logger.debug("Куки аутентификации удалены")
         return response
 
 

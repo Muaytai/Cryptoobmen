@@ -1,4 +1,6 @@
+// Используем базовый URL без /api, так как он уже содержится в NEXT_PUBLIC_API_URL
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tkxn.org/api';
+console.log('Базовый URL API:', API_URL);
 
 interface ApiResponse<T = any> {
   data: T;

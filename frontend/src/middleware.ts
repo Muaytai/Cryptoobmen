@@ -39,11 +39,18 @@ export function middleware(request: NextRequest) {
   }
 
   // Проверяем наличие токенов в cookies или localStorage
-  const token = request.cookies.get('access_token')?.value;
+  const cookieName = process.env.NEXT_PUBLIC_AUTH_COOKIE_NAME || 'auth-token';
+  const token = request.cookies.get(cookieName)?.value || request.cookies.get('access_token')?.value;
 
   // Если нет токена и пользователь пытается получить доступ к защищенным маршрутам
-  if (!token && request.nextUrl.pathname.startsWith('/profile')) {
-    return NextResponse.redirect(new URL('/login?force_login=true', request.url));
+  if (!token && (
+    request.nextUrl.pathname.startsWith('/profile') ||
+    request.nextUrl.pathname.startsWith('/wallet') ||
+    request.nextUrl.pathname.startsWith('/funds/deposit')
+  )) {
+    // Сохраняем путь, куда пытался попасть пользователь, чтобы вернуться после авторизации
+    const redirect = encodeURIComponent(request.nextUrl.pathname);
+    return NextResponse.redirect(new URL(`/login?redirect=${redirect}`, request.url));
   }
 
   return NextResponse.next();
@@ -54,6 +61,8 @@ export const config = {
     '/',
     '/profile/:path*',
     '/dashboard/:path*',
+    '/wallet/:path*',
+    '/funds/:path*',
     '/login/:path*',
     '/register/:path*',
   ],

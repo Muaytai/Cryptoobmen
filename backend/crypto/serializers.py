@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Cryptocurrency, CryptoPrice, ExchangePair, UserWallet
+from .models import Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, InvestmentPlan, UserInvestment, CardDeposit
 
 
 class CryptocurrencySerializer(serializers.ModelSerializer):
@@ -47,8 +47,10 @@ class UserWalletSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserWallet
         fields = ['id', 'crypto', 'crypto_name', 'crypto_symbol', 'crypto_icon',
-                 'balance', 'address', 'is_active', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'crypto', 'balance', 'created_at', 'updated_at']
+                 'balance', 'available_balance', 'locked_balance', 'address', 
+                 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'crypto', 'balance', 'available_balance', 'locked_balance', 
+                           'created_at', 'updated_at']
 
 
 class ExchangeCalculatorSerializer(serializers.Serializer):
@@ -90,3 +92,54 @@ class ExchangeCalculatorSerializer(serializers.Serializer):
             return data
         except Cryptocurrency.DoesNotExist:
             raise serializers.ValidationError("Одна из валют не найдена или неактивна") 
+
+
+class InvestmentPlanSerializer(serializers.ModelSerializer):
+    """Сериализатор для инвестиционных планов"""
+    crypto_name = serializers.ReadOnlyField(source='crypto.name')
+    crypto_symbol = serializers.ReadOnlyField(source='crypto.symbol')
+    duration_unit_display = serializers.CharField(source='get_duration_unit_display', read_only=True)
+    duration_in_days = serializers.IntegerField(source='get_duration_in_days', read_only=True)
+    
+    class Meta:
+        model = InvestmentPlan
+        fields = ['id', 'name', 'description', 'crypto', 'crypto_name', 'crypto_symbol',
+                 'interest_rate', 'duration_value', 'duration_unit', 'duration_unit_display',
+                 'duration_in_days', 'min_investment', 'max_investment', 'is_active',
+                 'early_withdrawal_allowed', 'early_withdrawal_fee', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class UserInvestmentSerializer(serializers.ModelSerializer):
+    """Сериализатор для инвестиций пользователей"""
+    plan_name = serializers.ReadOnlyField(source='plan.name')
+    crypto_symbol = serializers.ReadOnlyField(source='wallet.crypto.symbol')
+    crypto_name = serializers.ReadOnlyField(source='wallet.crypto.name')
+    interest_rate = serializers.ReadOnlyField(source='plan.interest_rate')
+    progress = serializers.FloatField(source='get_progress_percentage', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    class Meta:
+        model = UserInvestment
+        fields = ['id', 'investment_id', 'user', 'wallet', 'plan', 'plan_name',
+                 'crypto_symbol', 'crypto_name', 'amount', 'expected_return',
+                 'interest_rate', 'start_date', 'end_date', 'status', 'status_display',
+                 'actual_return', 'completed_date', 'progress', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'investment_id', 'expected_return', 'end_date',
+                           'actual_return', 'completed_date', 'created_at', 'updated_at']
+
+
+class CardDepositSerializer(serializers.ModelSerializer):
+    """Сериализатор для пополнения кошелька с банковской карты"""
+    user_email = serializers.ReadOnlyField(source='user.email')
+    crypto_symbol = serializers.ReadOnlyField(source='wallet.crypto.symbol')
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    class Meta:
+        model = CardDeposit
+        fields = ['id', 'deposit_id', 'user', 'user_email', 'wallet', 'crypto_symbol',
+                 'amount', 'currency', 'card_last4', 'card_brand', 'status',
+                 'status_display', 'payment_id', 'fee', 'crypto_amount', 'exchange_rate',
+                 'created_at', 'updated_at', 'completed_at']
+        read_only_fields = ['id', 'deposit_id', 'payment_id', 'crypto_amount',
+                           'exchange_rate', 'created_at', 'updated_at', 'completed_at']
