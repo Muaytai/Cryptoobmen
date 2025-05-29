@@ -1,10 +1,13 @@
 "use client";
 
-import React, { JSX } from "react";
+import React, {JSX, useState} from "react";
 import styles from "./details.module.css";
-import { Button } from "@/components/ui/Button";
-import { Card, CardContent } from "@/components/ui/card";
-import { clsx } from "clsx";
+import {Button} from "@/components/ui/Button";
+import {Card, CardContent} from "@/components/ui/card";
+import {clsx} from "clsx";
+import Image from "next/image";
+import {Modal} from "@/app/(profile)/components/modals/Modal";
+import {AddWalletForm} from "@/app/(profile)/components/modals/addWalletForm/AddWalletForm";
 
 const wallets = [
   {
@@ -46,14 +49,24 @@ const wallets = [
 ];
 
 export const Details = (): JSX.Element => {
+  const [modalOpen, setModalOpen] = useState(false);
+
   return (
     <section className={styles.container}>
-      <h2 className="text-violet-600 text-3xl font-normal mb-8 [font-family:'Manrope',Helvetica]">
-        Реквизиты
-      </h2>
+      <div className="flex justify-between">
+        <h2 className="text-violet-600 text-3xl font-normal mb-8 [font-family:'Manrope',Helvetica]">
+          Реквизиты
+        </h2>
+        <Button className="w-[220px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px]" onClick={() => setModalOpen(true)}>
+              <span className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
+                Добавить реквизиты
+              </span>
+        </Button>
+      </div>
 
       <div className={styles.content}>
-        <Card className="flex gap-4 w-full p-5 mb-[160px] text-subcard-text shadow-[0px_0px_20px_#0000004c] rounded-[15px] md:rounded-[25px] ">
+        <Card
+          className="flex gap-4 w-full p-5 mb-[160px] text-subcard-text shadow-[0px_0px_20px_#0000004c] rounded-[15px] md:rounded-[25px] ">
           <CardContent className="w-full p-0 md:p-0">
             <div className="w-full max-w-full bg-card rounded-lg overflow-hidden">
               {/* Заголовки */}
@@ -103,8 +116,8 @@ export const Details = (): JSX.Element => {
                       width: "100%",
                     }}
                   >
-                    <div className="px-4 py-4 text-sm text-subcard-text/70 ">
-                      {item.system}
+                    <div className="flex gap-2 fa-align-center px-4 py-4 text-sm text-subcard-text/70 ">
+                      <Image src="/images/profile/vector-usdt.svg" width={12} height={12} alt="usdt"/> {item.system}
                     </div>
                     <div className="px-4 py-4 text-sm text-subcard-text/70 ">
                       {item.name}
@@ -134,6 +147,10 @@ export const Details = (): JSX.Element => {
           </CardContent>
         </Card>
       </div>
+
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Добавить реквизит">
+        <AddWalletForm/>
+      </Modal>
     </section>
   );
 };
