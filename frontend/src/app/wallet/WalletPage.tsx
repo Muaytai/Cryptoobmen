@@ -23,13 +23,17 @@ interface Wallet {
 }
 
 interface CryptoPrice {
-  id: number;
-  crypto: {
-    id: number;
-    name: string;
-    symbol: string;
-  };
+  id: number;         // ID записи о цене
+  crypto: number;     // ID криптовалюты (просто число)
+  crypto_name: string;
+  crypto_symbol: string;
   price_usd: string;
+  // Добавьте сюда другие поля из API ответа для цен, если они вам нужны в этом компоненте
+  // price_btc?: string;
+  // price_eth?: string;
+  // market_cap?: string;
+  // volume_24h?: string;
+  // timestamp?: string;
 }
 
 export const WalletPage: React.FC = () => {
@@ -42,45 +46,42 @@ export const WalletPage: React.FC = () => {
   const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null);
   
   const router = useRouter();
-  const { tokens, isAuthenticated } = useAuthStore();
+  const { tokens, isAuthenticated, user } = useAuthStore(); // Добавлен user для отладки
   const token = tokens?.access;
+
+  console.log('[WalletPage] Initializing. Auth state from store:', { tokenFromStore: tokens?.access, isAuthenticatedFromStore: isAuthenticated, userFromStore: user });
 
   // Получение данных кошельков пользователя
   useEffect(() => {
     const fetchWallets = async () => {
+      console.log('[WalletPage Effect] Running. Current auth state:', { token, isAuthenticated, user });
       // Проверяем наличие токена и авторизации
       if (!token || !isAuthenticated) {
-        console.log('Нет токена или не авторизован, перенаправляем на страницу входа');
+        console.log('[WalletPage Effect] Нет токена или не авторизован. Перенаправляем на /login. Состояние:', { token, isAuthenticated });
         router.push('/login?redirect=wallet');
         return;
       }
-      
-      // Дополнительная проверка на наличие токена в заголовках
-      if (!token) {
-        console.log('Токен отсутствует в заголовках');
-        router.push('/login?redirect=wallet');
-        return;
-      }
+      // Избыточная проверка на !token удалена, так как она покрывается первой
 
-      console.log('Начинаем загрузку данных кошелька');
+      console.log('[WalletPage Effect] Начинаем загрузку данных кошелька. Токен используется:', token ? 'да' : 'нет');
       try {
         setLoading(true);
         
         // Получаем кошельки пользователя
-        console.log('Запрашиваем кошельки по URL:', `${process.env.NEXT_PUBLIC_API_URL}/wallets/`);
-        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/wallets/`, {
+        console.log('Запрашиваем кошельки по URL:', `${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`);
+        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         console.log('Получен ответ по кошелькам:', walletsResponse.data);
         
         // Получаем последние цены криптовалют
-        console.log('Запрашиваем цены криптовалют по URL:', `${process.env.NEXT_PUBLIC_API_URL}/crypto-prices/latest/`);
-        const pricesResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto-prices/latest/`);
+        console.log('Запрашиваем цены криптовалют по URL:', `${process.env.NEXT_PUBLIC_API_URL}/crypto/prices/latest/`);
+        const pricesResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/prices/latest/`);
         console.log('Получен ответ по ценам:', pricesResponse.data);
         
         // Получаем общий баланс в USD
-        console.log('Запрашиваем баланс по URL:', `${process.env.NEXT_PUBLIC_API_URL}/wallets/balance/`);
-        const balanceResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/wallets/balance/`, {
+        console.log('Запрашиваем баланс по URL:', `${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/balance/`);
+        const balanceResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/balance/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         console.log('Получен ответ по балансу:', balanceResponse.data);
@@ -97,18 +98,27 @@ export const WalletPage: React.FC = () => {
     };
 
     fetchWallets();
-  }, [token, router]);
+  }, [token, isAuthenticated, router, user]);
 
   // Получение цены криптовалюты по ID
   const getCryptoPrice = (cryptoId: number): string => {
-    const price = prices.find(p => p.crypto.id === cryptoId);
+    console.log('[getCryptoPrice] Called for cryptoId:', cryptoId, 'Current prices:', JSON.stringify(prices));
+    const price = prices.find(p => {
+      console.log('[getCryptoPrice] Comparing p.crypto:', p.crypto, 'with cryptoId:', cryptoId, 'Match:', p.crypto === cryptoId);
+      return p.crypto === cryptoId;
+    });
+    console.log('[getCryptoPrice] Found priceInfo:', price);
     return price ? price.price_usd : '0';
   };
 
   // Расчет USD-эквивалента для кошелька
   const getWalletUsdValue = (wallet: Wallet): number => {
-    const price = parseFloat(getCryptoPrice(wallet.crypto.id));
+    console.log('[getWalletUsdValue] Called for wallet:', wallet.crypto.symbol, 'wallet.crypto.id:', wallet.crypto.id);
+    const priceString = getCryptoPrice(wallet.crypto.id);
+    console.log('[getWalletUsdValue] Price string from getCryptoPrice:', priceString);
+    const price = parseFloat(priceString);
     const balance = parseFloat(wallet.balance);
+    console.log('[getWalletUsdValue] Calculated price:', price, 'balance:', balance, 'USD Value:', price * balance);
     return price * balance;
   };
 
@@ -183,7 +193,7 @@ export const WalletPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {wallets && wallets.length > 0 ? wallets.map(wallet => {
           // Находим текущую цену криптовалюты
-          const price = prices && prices.length > 0 ? prices.find(p => p.crypto && p.crypto.id === wallet.crypto.id) : null;
+          const price = prices && prices.length > 0 ? prices.find(p => p.crypto === wallet.crypto.id) : null;
           const usdValue = price && wallet.balance ? parseFloat(wallet.balance) * parseFloat(price.price_usd) : 0;
           
           return (
@@ -199,7 +209,7 @@ export const WalletPage: React.FC = () => {
                   />
                 ) : (
                   <div className="w-10 h-10 bg-gray-700 rounded-full mr-3 flex items-center justify-center">
-                    {wallet.crypto.symbol.slice(0, 2)}
+                    {wallet?.crypto?.symbol?.slice(0, 2) || 'N/A'}
                   </div>
                 )}
                 <div>
