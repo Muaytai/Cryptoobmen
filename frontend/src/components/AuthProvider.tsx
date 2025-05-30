@@ -16,101 +16,86 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Проверяем куки при загрузке и после обновления
   useEffect(() => {
     if (typeof window !== 'undefined' && !isInitialized) {
-      // Проверяем наличие параметра force_login в URL
       const urlParams = new URLSearchParams(window.location.search);
       const forceLogin = urlParams.get('force_login') === 'true';
-      
-      // Если установлен force_login, принудительно очищаем все данные
+
       if (forceLogin) {
-        console.log('Принудительная очистка данных авторизации');
-        
-        // Очищаем все куки
-        const cookies = [
-          'access_token',
-          'refresh_token',
-          'sessionid',
-          'dj_session_id',
-          'csrftoken',
-          'auth_token',
-          'next_hmr_refresh_hash'
+        console.log('AuthProvider: Принудительная очистка данных авторизации из-за force_login');
+        const cookiesToClear = [
+          'access_token', 'refresh_token', 'sessionid',
+          'dj_session_id', 'csrftoken', 'auth_token',
+          // 'next_hmr_refresh_hash' // этот можно оставить
         ];
-        
-        cookies.forEach(cookie => {
+        cookiesToClear.forEach(cookie => {
           document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
           document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+          document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
         });
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('auth-storage'); // zustand persist key
+        // sessionStorage.clear(); // Если используется
         
-        // Очищаем localStorage и sessionStorage
-        localStorage.clear();
-        sessionStorage.clear();
-        
-        // Устанавливаем флаг блокировки автовхода
         localStorage.setItem('disableAutoLogin', 'true');
-        setDisableAutoLogin(true);
-        
+        setDisableAutoLogin(true); // Обновляем состояние в store
         setIsInitialized(true);
         return;
       }
-      
-      // Проверяем флаг disableAutoLogin в localStorage
+
       const storedDisableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
-      
-      // Проверяем наличие JWT токенов
-      // Добавляем более подробную проверку для отладки
-      console.log('Проверяем куки:', document.cookie);
-      
-      const hasAccessToken = document.cookie.includes('access_token=');
-      const hasRefreshToken = document.cookie.includes('refresh_token=');
-      const hasOldAuthToken = document.cookie.includes('auth-token=');
-      const hasOldRefreshToken = document.cookie.includes('refresh-token=');
-      
-      console.log('Результаты проверки куки:', {
-        hasAccessToken,
-        hasRefreshToken,
-        hasOldAuthToken,
-        hasOldRefreshToken
-      });
-      
-      const hasSession = hasAccessToken || hasRefreshToken || hasOldAuthToken || hasOldRefreshToken;
-      
-      console.log('AuthProvider init: hasSession =', hasSession, 'disableAutoLogin =', storedDisableAutoLogin);
-      
-      // Если был установлен флаг отключения автовхода, принудительно очищаем куки
+      console.log('AuthProvider init: storedDisableAutoLogin =', storedDisableAutoLogin, ', Zustand disableAutoLogin =', disableAutoLogin);
+
       if (storedDisableAutoLogin) {
-        console.log('Флаг отключения автовхода активен, блокируем автоматический вход');
-        
-        // Очищаем JWT куки
-        document.cookie = 'auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        document.cookie = 'refresh-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        document.cookie = 'refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        
-        // Дополнительно очищаем куки с разными параметрами path и domain
-        document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax';
-        document.cookie = 'refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax';
-        document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax';
-        document.cookie = 'refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax';
-        
-        // Обновляем состояние
-        setDisableAutoLogin(true);
+        console.log('AuthProvider init: Флаг disableAutoLogin активен, автоматический вход не будет выполнен.');
+        if (!disableAutoLogin) { // Синхронизируем состояние Zustand, если оно отличается
+            setDisableAutoLogin(true);
+        }
+        checkAuthStatus().finally(() => {
+          console.log('[AuthProvider Init] checkAuthStatus completed. Final store state:', { 
+            isAuthenticated: useAuthStore.getState().isAuthenticated, 
+            user: useAuthStore.getState().user,
+            tokens: useAuthStore.getState().tokens,
+            disableAutoLogin: useAuthStore.getState().disableAutoLogin 
+          });
+          setIsInitialized(true);
+        }); 
+        return; 
       }
-      // Если есть сессия и нет флага отключения автовхода - проверяем авторизацию
-      else if (hasSession && !storedDisableAutoLogin) {
-        console.log('Обнаружена активная сессия, проверяем авторизацию');
-        localStorage.removeItem('disableAutoLogin');
-        setDisableAutoLogin(false);
+
+      // Если автологин не отключен (storedDisableAutoLogin === false), проверяем наличие токенов
+      const accessTokenCookie = document.cookie.includes('access_token=');
+      const refreshTokenCookie = document.cookie.includes('refresh_token=');
+      const accessTokenLocal = localStorage.getItem('access_token');
+      const refreshTokenLocal = localStorage.getItem('refresh_token');
+
+      const hasAnyToken = accessTokenCookie || refreshTokenCookie || !!accessTokenLocal || !!refreshTokenLocal;
+      console.log('AuthProvider init: Результаты проверки токенов:', {
+        accessTokenCookie,
+        refreshTokenCookie,
+        hasAccessTokenLocal: !!accessTokenLocal,
+        hasRefreshTokenLocal: !!refreshTokenLocal,
+        hasAnyToken
+      });
+
+      if (hasAnyToken) {
+        console.log('AuthProvider init: Обнаружены токены, пытаемся проверить авторизацию.');
+        // Если есть токены, убеждаемся, что disableAutoLogin сброшен (на случай если он был true в Zustand, но false в localStorage)
+        if (disableAutoLogin) {
+            setDisableAutoLogin(false);
+        }
+        localStorage.removeItem('disableAutoLogin'); // Убираем из localStorage, если был
         checkAuthStatus();
-      } 
-      // Если нет сессии, устанавливаем флаг блокировки автовхода
-      else if (!hasSession) {
-        console.log('Сессия не обнаружена, устанавливаем флаг блокировки автовхода');
-        localStorage.setItem('disableAutoLogin', 'true');
-        setDisableAutoLogin(true);
+      } else {
+        console.log('AuthProvider init: Токены не обнаружены, автоматический вход невозможен. Пользователь не авторизован.');
+        // Если токенов нет и disableAutoLogin не был активен, пользователь просто не залогинен.
+        // Не нужно устанавливать disableAutoLogin в true здесь, это задача logout или force_login.
+        // Убедимся, что isAuthenticated в store false, если checkAuthStatus не будет вызван.
+        // Это должно быть обработано в checkAuthStatus или начальном состоянии store.
       }
-      
       setIsInitialized(true);
     }
-  }, [isInitialized, setDisableAutoLogin, checkAuthStatus]);
+  }, [isInitialized, checkAuthStatus, setDisableAutoLogin, disableAutoLogin]);
 
   // Эффект для проверки авторизации при смене страницы
   useEffect(() => {

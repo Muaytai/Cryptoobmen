@@ -47,16 +47,18 @@ class CryptoPriceViewSet(viewsets.ReadOnlyModelViewSet):
     
     def get_queryset(self):
         """Получаем последние цены для каждой криптовалюты"""
-        queryset = CryptoPrice.objects.none()
+        latest_price_ids = []
+        active_crypto_ids = Cryptocurrency.objects.filter(is_active=True).values_list('id', flat=True)
         
-        # Получаем ID последних цен для каждой криптовалюты
-        crypto_ids = Cryptocurrency.objects.filter(is_active=True).values_list('id', flat=True)
-        for crypto_id in crypto_ids:
+        for crypto_id in active_crypto_ids:
             latest_price = CryptoPrice.objects.filter(crypto_id=crypto_id).order_by('-timestamp').first()
             if latest_price:
-                queryset = queryset | CryptoPrice.objects.filter(id=latest_price.id)
-                
-        return queryset
+                latest_price_ids.append(latest_price.id)
+        
+        if not latest_price_ids:
+            return CryptoPrice.objects.none()
+            
+        return CryptoPrice.objects.filter(id__in=latest_price_ids).order_by('-timestamp') # Added order_by for consistency
     
     @action(detail=False, methods=['get'])
     def latest(self, request):
