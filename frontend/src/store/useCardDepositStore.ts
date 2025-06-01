@@ -64,7 +64,7 @@ export const useCardDepositStore = create<CardDepositState>((set, get) => ({
   fetchDeposits: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/api/crypto/card-deposits/');
+      const response = await api.get('/crypto/card-deposits/');
       set({ deposits: response.data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке пополнений:', error);
@@ -78,7 +78,7 @@ export const useCardDepositStore = create<CardDepositState>((set, get) => ({
   fetchDepositStats: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/api/crypto/card-deposits/stats/');
+      const response = await api.get('/crypto/card-deposits/stats/');
       set({ stats: response.data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке статистики пополнений:', error);
@@ -92,7 +92,7 @@ export const useCardDepositStore = create<CardDepositState>((set, get) => ({
   createDeposit: async (walletId: number, amount: number, currency: string) => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.post('/api/crypto/card-deposits/', {
+      const response = await api.post('/crypto/card-deposits/', {
         wallet: walletId,
         amount: amount,
         currency: currency

@@ -94,7 +94,7 @@ export const useInvestmentStore = create<InvestmentState>((set, get) => ({
   fetchPlans: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/api/crypto/investment-plans/');
+      const response = await api.get('/crypto/investment-plans/');
       set({ plans: response.data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке инвестиционных планов:', error);
@@ -108,7 +108,7 @@ export const useInvestmentStore = create<InvestmentState>((set, get) => ({
   fetchPlansByCrypto: async (cryptoId: number) => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get(`/api/crypto/investment-plans/by_crypto/?crypto_id=${cryptoId}`);
+      const response = await api.get(`/crypto/investment-plans/by_crypto/?crypto_id=${cryptoId}`);
       set({ plans: response.data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке инвестиционных планов для криптовалюты:', error);
@@ -122,7 +122,7 @@ export const useInvestmentStore = create<InvestmentState>((set, get) => ({
   fetchUserInvestments: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/api/crypto/investments/');
+      const response = await api.get('/crypto/investments/');
       set({ userInvestments: response.data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке инвестиций пользователя:', error);
@@ -136,7 +136,7 @@ export const useInvestmentStore = create<InvestmentState>((set, get) => ({
   fetchInvestmentStats: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/api/crypto/investments/stats/');
+      const response = await api.get('/crypto/investments/stats/');
       set({ stats: response.data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке статистики инвестиций:', error);
@@ -150,7 +150,7 @@ export const useInvestmentStore = create<InvestmentState>((set, get) => ({
   calculateReturn: async (planId: number, amount: number) => {
     try {
       set({ isLoading: true, error: null, calculatedReturn: null });
-      const response = await api.get(`/api/crypto/investment-plans/${planId}/calculate_return/?amount=${amount}`);
+      const response = await api.get(`/crypto/investment-plans/${planId}/calculate_return/?amount=${amount}`);
       set({ calculatedReturn: response.data, isLoading: false });
       return response.data;
     } catch (error: any) {
@@ -168,7 +168,7 @@ export const useInvestmentStore = create<InvestmentState>((set, get) => ({
   createInvestment: async (walletId: number, planId: number, amount: number) => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.post('/api/crypto/investments/', {
+      const response = await api.post('/crypto/investments/', {
         wallet: walletId,
         plan: planId,
         amount: amount
@@ -194,7 +194,7 @@ export const useInvestmentStore = create<InvestmentState>((set, get) => ({
   withdrawInvestment: async (investmentId: number) => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.post(`/api/crypto/investments/${investmentId}/withdraw_early/`);
+      const response = await api.post(`/crypto/investments/${investmentId}/withdraw_early/`);
       
       // Обновляем список инвестиций пользователя
       await get().fetchUserInvestments();

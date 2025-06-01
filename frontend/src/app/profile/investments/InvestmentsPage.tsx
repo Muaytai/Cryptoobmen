@@ -89,15 +89,15 @@ export const InvestmentsPage: React.FC = () => {
         setLoading(true);
         
         // Получаем инвестиции пользователя
-        console.log('Запрашиваем инвестиции по URL:', `${process.env.NEXT_PUBLIC_API_URL}/investments/`);
-        const investmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/investments/`, {
+        console.log('Запрашиваем инвестиции по URL:', `${process.env.NEXT_PUBLIC_API_URL}/crypto/investments/`);
+        const investmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/investments/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         console.log('Получен ответ по инвестициям:', investmentsResponse.data);
         
         // Получаем статистику по инвестициям
-        console.log('Запрашиваем статистику по URL:', `${process.env.NEXT_PUBLIC_API_URL}/investments/stats/`);
-        const statsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/investments/stats/`, {
+        console.log('Запрашиваем статистику по URL:', `${process.env.NEXT_PUBLIC_API_URL}/crypto/investments/stats/`);
+        const statsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/investments/stats/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         console.log('Получен ответ по статистике:', statsResponse.data);
@@ -237,6 +237,10 @@ export const InvestmentsPage: React.FC = () => {
     );
   }
 
+  if (!loading && investments.length === 0) {
+    return <div className="text-center text-gray-400 mt-8">У вас нет инвестиций</div>;
+  }
+
   // Добавляем логи для отладки рендеринга
   console.log('Состояние перед рендерингом инвестиций:', { loading, error, investments, stats });
 
@@ -290,22 +294,34 @@ export const InvestmentsPage: React.FC = () => {
           <div className="bg-gray-800 rounded-xl p-6 shadow-lg">
             <h2 className="text-lg font-semibold mb-2">Инвестировано</h2>
             <div className="space-y-2">
-              {Object.entries(stats.total_invested).map(([symbol, amount]) => (
-                <p key={symbol} className="text-xl font-bold">
-                  {parseFloat(amount).toFixed(8)} <span className="text-gray-400">{symbol}</span>
-                </p>
-              ))}
+              {stats.total_invested && typeof stats.total_invested === 'object' ? (
+                Object.entries(stats.total_invested).map(([symbol, amount]) => (
+                  <p key={symbol} className="text-xl font-bold">
+                    {typeof amount === 'object' && amount !== null
+                      ? `${(amount as any).total_amount} (${(amount as any).count})`
+                      : parseFloat(amount as any).toFixed(8)} <span className="text-gray-400">{symbol}</span>
+                  </p>
+                ))
+              ) : (
+                <p className="text-gray-400">Нет данных</p>
+              )}
             </div>
           </div>
           
           <div className="bg-gray-800 rounded-xl p-6 shadow-lg">
             <h2 className="text-lg font-semibold mb-2">Ожидаемая прибыль</h2>
             <div className="space-y-2">
-              {Object.entries(stats.total_expected_return).map(([symbol, amount]) => (
-                <p key={symbol} className="text-xl font-bold text-green-500">
-                  {parseFloat(amount).toFixed(8)} <span className="text-gray-400">{symbol}</span>
-                </p>
-              ))}
+              {stats.total_expected_return && typeof stats.total_expected_return === 'object' ? (
+                Object.entries(stats.total_expected_return).map(([symbol, amount]) => (
+                  <p key={symbol} className="text-xl font-bold text-green-500">
+                    {typeof amount === 'object' && amount !== null
+                      ? `${(amount as any).total_amount} (${(amount as any).count})`
+                      : parseFloat(amount as any).toFixed(8)} <span className="text-gray-400">{symbol}</span>
+                  </p>
+                ))
+              ) : (
+                <p className="text-gray-400">Нет данных</p>
+              )}
             </div>
           </div>
         </div>
