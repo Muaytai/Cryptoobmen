@@ -1,9 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
-  darkMode: 'class',
+  content: ["./src/**/*.{js,ts,jsx,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
@@ -20,7 +18,7 @@ module.exports = {
           hover: "#7C3AED",
         },
         background: {
-          DEFAULT: "#FFFFFF",
+          DEFAULT: "hsl(var(--background) / <alpha-value>)",
           dark: "#0A0A0A",
         },
         foreground: {
@@ -35,8 +33,8 @@ module.exports = {
           "dark-foreground": "#FFFFFF",
         },
         subcard: {
-          DEFAULT: 'hsl(var(--subcard-bg) / <alpha-value>)',
-          text: 'hsl(var(--subcard-text) / <alpha-value>)',  // Цвет текста
+          DEFAULT: "hsl(var(--subcard-bg) / <alpha-value>)",
+          text: "hsl(var(--subcard-text) / <alpha-value>)", // Цвет текста
         },
         muted: {
           DEFAULT: "#F3F4F6",
@@ -61,10 +59,10 @@ module.exports = {
         sm: "0.25rem",
       },
       boxShadow: {
-        'light': '0 0 20px rgba(0, 0, 0, 0.3)',
-        'dark': 'none'
+        light: "0 0 20px rgba(0, 0, 0, 0.3)",
+        dark: "none",
       },
     },
   },
   plugins: [],
-} 
+};

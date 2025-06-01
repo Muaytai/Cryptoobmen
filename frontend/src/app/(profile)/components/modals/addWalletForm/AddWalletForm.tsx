@@ -32,9 +32,9 @@ export const AddWalletForm = () => {
     },
   });
 
-  useEffect(() => {
-    setFocus("address");
-  }, [setFocus]);
+  // useEffect(() => {
+  //   setFocus("address");
+  // }, [setFocus]);
 
   const onSubmit = (data: FormData) => {
     console.log("Submitted:", data);
