@@ -72,6 +72,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -224,7 +225,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # Локализация
-LANGUAGE_CODE = 'ru-ru'
+LANGUAGE_CODE = 'ru'
 TIME_ZONE = 'Europe/Moscow'
 USE_I18N = True
 USE_TZ = True
@@ -444,3 +445,7 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 
 ADMIN_URL = 'admin/'
+
+LOCALE_PATHS = [
+    BASE_DIR / 'locale',
+]

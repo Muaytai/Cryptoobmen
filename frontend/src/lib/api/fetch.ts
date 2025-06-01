@@ -27,7 +27,30 @@ const handleResponse = async (response: Response): Promise<ApiResponse> => {
   }
 
   if (!response.ok) {
-    throw new Error(data.detail || 'Произошла ошибка при выполнении запроса');
+        if (response.status === 500) {
+      // Специальная обработка ошибки 500
+      throw new Error('Внутренняя ошибка сервера. Попробуйте позже или свяжитесь с поддержкой.');
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      // Если не удалось распарсить JSON (например, пустой ответ или HTML страница ошибки)
+      throw new Error('Ошибка сервера. Не удалось получить подробности.');
+    }
+    // throw new Error(data.detail || 'Произошла ошибка при выполнении запроса');
+        // Если есть detail
+    if (data.detail) {
+      throw new Error(data.detail);
+    }
+
+    // Если есть ошибки по полям — собираем их в одну строку
+    const errorMessages = Object.values(data)
+      .flat() // потому что значения это массивы строк
+      .join(' ');
+
+    throw new Error(errorMessages || 'Произошла ошибка при выполнении запроса');
   }
 
   return { data };
