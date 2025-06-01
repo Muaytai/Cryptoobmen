@@ -65,8 +65,20 @@ export const DepositPage: React.FC = () => {
   const [cardCvv, setCardCvv] = useState<string>('');
   const [cardHolder, setCardHolder] = useState<string>('');
 
+  // Новое состояние для отслеживания инициализации авторизации
+  const [authInitialized, setAuthInitialized] = useState(false);
+
+  useEffect(() => {
+    // Если user !== undefined, значит, авторизация уже определена
+    if (user !== undefined) {
+      setAuthInitialized(true);
+    }
+  }, [user]);
+
   // Получение данных кошельков пользователя
   useEffect(() => {
+    if (!authInitialized) return; // Ждём инициализации
+
     const fetchData = async () => {
       // Проверяем наличие токена и авторизации
       if (!token || !isAuthenticated) {
@@ -86,14 +98,24 @@ export const DepositPage: React.FC = () => {
         setLoading(true);
         
         // Получаем кошельки пользователя
-        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/wallets/`, {
+        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
         // Получаем последние цены криптовалют
-        const pricesResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto-prices/latest/`);
+        const pricesResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/prices/latest/`);
         
-        setWallets(walletsResponse.data);
+        // Маппинг структуры данных
+        const mappedWallets = walletsResponse.data.map((w: any) => ({
+          ...w,
+          crypto: {
+            id: w.crypto_id,
+            name: w.crypto_name,
+            symbol: w.crypto_symbol,
+            icon: w.crypto_icon,
+          },
+        }));
+        setWallets(mappedWallets);
         setPrices(pricesResponse.data);
         
         // Если в URL есть параметр wallet_id, выбираем этот кошелек
@@ -111,7 +133,7 @@ export const DepositPage: React.FC = () => {
     };
 
     fetchData();
-  }, [token, router, searchParams]);
+  }, [token, isAuthenticated, authInitialized, router, searchParams]);
 
   // Обновление расчета криптовалюты при изменении суммы или кошелька
   useEffect(() => {
@@ -251,6 +273,15 @@ export const DepositPage: React.FC = () => {
     }
   };
 
+  if (!authInitialized) {
+    return (
+      <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+        <p className="mt-4 text-gray-300">Проверка авторизации...</p>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
@@ -314,17 +345,21 @@ export const DepositPage: React.FC = () => {
                   `}
                 >
                   <div className="flex items-center">
-                    {wallet.crypto.icon ? (
+                    {wallet.crypto && wallet.crypto.icon ? (
                       <Image 
-                        src={`${process.env.NEXT_PUBLIC_API_URL || ''}${wallet.crypto.icon}`} 
-                        alt={wallet.crypto.symbol} 
-                        width={32} 
-                        height={32} 
+                        src={
+                          wallet.crypto.icon.startsWith('http')
+                            ? wallet.crypto.icon
+                            : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.crypto.icon}`
+                        }
+                        alt={wallet.crypto.symbol}
+                        width={32}
+                        height={32}
                         className="rounded-full mr-3"
                       />
                     ) : (
                       <div className="w-8 h-8 bg-gray-700 rounded-full mr-3 flex items-center justify-center">
-                        {wallet.crypto.symbol.slice(0, 2)}
+                        {wallet.crypto && wallet.crypto.symbol ? wallet.crypto.symbol.slice(0, 2) : ''}
                       </div>
                     )}
                     <div>

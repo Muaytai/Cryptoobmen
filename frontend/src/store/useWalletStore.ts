@@ -51,7 +51,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   fetchWallets: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/api/crypto/wallets/');
+      const response = await api.get('/crypto/wallets/');
       set({ wallets: response.data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке кошельков:', error);
@@ -65,7 +65,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   fetchPrices: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/api/crypto/prices/latest/');
+      const response = await api.get('/crypto/prices/latest/');
       set({ prices: response.data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке цен:', error);
@@ -79,7 +79,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   fetchTotalBalance: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/api/crypto/wallets/balance/');
+      const response = await api.get('/crypto/wallets/balance/');
       set({ 
         totalUsdBalance: response.data.total_usd_balance, 
         isLoading: false 

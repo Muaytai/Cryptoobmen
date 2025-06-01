@@ -79,7 +79,7 @@ export const NewInvestmentPage: React.FC = () => {
         setLoading(true);
         
         // Получаем кошельки пользователя
-        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/wallets/`, {
+        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -87,14 +87,15 @@ export const NewInvestmentPage: React.FC = () => {
         
         // Если в URL есть параметр wallet_id, выбираем этот кошелек
         const walletId = searchParams.get('wallet_id');
-        if (walletId && walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletId))) {
+        if (
+          walletId &&
+          walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletId))
+        ) {
           setSelectedWalletId(parseInt(walletId));
-          
-          // Получаем инвестиционные планы для выбранной криптовалюты
           const selectedWallet = walletsResponse.data.find((w: Wallet) => w.id === parseInt(walletId));
-          if (selectedWallet) {
+          if (selectedWallet && selectedWallet.crypto && selectedWallet.crypto.id) {
             const plansResponse = await axios.get(
-              `${process.env.NEXT_PUBLIC_API_URL}/api/investment-plans/by_crypto/?crypto_id=${selectedWallet.crypto.id}`
+              `${process.env.NEXT_PUBLIC_API_URL}/crypto/investment-plans/by_crypto/?crypto_id=${selectedWallet.crypto.id}`
             );
             setPlans(plansResponse.data);
           }
@@ -117,9 +118,9 @@ export const NewInvestmentPage: React.FC = () => {
       if (selectedWalletId) {
         try {
           const selectedWallet = wallets.find(w => w.id === selectedWalletId);
-          if (selectedWallet) {
+          if (selectedWallet && selectedWallet.crypto && selectedWallet.crypto.id) {
             const plansResponse = await axios.get(
-              `${process.env.NEXT_PUBLIC_API_URL}/api/investment-plans/by_crypto/?crypto_id=${selectedWallet.crypto.id}`
+              `${process.env.NEXT_PUBLIC_API_URL}/crypto/investment-plans/by_crypto/?crypto_id=${selectedWallet.crypto.id}`
             );
             setPlans(plansResponse.data);
             setSelectedPlanId(null); // Сбрасываем выбранный план при смене кошелька
@@ -236,7 +237,7 @@ export const NewInvestmentPage: React.FC = () => {
       };
       
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/investments/`, 
+        `${process.env.NEXT_PUBLIC_API_URL}/investments/`, 
         investmentData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -352,7 +353,11 @@ export const NewInvestmentPage: React.FC = () => {
                       />
                     ) : (
                       <div className="w-8 h-8 bg-gray-700 rounded-full mr-3 flex items-center justify-center">
-                        {wallet.crypto.symbol.slice(0, 2)}
+                        {wallet.crypto && wallet.crypto.symbol ? (
+                          wallet.crypto.symbol.slice(0, 2)
+                        ) : (
+                          ''
+                        )}
                       </div>
                     )}
                     <div>
