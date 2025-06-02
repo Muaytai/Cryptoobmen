@@ -97,22 +97,22 @@ export default function ExchangePageClient() {
         
         // Получаем список криптовалют
         const cryptoResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/cryptocurrencies/`
+          `${process.env.NEXT_PUBLIC_API_URL}/crypto/cryptocurrencies/`
         );
         
         // Получаем список пар обмена
         const pairsResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/pairs/`
+          `${process.env.NEXT_PUBLIC_API_URL}/crypto/pairs/`
         );
         
         // Получаем последние цены криптовалют
         const pricesResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/prices/`
+          `${process.env.NEXT_PUBLIC_API_URL}/crypto/prices/`
         );
         
         // Получаем кошельки пользователя
         const walletsResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/wallets/`,
+          `${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         
