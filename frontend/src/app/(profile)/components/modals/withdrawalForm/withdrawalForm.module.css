@@ -1,0 +1,43 @@
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.divider {
+  height:24px;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  color: #444;
+}
+
+.input,
+.select {
+  padding: 8px 12px;
+  border: 2px solid #6B7280;
+  border-radius: 8px;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.error {
+  border-color: red;
+}
+
+.helper {
+  color: red;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.save {
+  background: #7c3aed;
+  color: white;
+  width: 100%;
+  margin-top: 16px;
+  height: 40px;
+  border-radius: 12px;
+}

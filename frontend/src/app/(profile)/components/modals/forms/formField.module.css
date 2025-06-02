@@ -1,8 +1,7 @@
 .label {
   display: flex;
   flex-direction: column;
-  font-size: 14px;
-  color: #444;
+
 }
 
 .input,
@@ -14,12 +13,16 @@
   font-size: 14px;
 }
 
+.disabled {
+  /*background-color: rgba(0,0,0,0.1) !important;*/
+  border: none;
+}
+
 .error {
   border-color: red;
 }
 
 .helper {
   color: red;
-  font-size: 12px;
   margin-top: 4px;
 }

@@ -214,7 +214,7 @@ export const DivWrapperByAnima = (): JSX.Element => {
               {/* Action Buttons */}
               <div className="flex gap-5">
                 <Button
-                  className="flex-1 md:h-[48px] bg-violet-600 text-white rounded-[15px] border-2 border-solid py-[15px] h-auto">
+                  className="flex-1 md:h-[48px] bg-violet-600 text-white rounded-[15px]  py-[15px] h-auto">
                   <span className="font-medium text-lg text-center leading-[18px] [font-family:'Manrope',Helvetica]">
                     Инвестировать
                   </span>
@@ -222,7 +222,7 @@ export const DivWrapperByAnima = (): JSX.Element => {
 
                 <Button
                   variant="outline"
-                  className="flex-1 md:h-[48px] bg-transparent text-[#1a1a1a] rounded-[15px] border-2 border-solid border-violet-600 py-[15px] h-auto"
+                  className="flex-1 md:h-[48px] bg-transparent text-subcard-text bg-subcard rounded-[15px] border-2 border-solid border-violet-600 py-[15px] h-auto"
                 >
                   <span className="font-medium text-lg text-center leading-[18px] [font-family:'Manrope',Helvetica]">
                     Вывести

@@ -1,6 +1,6 @@
 "use client";
 
-import React, {JSX} from "react";
+import React, {JSX, useState} from "react";
 
 import {DivByAnima} from "./sections/DivByAnima";
 import {DivWrapperByAnima} from "./sections/DivWrapperByAnima/DivWrapperByAnima";

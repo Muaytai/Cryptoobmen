@@ -138,10 +138,10 @@ export const ViewWrapperByAnima = (): JSX.Element => {
                 </Button>
                 <Button
                   variant="outline"
-                  className="w-[160px]  h-[36px] md:h-[48px] rounded-[15px] border-2 border-solid border-violet-600"
+                  className="w-[160px]  h-[36px] md:h-[48px] rounded-[15px] bg-subcard border-2 border-solid border-violet-600"
                 >
                 <span
-                  className="font-medium text-[#1a1a1a] text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
+                  className="font-medium text-subcard-text text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
                   Продать
                 </span>
                 </Button>

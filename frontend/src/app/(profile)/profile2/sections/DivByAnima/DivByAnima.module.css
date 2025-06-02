@@ -76,46 +76,68 @@
 
 .cardsGrid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr) repeat(2, 1.6fr);
-  grid-template-rows: 0.4fr repeat(2, 1fr);
+  grid-template-columns: 1fr 1fr 1.7fr 1.7fr; /* последние две колонки шире */
+  grid-template-areas:
+    "div1 div1 div6 div8"
+    "div2 div3 div6 div8"
+    "div4 div5 div7 div9";
   gap: 20px;
 }
 
-.div1 {
-  grid-area: 1 / 1 / 2 / 3;
+.div1 { grid-area: div1; }
+.div2 { grid-area: div2; }
+.div3 { grid-area: div3; }
+.div4 { grid-area: div4; }
+.div5 { grid-area: div5; }
+.div6 { grid-area: div6; }
+.div7 { grid-area: div7; }
+.div8 { grid-area: div8; }
+.div9 { grid-area: div9; }
+
+/* ✅ Адаптив: 1224px */
+@media (max-width: 1224px) {
+  .cardsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-areas:
+      "div1 div1"
+      "div6 div8"
+      "div2 div3"
+      "div4 div5"
+      "div7 div9";
+  }
 }
 
-.div2 {
-  grid-area: 2 / 1 / 3 / 2;
+/* ✅ Адаптив: 868px */
+@media (max-width: 868px) {
+  .cardsGrid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "div1"
+      "div6"
+      "div8"
+      "div2"
+      "div3"
+      "div4"
+      "div5"
+      "div7"
+      "div9";
+  }
+
+  .profileSection {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .nameContainer {
+    justify-content: center;
+  }
+
+  .actionButton {
+    max-width: 100%;
+  }
 }
 
-.div3 {
-  grid-area: 2 / 2 / 3 / 3;
-}
-
-.div4 {
-  grid-area: 3 / 1 / 4 / 2;
-}
-
-.div5 {
-  grid-area: 3 / 2 / 4 / 3;
-}
-
-.div6 {
-  grid-area: 1 / 3 / 3 / 4;
-}
-
-.div7 {
-  grid-area: 3 / 3 / 4 / 4;
-}
-
-.div8 {
-  grid-area: 1 / 4 / 3 / 5;
-}
-
-.div9 {
-  grid-area: 3 / 4 / 4 / 5;
-}
 
 .cardUserWrapp {
   display: flex;

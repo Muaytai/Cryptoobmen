@@ -1,9 +1,14 @@
-import React, { JSX } from "react";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent } from "../../components/ui/card";
+import React, {JSX, useState} from "react";
+import {Button} from "../../components/ui/button";
+import {Card, CardContent} from "../../components/ui/card";
 import styles from "./ViewByAnima.module.css";
+import {GiftBoxModal} from "@/app/(profile)/components/modals/giftBoxModal/GiftBoxModal";
+import {Modal} from "@/app/(profile)/components/modals/Modal";
 
 export const ViewByAnima = (): JSX.Element => {
+  const [modalOpen, setModalOpen] = useState(false);
+
+
   const userWinnings = [
     {
       id: 1,
@@ -41,7 +46,8 @@ export const ViewByAnima = (): JSX.Element => {
 
       <div className={styles.content}>
         {/* Left card - Gift box information */}
-        <Card className="flex gap-4 w-full p-5 md:w-2/3 shadow-[0px_0px_20px_#0000004c] rounded-[15px] md:rounded-[25px] ">
+        <Card
+          className="flex gap-4 w-full p-5 md:w-2/3 shadow-[0px_0px_20px_#0000004c] rounded-[15px] md:rounded-[25px] ">
           <CardContent className="p-0 md:p-0">
             <div className="text-subcard-text/60 text-base md:text-lg font-medium">
               Открывай наши уникальные подарочные боксы и получай ценные награды
@@ -62,9 +68,11 @@ export const ViewByAnima = (): JSX.Element => {
 
             <Button
               variant="outline"
-              className="w-[160px]  h-[36px] md:h-[48px] rounded-[15px] border-2 border-solid border-violet-600 mt-5"
+              className="w-[160px]  h-[36px] md:h-[48px] rounded-[15px] bg-subcard border-2 border-solid border-violet-600 mt-5"
+              onClick={() => setModalOpen(true)}
             >
-              <span className="font-medium text-[#1a1a1a] text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
+              <span
+                className="font-medium text-subcard-text text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
                 Подробнее
               </span>
             </Button>
@@ -90,15 +98,17 @@ export const ViewByAnima = (): JSX.Element => {
 
               <div className="flex flex-col lg:flex-row justify-between gap-3 md:gap-4 mt-4 md:mt-5">
                 <Button className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] ">
-                  <span className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
+                  <span
+                    className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
                     Купить
                   </span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="w-[160px]  h-[36px] md:h-[48px] rounded-[15px] border-2 border-solid border-violet-600"
+                  className="w-[160px]  h-[36px] md:h-[48px] rounded-[15px] bg-subcard border-2 border-solid border-violet-600"
                 >
-                  <span className="font-medium text-[#1a1a1a] text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
+                  <span
+                    className="font-medium text-subcard-text text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
                     Открыть
                   </span>
                 </Button>
@@ -125,7 +135,7 @@ export const ViewByAnima = (): JSX.Element => {
                   />
                 </div>
                 <div className="font-medium text-subcard-text/60 text-base md:text-lg">
-                  {user.email} <br />
+                  {user.email} <br/>
                   {user.prize}
                 </div>
               </div>
@@ -133,6 +143,10 @@ export const ViewByAnima = (): JSX.Element => {
           </CardContent>
         </Card>
       </div>
+
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Подарочные боксы">
+        <GiftBoxModal/>
+      </Modal>
     </section>
   );
 };
