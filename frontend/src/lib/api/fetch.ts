@@ -32,15 +32,6 @@ const handleResponse = async (response: Response): Promise<ApiResponse> => {
       throw new Error('Внутренняя ошибка сервера. Попробуйте позже или свяжитесь с поддержкой.');
     }
 
-    let data;
-    try {
-      data = await response.json();
-    } catch {
-      // Если не удалось распарсить JSON (например, пустой ответ или HTML страница ошибки)
-      throw new Error('Ошибка сервера. Не удалось получить подробности.');
-    }
-    // throw new Error(data.detail || 'Произошла ошибка при выполнении запроса');
-        // Если есть detail
     if (data.detail) {
       throw new Error(data.detail);
     }
