@@ -12,11 +12,10 @@ def create_user_wallets(sender, instance, created, **kwargs):
     if created:
         cryptocurrencies = Cryptocurrency.objects.filter(is_active=True)
         for crypto in cryptocurrencies:
-            UserWallet.objects.create(
+            UserWallet.objects.get_or_create(
                 user=instance,
                 crypto=crypto,
-                balance=0,
-                is_active=True
+                defaults={'balance': 0, 'is_active': True}
             )
 
 
@@ -26,9 +25,8 @@ def create_wallets_for_new_cryptocurrency(sender, instance, created, **kwargs):
     if created and instance.is_active:
         users = User.objects.all()
         for user in users:
-            UserWallet.objects.create(
+            UserWallet.objects.get_or_create(
                 user=user,
                 crypto=instance,
-                balance=0,
-                is_active=True
+                defaults={'balance': 0, 'is_active': True}
             ) 
