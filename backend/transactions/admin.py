@@ -6,8 +6,8 @@ from django.utils.html import format_html
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
     list_display = ('transaction_id', 'user', 'type', 'status', 'amount', 'crypto', 'timestamp')
-    list_filter = ('type', 'status', 'crypto')
-    search_fields = ('transaction_id', 'user__email', 'user__username', 'tx_hash')
+    list_filter = ('type', 'status', 'crypto__symbol')
+    search_fields = ('transaction_id', 'user__email', 'user__username', 'tx_hash', 'crypto__symbol')
     readonly_fields = ('transaction_id', 'timestamp', 'updated_at')
     date_hierarchy = 'timestamp'
     
@@ -19,8 +19,8 @@ class TransactionAdmin(admin.ModelAdmin):
 @admin.register(Exchange)
 class ExchangeAdmin(admin.ModelAdmin):
     list_display = ('transaction', 'user', 'from_crypto', 'to_crypto', 'from_amount', 'to_amount', 'timestamp')
-    list_filter = ('from_crypto', 'to_crypto')
-    search_fields = ('user__email', 'user__username', 'transaction__transaction_id')
+    list_filter = ('from_crypto__symbol', 'to_crypto__symbol')
+    search_fields = ('user__email', 'user__username', 'transaction__transaction_id', 'from_crypto__symbol', 'to_crypto__symbol')
     readonly_fields = ('timestamp',)
     date_hierarchy = 'timestamp'
     
@@ -30,10 +30,16 @@ class ExchangeAdmin(admin.ModelAdmin):
 
 @admin.register(Deposit)
 class DepositAdmin(admin.ModelAdmin):
-    list_display = ('transaction', 'user', 'wallet', 'address', 'confirmed')
-    list_filter = ('confirmed', 'wallet__crypto')
-    search_fields = ('user__email', 'user__username', 'transaction__transaction_id', 'address')
+    list_display = ('transaction', 'user', 'wallet_currency_display', 'address', 'confirmed')
+    list_filter = ('confirmed', 'wallet__currency__symbol')
+    search_fields = ('user__email', 'user__username', 'transaction__transaction_id', 'address', 'wallet__currency__symbol')
     readonly_fields = ('transaction', 'user', 'wallet', 'address')
+    
+    def wallet_currency_display(self, obj):
+        if obj.wallet:
+            return obj.wallet.currency.symbol
+        return "-"
+    wallet_currency_display.short_description = 'Валюта кошелька'
     
     def has_add_permission(self, request):
         return False
@@ -41,11 +47,17 @@ class DepositAdmin(admin.ModelAdmin):
 
 @admin.register(Withdrawal)
 class WithdrawalAdmin(admin.ModelAdmin):
-    list_display = ('transaction', 'user', 'wallet', 'destination_address', 'is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin')
-    list_filter = ('is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin', 'wallet__crypto')
-    search_fields = ('user__email', 'user__username', 'transaction__transaction_id', 'destination_address')
+    list_display = ('transaction', 'user', 'wallet_currency_display', 'destination_address', 'is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin')
+    list_filter = ('is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin', 'wallet__currency__symbol')
+    search_fields = ('user__email', 'user__username', 'transaction__transaction_id', 'destination_address', 'wallet__currency__symbol')
     readonly_fields = ('transaction', 'user', 'wallet', 'destination_address', 'is_2fa_confirmed', 'is_email_confirmed')
     
+    def wallet_currency_display(self, obj):
+        if obj.wallet:
+            return obj.wallet.currency.symbol
+        return "-"
+    wallet_currency_display.short_description = 'Валюта кошелька'
+
     def has_add_permission(self, request):
         return False
 

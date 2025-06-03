@@ -65,7 +65,7 @@ interface AuthState {
   checkAuthStatus: () => Promise<void>;
   setShowEmailConfirmedModal: (show: boolean) => void;
   setDisableAutoLogin: (disable: boolean) => void;
-  setTokens: (tokens: Tokens) => void;
+  setTokens: (tokens: Tokens | null) => void;
 }
 
 const handleApiError = (error: any, defaultMessage: string): string => {
@@ -114,65 +114,36 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
-      isLoading: false,
+      isLoading: true,
       error: null,
       showEmailConfirmedModal: false,
-      disableAutoLogin: true, // По умолчанию автологин отключен
+      disableAutoLogin: true,
       tokens: null,
       
-      setTokens: (tokens: Tokens) => {
-        set({ tokens, isAuthenticated: true });
-        // Сохраняем токены в localStorage
-        localStorage.setItem('access_token', tokens.access);
-        localStorage.setItem('refresh_token', tokens.refresh);
+      setTokens: (tokens: Tokens | null) => {
+        set({ tokens, isAuthenticated: !!(tokens && tokens.access), user: null }); 
       },
       
       login: async (credentials: Credentials) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await api.auth.login(credentials.email, credentials.password);
-          const userData = response.data;
+          // 1. Вызываем /api/auth/login/, который должен установить HttpOnly cookies
+          await api.auth.login(credentials.email, credentials.password); 
           
-          // Проверяем наличие user, access токена и refresh токена напрямую в userData
-          if (userData && userData.user && userData.access && typeof userData.refresh === 'string') {
-            const newTokens = {
-              access: userData.access,
-              refresh: userData.refresh
-            };
+          // 2. После успешного вызова login, немедленно проверяем статус аутентификации.
+          //    checkAuthStatus загрузит пользователя и обновит isAuthenticated, isLoading.
+          await get().checkAuthStatus(); 
 
-            localStorage.setItem('access_token', newTokens.access);
-            localStorage.setItem('refresh_token', newTokens.refresh);
-            localStorage.removeItem('disableAutoLogin'); // Успешный вход, разрешаем автологин
-
-            set({
-              user: userData.user,
-              tokens: newTokens, // Сохраняем токены в правильном формате
-              isAuthenticated: true,
-              isLoading: false,
-              error: null,
-              disableAutoLogin: false,
-            });
-            console.log('[useAuthStore login] Состояние обновлено успешно:', get());
-          } else {
-            // Если структура ответа все еще не та, что ожидается
-            console.error('[useAuthStore login] Ошибка: Неожиданный или неполный формат ответа от API логина', userData);
-            set({
-              isLoading: false,
-              error: 'Ошибка входа: неверный или неполный формат ответа от сервера.',
-              isAuthenticated: false,
-              user: null,
-              tokens: null,
-            });
-          }
-        } catch (error) {
-          console.error('Ошибка входа:', error);
-          clearAuthData();
-          set({ 
-            user: null,
-            isAuthenticated: false,
+        } catch (error: any) {
+          console.error('[useAuthStore login] Ошибка входа или проверки статуса:', error);
+          clearAuthData(); // Убедимся, что все старые данные аутентификации очищены
+          set({
+            error: handleApiError(error, 'Ошибка входа. Проверьте email и пароль или попробуйте позже.'),
             isLoading: false,
-            error: error instanceof Error ? error.message : 'Произошла ошибка при входе',
-            disableAutoLogin: true
+            isAuthenticated: false,
+            user: null,
+            tokens: null, // Очищаем состояние токенов в Zustand на случай, если они там были
+            disableAutoLogin: true,
           });
         }
       },
@@ -193,141 +164,24 @@ export const useAuthStore = create<AuthState>()(
       },
       
       logout: async () => {
-        set({ isLoading: true });
+        set({ isLoading: true, error: null });
         try {
-          // Сначала очищаем данные на фронтенде
-          clearAuthData();
-          
-          // Затем делаем запрос на бэкенд для выхода
           await api.auth.logout();
-          
-          // Устанавливаем состояние после выхода
-          set({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: null,
-            disableAutoLogin: true,
-            tokens: null
-          });
-          
-          // Принудительно перезагружаем страницу для очистки всех состояний
-          window.location.href = '/login?force_login=true';
-        } catch (error) {
-          console.error('Ошибка при выходе:', error);
-          // Даже при ошибке очищаем все данные
-          clearAuthData();
-          set({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: null,
-            disableAutoLogin: true,
-            tokens: null
-          });
-          // Перенаправляем на страницу входа
-          window.location.href = '/login?force_login=true';
+        } catch (error: any) {
+          console.error("Ошибка при выходе на бэкенде:", error.message);
         }
+        get().setTokens(null);
+        set({ user: null, isAuthenticated: false, isLoading: false });
       },
       
       checkAuthStatus: async () => {
-        const initialStoreState = get();
-        console.log('checkAuthStatus: Начало проверки. Состояние store:', {
-          isAuthenticated: initialStoreState.isAuthenticated,
-          isLoading: initialStoreState.isLoading,
-          user: initialStoreState.user,
-          disableAutoLoginStore: initialStoreState.disableAutoLogin,
-          tokensStore: initialStoreState.tokens
-        });
-
-        const storedDisableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
-        console.log('checkAuthStatus: disableAutoLogin из localStorage:', storedDisableAutoLogin);
-
-        const accessTokenLocal = localStorage.getItem('access_token');
-        const refreshTokenLocal = localStorage.getItem('refresh_token');
-        const hasAccessTokenCookie = document.cookie.includes('access_token=');
-        const hasRefreshTokenCookie = document.cookie.includes('refresh_token=');
-
-        const hasAnyToken = !!accessTokenLocal || !!refreshTokenLocal || hasAccessTokenCookie || hasRefreshTokenCookie;
-
-        console.log('checkAuthStatus: Результаты проверки токенов:', {
-          hasAccessTokenCookie,
-          hasRefreshTokenCookie,
-          hasAccessTokenLocal: !!accessTokenLocal,
-          hasRefreshTokenLocal: !!refreshTokenLocal,
-          hasAnyToken,
-          storedDisableAutoLogin
-        });
-
-        if (initialStoreState.isLoading) {
-          console.log('checkAuthStatus: Пропускаем, так как уже идет загрузка (isLoading is true).');
-          return;
-        }
-
-        if (storedDisableAutoLogin && !hasAnyToken) {
-          console.log('checkAuthStatus: Пропускаем. Автологин отключен (localStorage) и нет токенов.');
-          // Убедимся, что состояние store синхронизировано
-          if (initialStoreState.isAuthenticated || initialStoreState.user || initialStoreState.tokens || !initialStoreState.disableAutoLogin) {
-            set({
-              user: null,
-              isAuthenticated: false,
-              isLoading: false,
-              error: null,
-              disableAutoLogin: true,
-              tokens: null
-            });
-          }
-          return;
-        }
-        
-        set({ isLoading: true, error: null }); // Начинаем процесс проверки
-
-        // Если есть токены, но они не в состоянии, или disableAutoLogin был активен, но теперь есть токены
-        // Важно: если storedDisableAutoLogin был true, но hasAnyToken тоже true, значит, что-то произошло (например, логин на другой вкладке)
-        // и мы должны попытаться войти.
-        if (hasAnyToken && (storedDisableAutoLogin || !initialStoreState.tokens?.access)) {
-            console.log('checkAuthStatus: Обнаружены токены и либо автологин был отключен, либо токены не в состоянии. Попытка синхронизации.');
-            const newAccessToken = accessTokenLocal || (hasAccessTokenCookie ? 'from_cookie_placeholder' : ''); // Реальное значение из куки сложнее достать без парсинга
-            const newRefreshToken = refreshTokenLocal || (hasRefreshTokenCookie ? 'from_cookie_placeholder' : '');
-            
-            set({
-                tokens: { access: newAccessToken, refresh: newRefreshToken },
-                // isAuthenticated: true, // Пока не подтверждено сервером
-                disableAutoLogin: false // Разрешаем попытку автологина
-            });
-            localStorage.removeItem('disableAutoLogin'); // Снимаем флаг, так как пытаемся войти
-            console.log('checkAuthStatus: disableAutoLogin сброшен в localStorage и store.');
-        }
-
+        set({ isLoading: true, error: null });
         try {
-          console.log('checkAuthStatus: Отправляем запрос на получение данных пользователя.');
           const response = await api.auth.getUser();
-          const user = response.data;
-          console.log('checkAuthStatus: Получены данные пользователя:', user);
-
-          localStorage.removeItem('disableAutoLogin'); // Успешный вход, убираем флаг
-          set({
-            user,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null,
-            disableAutoLogin: false,
-            // Токены уже должны быть в состоянии, если они из localStorage, или API вернул новые в cookie
-          });
-          console.log('checkAuthStatus: Пользователь успешно аутентифицирован.');
-
+          set({ user: response.data, isAuthenticated: true, isLoading: false });
         } catch (error) {
-          console.error('checkAuthStatus: Ошибка проверки аутентификации:', error);
-          clearAuthData(); // Очищаем все токены, куки и ставим disableAutoLogin = true
-          set({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: 'Ошибка сессии. Пожалуйста, войдите снова.', // Более общее сообщение
-            disableAutoLogin: true, // Важно установить и в store
-            tokens: null
-          });
-          console.log('checkAuthStatus: Данные аутентификации очищены из-за ошибки.');
+          get().setTokens(null);
+          set({ user: null, isAuthenticated: false, isLoading: false });
         }
       },
       
@@ -352,7 +206,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         disableAutoLogin: state.disableAutoLogin,
-        tokens: state.tokens
+        // tokens: state.tokens // Токены больше не храним здесь, они в HttpOnly куках
       }),
     }
   )

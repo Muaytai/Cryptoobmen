@@ -88,14 +88,20 @@ class Deposit(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deposits')
     transaction = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name='deposit')
     
-    wallet = models.ForeignKey(UserWallet, on_delete=models.CASCADE, related_name='deposits')
-    address = models.CharField(max_length=255)
+    wallet = models.ForeignKey(
+        UserWallet,
+        on_delete=models.CASCADE,
+        related_name='deposits',
+        null=True
+    )
+    address = models.CharField(max_length=255, null=True, blank=True)
     
     confirmed = models.BooleanField(default=False)
     confirmation_date = models.DateTimeField(blank=True, null=True)
     
     def __str__(self):
-        return f"Deposit {self.transaction.amount} {self.wallet.crypto.symbol} to {self.address}"
+        currency_symbol = self.wallet.currency.symbol if self.wallet and self.wallet.currency else "N/A"
+        return f"Deposit {self.transaction.amount} {currency_symbol} to {self.address}"
 
 
 class Withdrawal(models.Model):
@@ -103,7 +109,12 @@ class Withdrawal(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='withdrawals')
     transaction = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name='withdrawal')
     
-    wallet = models.ForeignKey(UserWallet, on_delete=models.CASCADE, related_name='withdrawals')
+    wallet = models.ForeignKey(
+        UserWallet,
+        on_delete=models.CASCADE,
+        related_name='withdrawals',
+        null=True
+    )
     destination_address = models.CharField(max_length=255)
     
     # Двухфакторная авторизация для вывода
@@ -118,7 +129,9 @@ class Withdrawal(models.Model):
     confirmation_date = models.DateTimeField(blank=True, null=True)
     
     def __str__(self):
-        return f"Withdrawal {self.transaction.amount} {self.wallet.crypto.symbol} to {self.destination_address}"
+        currency_symbol = self.wallet.currency.symbol if self.wallet and self.wallet.currency else "N/A"
+        amount_display = self.transaction.amount if self.transaction else "N/A"
+        return f"Withdrawal {amount_display} {currency_symbol} to {self.destination_address}"
 
 
 class Review(models.Model):

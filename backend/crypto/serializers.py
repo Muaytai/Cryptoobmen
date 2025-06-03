@@ -7,7 +7,9 @@ class CryptocurrencySerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Cryptocurrency
-        fields = ['id', 'name', 'symbol', 'icon', 'is_active', 'min_amount', 'max_amount', 'fee_percentage']
+        fields = ['id', 'name', 'symbol', 'icon', 'is_active', 
+                  'min_exchange_amount', 'max_exchange_amount',
+                  'currency_type', 'network', 'coingecko_id']
         read_only_fields = ['id']
 
 
@@ -38,19 +40,19 @@ class ExchangePairSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
+class CryptocurrencySimpleSerializer(serializers.ModelSerializer):
+    """Упрощенный сериализатор для отображения информации о валюте в кошельке."""
+    class Meta:
+        model = Cryptocurrency
+        fields = ['id', 'name', 'symbol', 'currency_type', 'network', 'icon']
+
+
 class UserWalletSerializer(serializers.ModelSerializer):
-    """Сериализатор для кошельков пользователя"""
-    crypto_name = serializers.ReadOnlyField(source='crypto.name')
-    crypto_symbol = serializers.ReadOnlyField(source='crypto.symbol')
-    crypto_icon = serializers.ImageField(source='crypto.icon', read_only=True)
+    currency = CryptocurrencySimpleSerializer(read_only=True)
     
     class Meta:
         model = UserWallet
-        fields = ['id', 'crypto', 'crypto_name', 'crypto_symbol', 'crypto_icon',
-                 'balance', 'available_balance', 'locked_balance', 'address', 
-                 'is_active', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'crypto', 'balance', 'available_balance', 'locked_balance', 
-                           'created_at', 'updated_at']
+        fields = ['id', 'currency', 'balance', 'available_balance', 'locked_balance', 'is_active']
 
 
 class ExchangeCalculatorSerializer(serializers.Serializer):
@@ -76,22 +78,24 @@ class ExchangeCalculatorSerializer(serializers.Serializer):
                 raise serializers.ValidationError("Данная пара обмена недоступна")
             
             # Проверяем минимальную и максимальную сумму
-            min_amount = exchange_pair.min_from_amount or from_crypto.min_amount
-            max_amount = exchange_pair.max_from_amount or from_crypto.max_amount
+            # Используем min_from_amount/max_from_amount из ExchangePair если они заданы, иначе из Cryptocurrency
+            min_amount = exchange_pair.min_from_amount if exchange_pair.min_from_amount is not None else from_crypto.min_exchange_amount
+            max_amount = exchange_pair.max_from_amount if exchange_pair.max_from_amount is not None else from_crypto.max_exchange_amount
             
-            if data['amount'] < min_amount:
+            # Важно: Убедимся, что min_amount и max_amount не None перед сравнением
+            if min_amount is not None and data['amount'] < min_amount:
                 raise serializers.ValidationError(f"Минимальная сумма для обмена: {min_amount} {from_crypto.symbol}")
             
-            if data['amount'] > max_amount:
+            if max_amount is not None and data['amount'] > max_amount:
                 raise serializers.ValidationError(f"Максимальная сумма для обмена: {max_amount} {from_crypto.symbol}")
             
             data['from_crypto'] = from_crypto
             data['to_crypto'] = to_crypto
-            data['exchange_pair'] = exchange_pair
+            data['exchange_pair'] = exchange_pair # Сохраняем найденную пару для дальнейшего использования
             
             return data
         except Cryptocurrency.DoesNotExist:
-            raise serializers.ValidationError("Одна из валют не найдена или неактивна") 
+            raise serializers.ValidationError("Одна из валют не найдена или неактивна")
 
 
 class InvestmentPlanSerializer(serializers.ModelSerializer):
