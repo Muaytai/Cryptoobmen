@@ -10,7 +10,7 @@ export const Profile = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { user, isAuthenticated, isLoading: authLoading, checkAuthStatus } = useAuthStore();
   const router = useRouter();
-  const [isSessionChecked, setIsSessionChecked] = useState(false);
+  const [яisSessionChecked, setIsSessionChecked] = useState(false);
 
   // При монтировании компонента проверяем авторизацию
   useEffect(() => {

@@ -5,25 +5,38 @@ from decimal import Decimal
 from django.utils import timezone
 import uuid
 
+# Типы валют
+CURRENCY_TYPE_CHOICES = [
+    ('fiat', _('Fiat')),
+    ('crypto', _('Cryptocurrency')),
+]
 
 class Cryptocurrency(models.Model):
-    """Модель для хранения информации о криптовалютах"""
-    name = models.CharField(max_length=100)
-    symbol = models.CharField(max_length=20)
-    icon = models.ImageField(upload_to='crypto_icons/', blank=True, null=True)
+    """Модель для хранения информации о криптовалютах и фиатных валютах"""
+    name = models.CharField(max_length=100, verbose_name=_('Name'))
+    symbol = models.CharField(max_length=20, unique=True, verbose_name=_('Symbol')) # Сделаем символ уникальным
+    icon = models.ImageField(upload_to='crypto_icons/', blank=True, null=True, verbose_name=_('Icon'))
     
-    is_active = models.BooleanField(default=True)
+    currency_type = models.CharField(
+        max_length=10,
+        choices=CURRENCY_TYPE_CHOICES,
+        default='crypto',
+        verbose_name=_('Currency Type')
+    )
+    network = models.CharField(max_length=50, blank=True, null=True, verbose_name=_('Network')) # Например, ERC-20, TRC-20, Bitcoin
+    
+    is_active = models.BooleanField(default=True, verbose_name=_('Active'))
     
     # Информация для API
-    coingecko_id = models.CharField(max_length=100, blank=True, null=True)
-    api_id = models.CharField(max_length=100, blank=True, null=True)
+    coingecko_id = models.CharField(max_length=100, blank=True, null=True, verbose_name=_('CoinGecko ID'))
+    # api_id = models.CharField(max_length=100, blank=True, null=True) # Это поле кажется дублирующим coingecko_id, можно убрать если не используется специфично
     
-    # Минимальная и максимальная сумма для обмена
-    min_amount = models.DecimalField(max_digits=18, decimal_places=8, default=0.0001)
-    max_amount = models.DecimalField(max_digits=18, decimal_places=8, default=10)
+    # Минимальная и максимальная сумма для обмена (можно перенести в ExchangePair, если нужна гранулярность)
+    min_exchange_amount = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal('0.0001'), verbose_name=_('Min Exchange Amount'))
+    max_exchange_amount = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal('10.0'), verbose_name=_('Max Exchange Amount'))
     
-    # Комиссия платформы (в процентах)
-    fee_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.5)
+    # Комиссия платформы (в процентах) - лучше иметь глобальную настройку или в ExchangePair
+    # platform_fee_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.5'), verbose_name=_('Platform Fee Percentage'))
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -32,8 +45,9 @@ class Cryptocurrency(models.Model):
         return f"{self.name} ({self.symbol})"
     
     class Meta:
-        verbose_name = _('cryptocurrency')
-        verbose_name_plural = _('cryptocurrencies')
+        verbose_name = _('currency')
+        verbose_name_plural = _('currencies')
+        ordering = ['name']
 
 
 class CryptoPrice(models.Model):
@@ -82,37 +96,67 @@ class ExchangePair(models.Model):
 
 
 class UserWallet(models.Model):
-    """Модель для хранения кошельков пользователей"""
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='wallets')
-    crypto = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE)
+    """Модель для хранения кошельков пользователей и системных кошельков"""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='wallets',
+        null=True, # Разрешаем Null для системных кошельков
+        blank=True # Разрешаем Blank для системных кошельков
+    )
+    currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, verbose_name=_('Currency')) # Переименовал crypto в currency для единообразия
     
-    balance = models.DecimalField(max_digits=24, decimal_places=8, default=0)
-    address = models.CharField(max_length=255, blank=True, null=True)
+    balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Total Balance'))
+    # address = models.CharField(max_length=255, blank=True, null=True) # Адрес пока не используем активно для внутренней логики
     
-    # Для отслеживания доступных и замороженных средств (в инвестициях)
-    available_balance = models.DecimalField(max_digits=24, decimal_places=8, default=0)
-    locked_balance = models.DecimalField(max_digits=24, decimal_places=8, default=0)
+    available_balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Available Balance'))
+    locked_balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Locked Balance')) # Для ордеров, инвестиций и т.д.
     
-    is_active = models.BooleanField(default=True)
+    is_system_wallet = models.BooleanField(default=False, verbose_name=_('System Wallet'))
+    is_active = models.BooleanField(default=True, verbose_name=_('Active'))
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"{self.user.username} - {self.crypto.symbol} Wallet"
-    
+        if self.is_system_wallet:
+            return f"System Wallet - {self.currency.symbol}"
+        if self.user:
+            return f"{self.user.email} - {self.currency.symbol} Wallet" # Используем email, так как это USERNAME_FIELD
+        return f"Orphaned Wallet - {self.currency.symbol}"
+
+
     def save(self, *args, **kwargs):
-        # При создании кошелька available_balance = balance
-        if not self.pk:
-            self.available_balance = self.balance
-        # При обновлении проверяем, что сумма available + locked = balance
+        # Убедимся, что системный кошелек не привязан к пользователю
+        if self.is_system_wallet:
+            self.user = None
+        
+        # При создании кошелька или если available_balance не был установлен вручную
+        if self.pk is None or self.available_balance == Decimal('0.0') and self.locked_balance == Decimal('0.0'):
+             self.available_balance = self.balance - self.locked_balance
         else:
-            self.balance = self.available_balance + self.locked_balance
+            # Общий баланс всегда сумма доступного и заблокированного
+            # Это условие может быть избыточным если available_balance и locked_balance управляются отдельно
+            # и balance вычисляется как их сумма при чтении (через property например).
+            # Для упрощения пока оставим как есть, но обычно меняется available/locked, а balance - их сумма.
+            # Если же balance меняется напрямую, то available_balance должен быть пересчитан, если нет locked_balance.
+            # Логика здесь может быть сложнее в зависимости от операций.
+            # Пока предположим, что balance - это основное поле, а available_balance - это balance минус locked_balance.
+            self.available_balance = self.balance - self.locked_balance
+            if self.available_balance < 0:
+                # Этого не должно происходить, нужна валидация или другая логика
+                # Для примера, можно вызвать исключение или установить available_balance в 0
+                # raise ValueError("Available balance cannot be negative.")
+                self.available_balance = Decimal('0.0') 
+                # И, возможно, скорректировать locked_balance или balance
+                # self.balance = self.locked_balance # Если available_balance не может быть отрицательным
+
         super().save(*args, **kwargs)
-    
+
     class Meta:
-        unique_together = ('user', 'crypto')
-        verbose_name = _('user wallet')
-        verbose_name_plural = _('user wallets')
+        unique_together = ('user', 'currency', 'is_system_wallet') # Гарантируем уникальность кошелька для пользователя/системы и валюты
+        verbose_name = _('wallet')
+        verbose_name_plural = _('wallets')
 
 
 class InvestmentPlan(models.Model):
@@ -179,7 +223,12 @@ class UserInvestment(models.Model):
     )
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='investments')
-    wallet = models.ForeignKey(UserWallet, on_delete=models.CASCADE, related_name='investments')
+    wallet = models.ForeignKey(
+        UserWallet,
+        on_delete=models.CASCADE,
+        related_name='investments',
+        null=True
+    )
     plan = models.ForeignKey(InvestmentPlan, on_delete=models.CASCADE, related_name='user_investments')
     
     investment_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
@@ -203,7 +252,7 @@ class UserInvestment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"{self.user.username} - {self.amount} {self.wallet.crypto.symbol} - {self.plan.name}"
+        return f"{self.user.username} - {self.amount} {self.wallet.currency.symbol} - {self.plan.name}"
     
     def save(self, *args, **kwargs):
         # Если это новая инвестиция
@@ -248,7 +297,12 @@ class CardDeposit(models.Model):
     )
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='card_deposits')
-    wallet = models.ForeignKey(UserWallet, on_delete=models.CASCADE, related_name='card_deposits')
+    wallet = models.ForeignKey(
+        UserWallet,
+        on_delete=models.CASCADE,
+        related_name='card_deposits',
+        null=True
+    )
     
     deposit_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     
@@ -274,7 +328,7 @@ class CardDeposit(models.Model):
     completed_at = models.DateTimeField(blank=True, null=True, verbose_name=_('Completed At'))
     
     def __str__(self):
-        return f"{self.user.username} - {self.amount} {self.currency} to {self.wallet.crypto.symbol}"
+        return f"{self.user.username} - {self.amount} {self.currency} to {self.wallet.currency.symbol}"
     
     class Meta:
         verbose_name = _('card deposit')

@@ -3,7 +3,11 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CryptocurrencyViewSet, CryptoPriceViewSet, ExchangePairViewSet,
     UserWalletViewSet, ExchangeCalculatorAPIView, InvestmentPlanViewSet,
-    UserInvestmentViewSet, CardDepositViewSet
+    UserInvestmentViewSet, CardDepositViewSet,
+    UserBalancesView,
+    ExchangeRatesView,
+    FiatDepositView,
+    ExchangeCurrencyView
 )
 
 router = DefaultRouter()
@@ -18,4 +22,8 @@ router.register(r'card-deposits', CardDepositViewSet, basename='card-deposit')
 urlpatterns = [
     path('', include(router.urls)),
     path('calculator/', ExchangeCalculatorAPIView.as_view(), name='calculator'),
+    path('balances/', UserBalancesView.as_view(), name='user-balances'),
+    path('exchange-rates/', ExchangeRatesView.as_view(), name='exchange-rates'),
+    path('deposit-fiat/', FiatDepositView.as_view(), name='deposit-fiat'),
+    path('exchange-currency/', ExchangeCurrencyView.as_view(), name='exchange-currency'),
 ]
