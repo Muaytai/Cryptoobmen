@@ -22,7 +22,7 @@ export const FormInput = forwardRef<HTMLInputElement, Props>(
         disabled={disabled}
         {...rest}
         ref={ref}
-        className={clsx(styles.input, error && styles.error, disabled && styles.disabled, disabled && "bg-subcard")}
+        className={clsx(styles.input, error && styles.error, disabled && styles.disabled, disabled && "bg-subcard text-subcard-text/70")}
       />
       {error && <div className={styles.helper}>{error}</div>}
     </label>

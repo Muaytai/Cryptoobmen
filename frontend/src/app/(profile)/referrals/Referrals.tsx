@@ -7,6 +7,7 @@ import {Card, CardContent} from "@/components/ui/card";
 import {clsx} from "clsx";
 import {ReferralsModal} from "@/app/(profile)/components/modals/referralsModal/ReferralsModal";
 import {Modal} from "@/app/(profile)/components/modals/Modal";
+import Image from "next/image";
 
 const referralsData = [
   {
@@ -68,7 +69,7 @@ export const Referrals = (): JSX.Element => {
             <CardContent className="p-0 w-full flex gap-2 items-center justify-between">
               <h2 className="text-lg">Приглашай друзей и зарабатывай!</h2>
               <Button className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] "
-              onClick={() => setModalOpen(true)}>
+                      onClick={() => setModalOpen(true)}>
               <span className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
                 Подробнее
               </span>
@@ -79,7 +80,7 @@ export const Referrals = (): JSX.Element => {
           <Card
             className={clsx(styles.div2, "bg-subcard rounded-[15px] col-span-2")}
           >
-            <CardContent className="p-3 md:p-5 h-[80px] md:h-[104px] relative">
+            <CardContent className="p-3 md:p-5 relative">
             <span className="font-medium text-subcard-text/60 text-xs md:text-sm [font-family:'Manrope',Helvetica]">
               Реферальная ссылка
             </span>
@@ -87,11 +88,8 @@ export const Referrals = (): JSX.Element => {
               <span className="font-medium text-subcard-text text-base md:text-lg [font-family:'Manrope',Helvetica] ">
                 https://сrypto.com/referral/USERNAME
               </span>
-                <img
-                  className="w-[14px] h-[14px] md:w-[18px] md:h-[18px] ml-2"
-                  alt="Copy"
-                  src="/images/profile/vector-7_2.svg"
-                />
+                <Image className={styles.copy} src="/images/profile/copy.svg" alt="copy" width={18} height={18}/>
+
               </div>
             </CardContent>
           </Card>
@@ -99,7 +97,7 @@ export const Referrals = (): JSX.Element => {
           <Card
             className={clsx(styles.div3, "bg-subcard rounded-[15px] col-span-2")}
           >
-            <CardContent className="p-3 md:p-5 h-[80px] md:h-[104px] relative">
+            <CardContent className="p-3 md:p-5 relative">
               <div className="flex w-full items-center justify-between ">
               <span className="font-medium text-subcard-text text-base md:text-lg [font-family:'Manrope',Helvetica] ">
                 Количество приглашенных пользователей:
@@ -134,7 +132,7 @@ export const Referrals = (): JSX.Element => {
           <Card
             className={clsx(styles.div4, "bg-subcard rounded-[15px] col-span-2")}
           >
-            <CardContent className="p-3 md:p-5 h-[80px] md:h-[104px] relative">
+            <CardContent className="p-3 md:p-5 relative">
               <div className="flex w-full items-center justify-between ">
               <span
                 className="font-medium mb-8 text-subcard-text text-base md:text-lg [font-family:'Manrope',Helvetica] ">
@@ -205,7 +203,7 @@ export const Referrals = (): JSX.Element => {
           <Card
             className={clsx(styles.div5, "bg-subcard rounded-[15px] col-span-2")}
           >
-            <CardContent className="p-3 md:p-5 h-[80px] md:h-[104px] relative">
+            <CardContent className="p-3 md:p-5 relative">
               <div className="flex w-full items-center justify-between ">
               <span className="font-medium text-subcard-text text-base md:text-lg [font-family:'Manrope',Helvetica] ">
                 Процент дохода с рефералов

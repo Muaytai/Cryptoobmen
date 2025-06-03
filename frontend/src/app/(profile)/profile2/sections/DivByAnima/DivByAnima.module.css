@@ -67,6 +67,15 @@
   cursor: pointer;
 }
 
+.copy {
+  opacity: 0.8;
+}
+
+.copy:hover {
+  cursor: pointer;
+  opacity: 1;
+}
+
 /* Сетка карточек */
 /*.cardsGrid {*/
 /*  display: grid;*/

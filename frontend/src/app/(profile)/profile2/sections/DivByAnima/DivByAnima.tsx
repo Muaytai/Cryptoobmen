@@ -8,9 +8,12 @@ import {clsx} from "clsx";
 import {Modal} from "@/app/(profile)/components/modals/Modal";
 import {WithdrawalForm} from "@/app/(profile)/components/modals/withdrawalForm/WithdrawalForm";
 import {ReferralsModal} from "@/app/(profile)/components/modals/referralsModal/ReferralsModal";
+import {TopUpBill} from "@/app/(profile)/components/modals/topUpBill/TopUpBill";
+import Image from "next/image";
 
 export const DivByAnima = (): JSX.Element => {
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalTopUpBilOpen, setModalTopUpBilOpen] = useState(false);
 
   const userData = {
     name: "Кристина Соколова",
@@ -74,11 +77,12 @@ export const DivByAnima = (): JSX.Element => {
               <span className="font-medium text-subcard-text text-base md:text-lg [font-family:'Manrope',Helvetica]">
                 {userData.uid}
               </span>
-                <img
-                  className="w-[14px] h-[14px] md:w-[18px] md:h-[18px]"
-                  alt="Copy"
-                  src="/images/profile/vector-7_1.svg"
-                />
+                {/*<img*/}
+                {/*  className="w-[14px] h-[14px] md:w-[18px] md:h-[18px]"*/}
+                {/*  alt="Copy"*/}
+                {/*  src="/images/profile/vector-7_1.svg"*/}
+                {/*/>*/}
+                <Image className={styles.copy} src="/images/profile/copy.svg" alt="copy" width={18} height={18} />
               </div>
             </CardContent>
           </Card>
@@ -150,9 +154,9 @@ export const DivByAnima = (): JSX.Element => {
               </div>
 
               <div className="flex flex-col gap-2 md:gap-3 absolute top-3 md:top-5 right-3 md:right-5">
-                <Button className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] ">
+                <Button className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] " onClick={()=> setModalTopUpBilOpen(true)}>
                 <span
-                  className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
+                  className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]" onClick={()=> setModalTopUpBilOpen(true)}>
                   Пополнить
                 </span>
                 </Button>
@@ -254,11 +258,7 @@ export const DivByAnima = (): JSX.Element => {
               <span className="font-medium text-subcard-text text-base md:text-lg [font-family:'Manrope',Helvetica] ">
                 {userData.referralLink}
               </span>
-                <img
-                  className="w-[14px] h-[14px] md:w-[18px] md:h-[18px] ml-2"
-                  alt="Copy"
-                  src="/images/profile/vector-7_2.svg"
-                />
+                <Image className={styles.copy} src="/images/profile/copy.svg" alt="copy" width={18} height={18} />
               </div>
             </CardContent>
           </Card>
@@ -266,6 +266,10 @@ export const DivByAnima = (): JSX.Element => {
       </div>
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Вывод средств">
         <WithdrawalForm/>
+      </Modal>
+
+      <Modal isOpen={modalTopUpBilOpen} onClose={() => setModalTopUpBilOpen(false)} title="Вывод средств">
+        <TopUpBill/>
       </Modal>
     </>
   );
