@@ -1,0 +1,15 @@
+.promoContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.promoItem {
+  display: flex;
+  align-items: center;
+  justify-content: left;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 20px 12px 20px;
+  border-radius: 15px;
+}
