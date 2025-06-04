@@ -1,0 +1,28 @@
+.label {
+  display: flex;
+  flex-direction: column;
+
+}
+
+.input,
+.select {
+  padding: 8px 12px;
+  border: 2px solid #6B7280;
+  border-radius: 8px;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.disabled {
+  /*background-color: rgba(0,0,0,0.1) !important;*/
+  border: none;
+}
+
+.error {
+  border-color: red;
+}
+
+.helper {
+  color: red;
+  margin-top: 4px;
+}
