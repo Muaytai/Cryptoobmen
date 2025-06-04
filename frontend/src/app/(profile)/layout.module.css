@@ -19,3 +19,9 @@
   padding-right: 30px;
   padding-top: 30px;
 }
+
+@media screen and (max-width: 768px) {
+  .wrapper {
+    padding-left: 0;
+  }
+}

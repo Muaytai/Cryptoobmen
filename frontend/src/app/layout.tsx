@@ -35,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ru" suppressHydrationWarning className="dark">
+    <html lang="ru" suppressHydrationWarning >
       <head>
         <style dangerouslySetInnerHTML={{ __html: hydrationFadeInStyle }} />
       </head>
