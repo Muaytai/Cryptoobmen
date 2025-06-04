@@ -5,10 +5,11 @@ import {FormInput} from "../forms/FormInput";
 import Image from "next/image";
 import {clsx} from "clsx";
 
-import { useTheme } from 'next-themes'
+import {useTheme} from 'next-themes'
+import ImageDependTheme from "@/components/imageDependTheme/imageDependTheme";
 
 export const TopUpBill = () => {
-  const { theme } = useTheme()
+  const {theme} = useTheme()
 
   return (
     <div>
@@ -19,10 +20,8 @@ export const TopUpBill = () => {
       />
       <div className={styles.divider}></div>
       <div className={styles.qrCodeWrapper}>
-        <Image src={theme === 'dark'
-      ? '/images/profile/QR_code.jpg'
-      : '/images/profile/QR_code_light.jpg'} alt="QR code" width={300}
-               height={300}/>
+        <ImageDependTheme srcDark={'/images/profile/QR_code.jpg'} srcLight={'/images/profile/QR_code_light.jpg'}
+                          width={300} height={300} alt={"QR code"}/>
       </div>
       <div className={styles.divider}></div>
       <p className={clsx(styles.walletTitle, "text-subcard-text/80")}>Адрес крипто кошелька:</p>

@@ -1,43 +1,43 @@
-"use client";
+'use client';
 
-import { useTheme } from 'next-themes';
-import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { useTheme } from '@/lib/ThemeProvider'; // путь к твоему useTheme
+import { useEffect, useState } from 'react';
 
-type ImageDependThemeProps = {
+type Props = {
   srcDark: string;
   srcLight: string;
+  alt?: string;
+  width?: number;
+  height?: number;
 };
 
-const ImageDependTheme: React.FC<ImageDependThemeProps> = ({ srcDark, srcLight }) => {
+export default function ImageDependTheme({
+  srcDark,
+  srcLight,
+  alt = 'Themed Image',
+  width = 80,
+  height = 80
+}: Props) {
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // Чтобы избежать ошибки гидрации
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (mounted) {
-       // alert(theme); // будет работать только на клиенте
-    }
-  }, [mounted, theme]);
 
   if (!mounted) return null;
 
   const imageSrc = theme === 'dark' ? srcDark : srcLight;
 
   return (
-    <div>
-      <Image
-        src={imageSrc}
-        alt="Logo"
-        width={80}
-        height={80}
-        priority
-      />
-    </div>
+    <Image
+      src={imageSrc}
+      alt={alt}
+      width={width}
+      height={height}
+      priority
+    />
   );
-};
-
-export default ImageDependTheme;
+}
