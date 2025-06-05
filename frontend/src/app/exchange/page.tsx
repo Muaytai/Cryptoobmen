@@ -40,7 +40,7 @@ interface CryptoPrice {
 
 interface Wallet {
   id: number;
-  crypto: Cryptocurrency;
+  currency: Cryptocurrency;
   balance: string;
   available_balance: string;
   locked_balance: string;
@@ -60,7 +60,7 @@ interface ExchangeCalculation {
 export default function ExchangePageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuthStore();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
 
   // Состояния для данных
   const [cryptocurrencies, setCryptocurrencies] = useState<Cryptocurrency[]>([]);
@@ -85,26 +85,29 @@ export default function ExchangePageClient() {
 
   // Загрузка данных при монтировании компонента
   useEffect(() => {
-    const fetchData = async () => {
-      const authStoreState = useAuthStore.getState();
-      if (!authStoreState.isAuthenticated && !authStoreState.isLoading) {
-        router.push('/login?redirect=exchange');
-        return;
-      }
+    if (authLoading) {
+      console.log('ExchangePage: authLoading is true, ожидаем завершения проверки сессии...');
+      setLoading(true);
+      return;
+    }
 
+    console.log(`ExchangePage: authLoading is false. isAuthenticated: ${isAuthenticated}, user: ${!!user}`);
+
+    if (!isAuthenticated || !user) {
+      console.log('ExchangePage: Пользователь НЕ аутентифицирован (после authLoading: false). Перенаправление на /login.');
+      const redirectPath = `/exchange${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+      router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
+      return;
+    }
+    
+    // Если пользователь аутентифицирован, загружаем данные страницы
+    const fetchData = async () => {
+      console.log('ExchangePage: Пользователь аутентифицирован. Загрузка данных страницы...');
+      setLoading(true);
       try {
-        setLoading(true);
-        
-        // Получаем список криптовалют
         const cryptoResponse = await api.get('/crypto/cryptocurrencies/');
-        
-        // Получаем список пар обмена
         const pairsResponse = await api.get('/crypto/pairs/');
-        
-        // Получаем последние цены криптовалют
         const pricesResponse = await api.get('/crypto/prices/');
-        
-        // Получаем кошельки пользователя
         const walletsResponse = await api.get('/crypto/wallets/');
         
         setCryptocurrencies(cryptoResponse.data);
@@ -150,11 +153,11 @@ export default function ExchangePageClient() {
             // Выбираем криптовалюту из кошелька с наибольшим балансом
             const walletWithBalance = sortedWallets.find(w => parseFloat(w.available_balance) > 0);
             if (walletWithBalance) {
-              setFromCryptoId(walletWithBalance.crypto.id);
+              setFromCryptoId(walletWithBalance.currency.id);
               
               // Находим подходящую пару для обмена
               const suitablePairs = pairsResponse.data.filter(
-                (p: ExchangePair) => p.from_crypto.id === walletWithBalance.crypto.id
+                (p: ExchangePair) => p.from_crypto.id === walletWithBalance.currency.id
               );
               
               if (suitablePairs.length > 0) {
@@ -187,7 +190,7 @@ export default function ExchangePageClient() {
     };
 
     fetchData();
-  }, [router, searchParams]);
+  }, [authLoading, isAuthenticated, user, router, searchParams]);
 
   // Обновление выбранной пары при изменении криптовалют
   useEffect(() => {
@@ -278,7 +281,7 @@ export default function ExchangePageClient() {
   const getMaxAvailableAmount = (): string => {
     if (!fromCryptoId) return '0';
     
-    const wallet = wallets.find(w => w.crypto.id === fromCryptoId);
+    const wallet = wallets.find(w => w.currency.id === fromCryptoId);
     if (!wallet) return '0';
     
     return wallet.available_balance;
@@ -311,7 +314,7 @@ export default function ExchangePageClient() {
     }
     
     // Дополнительная проверка баланса перед отправкой
-    const fromWallet = wallets.find(w => w.crypto.id === selectedPair.from_crypto.id);
+    const fromWallet = wallets.find(w => w.currency.id === selectedPair.from_crypto.id);
     if (!fromWallet || parseFloat(fromWallet.available_balance) < parseFloat(amount)) {
       setError('Недостаточно средств на выбранном кошельке для совершения обмена.');
       return;
@@ -353,7 +356,7 @@ export default function ExchangePageClient() {
     }
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
@@ -441,7 +444,11 @@ export default function ExchangePageClient() {
                 <div className="mt-2 flex items-center">
                   {cryptocurrencies.find(c => c.id === fromCryptoId)?.icon ? (
                     <Image 
-                      src={`${process.env.NEXT_PUBLIC_API_URL || ''}${cryptocurrencies.find(c => c.id === fromCryptoId)?.icon}`} 
+                      src={
+                        (cryptocurrencies.find(c => c.id === fromCryptoId)?.icon || '').startsWith('http')
+                          ? (cryptocurrencies.find(c => c.id === fromCryptoId)?.icon || '')
+                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${(cryptocurrencies.find(c => c.id === fromCryptoId)?.icon || '')}`
+                      } 
                       alt={cryptocurrencies.find(c => c.id === fromCryptoId)?.symbol || ''} 
                       width={24} 
                       height={24} 
@@ -500,7 +507,11 @@ export default function ExchangePageClient() {
                 <div className="mt-2 flex items-center">
                   {cryptocurrencies.find(c => c.id === toCryptoId)?.icon ? (
                     <Image 
-                      src={`${process.env.NEXT_PUBLIC_API_URL || ''}${cryptocurrencies.find(c => c.id === toCryptoId)?.icon}`} 
+                      src={
+                        (cryptocurrencies.find(c => c.id === toCryptoId)?.icon || '').startsWith('http')
+                          ? (cryptocurrencies.find(c => c.id === toCryptoId)?.icon || '')
+                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${(cryptocurrencies.find(c => c.id === toCryptoId)?.icon || '')}`
+                      }
                       alt={cryptocurrencies.find(c => c.id === toCryptoId)?.symbol || ''} 
                       width={24} 
                       height={24} 

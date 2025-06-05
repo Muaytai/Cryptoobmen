@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import axios from 'axios';
+import api from '@/lib/api/fetch';
 import Image from 'next/image';
 import Link from 'next/link';
 
 // Типы данных
 interface Wallet {
   id: number;
-  crypto: {
+  currency: {
     id: number;
     name: string;
     symbol: string;
@@ -43,7 +43,7 @@ interface CardDepositData {
 export const DepositPage: React.FC = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { tokens, user, isAuthenticated } = useAuthStore();
+  const { tokens, user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const token = tokens?.access;
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -65,82 +65,61 @@ export const DepositPage: React.FC = () => {
   const [cardCvv, setCardCvv] = useState<string>('');
   const [cardHolder, setCardHolder] = useState<string>('');
 
-  // Новое состояние для отслеживания инициализации авторизации
-  const [authInitialized, setAuthInitialized] = useState(false);
-
-  useEffect(() => {
-    // Если user !== undefined, значит, авторизация уже определена
-    if (user !== undefined) {
-      setAuthInitialized(true);
-    }
-  }, [user]);
-
   // Получение данных кошельков пользователя
   useEffect(() => {
-    if (!authInitialized) return; // Ждём инициализации
+    // Этот эффект должен реагировать ТОЛЬКО на изменение статуса загрузки аутентификации
+    // и на изменение пользователя/статуса аутентификации, когда загрузка ЗАВЕРШЕНА.
+    if (authLoading) {
+      // Если все еще идет первоначальная загрузка состояния аутентификации, ничего не делаем
+      console.log('DepositPage: authLoading is true, ожидаем завершения проверки сессии...');
+      setLoading(true); // Показываем лоадер страницы, пока идет проверка сессии
+      return;
+    }
 
+    console.log(`DepositPage: authLoading is false. isAuthenticated: ${isAuthenticated}, user: ${!!user}`);
+
+    if (!isAuthenticated || !user) {
+      console.log('DepositPage: Пользователь НЕ аутентифицирован (после authLoading: false). Перенаправление на /login.');
+      // Сохраняем полный путь для редиректа, включая searchParams
+      const redirectPath = `/funds/deposit${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+      router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
+      return;
+    }
+
+    // Если пользователь аутентифицирован, загружаем данные страницы
     const fetchData = async () => {
-      // Проверяем наличие токена и авторизации
-      if (!token || !isAuthenticated) {
-        console.log('Нет токена или не авторизован, перенаправляем на страницу входа');
-        router.push('/login?redirect=funds/deposit');
-        return;
-      }
-      
-      // Дополнительная проверка на наличие токена в заголовках
-      if (!token) {
-        console.log('Токен отсутствует в заголовках');
-        router.push('/login?redirect=funds/deposit');
-        return;
-      }
-
+      console.log('DepositPage: Пользователь аутентифицирован. Загрузка данных страницы...');
+      setLoading(true);
       try {
-        setLoading(true);
-        
-        // Получаем кошельки пользователя
-        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        // Получаем последние цены криптовалют
-        const pricesResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/prices/latest/`);
-        
-        // Маппинг структуры данных
-        const mappedWallets = walletsResponse.data.map((w: any) => ({
-          ...w,
-          crypto: {
-            id: w.crypto_id,
-            name: w.crypto_name,
-            symbol: w.crypto_symbol,
-            icon: w.crypto_icon,
-          },
-        }));
-        setWallets(mappedWallets);
+        // Токен больше не передается явно, axios должен использовать HttpOnly cookie
+        const walletsResponse = await api.get('/crypto/wallets/');
+        const pricesResponse = await api.get('/crypto/prices/latest/');
+
+        setWallets(walletsResponse.data);
         setPrices(pricesResponse.data);
-        
-        // Если в URL есть параметр wallet_id, выбираем этот кошелек
-        const walletId = searchParams.get('wallet_id');
-        if (walletId && walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletId))) {
-          setSelectedWalletId(parseInt(walletId));
+
+        const walletIdParam = searchParams.get('wallet_id');
+        if (walletIdParam && walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletIdParam))) {
+          setSelectedWalletId(parseInt(walletIdParam));
         }
-        
-        setLoading(false);
+        setError(null);
       } catch (err) {
-        console.error('Ошибка при получении данных:', err);
-        setError('Не удалось загрузить данные. Пожалуйста, попробуйте позже.');
-        setLoading(false);
+        console.error('DepositPage: Ошибка при получении данных страницы:', err);
+        setError('Не удалось загрузить данные для страницы. Пожалуйста, попробуйте позже.');
       }
+      setLoading(false);
     };
 
     fetchData();
-  }, [token, isAuthenticated, authInitialized, router, searchParams]);
+
+  }, [authLoading, isAuthenticated, user, router, searchParams]);
 
   // Обновление расчета криптовалюты при изменении суммы или кошелька
   useEffect(() => {
     if (selectedWalletId && amount && !isNaN(parseFloat(amount))) {
       const selectedWallet = wallets.find(w => w.id === selectedWalletId);
       if (selectedWallet) {
-        const cryptoPrice = prices.find(p => p.crypto.id === selectedWallet.crypto.id);
+        const cryptoPrice = prices.find(p => p.crypto.id === selectedWallet.currency.id);
         if (cryptoPrice) {
           // Курс обмена: сколько криптовалюты за 1 единицу фиатной валюты
           // Для простоты используем курс USD, в реальном приложении нужно использовать API для конвертации валют
@@ -249,14 +228,11 @@ export const DepositPage: React.FC = () => {
                     cardNumber.startsWith('3') ? 'American Express' : 'Unknown'
       };
       
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/card-deposits/`, 
-        depositData,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const postResponse = await api.post('/deposits/card/', depositData);
       
       setSuccess(true);
-      setDepositId(response.data.deposit_id);
+      setDepositId(postResponse.data.id);
+      console.log('DepositPage: Заявка на пополнение успешно создана:', postResponse.data);
       
       // Очищаем форму
       setAmount('');
@@ -273,16 +249,7 @@ export const DepositPage: React.FC = () => {
     }
   };
 
-  if (!authInitialized) {
-    return (
-      <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
-        <p className="mt-4 text-gray-300">Проверка авторизации...</p>
-      </div>
-    );
-  }
-
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
@@ -345,26 +312,26 @@ export const DepositPage: React.FC = () => {
                   `}
                 >
                   <div className="flex items-center">
-                    {wallet.crypto && wallet.crypto.icon ? (
+                    {wallet.currency && wallet.currency.icon ? (
                       <Image 
                         src={
-                          wallet.crypto.icon.startsWith('http')
-                            ? wallet.crypto.icon
-                            : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.crypto.icon}`
+                          wallet.currency.icon.startsWith('http')
+                            ? wallet.currency.icon
+                            : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`
                         }
-                        alt={wallet.crypto.symbol}
+                        alt={wallet.currency.symbol}
                         width={32}
                         height={32}
                         className="rounded-full mr-3"
                       />
                     ) : (
                       <div className="w-8 h-8 bg-gray-700 rounded-full mr-3 flex items-center justify-center">
-                        {wallet.crypto && wallet.crypto.symbol ? wallet.crypto.symbol.slice(0, 2) : ''}
+                        {wallet.currency && wallet.currency.symbol ? wallet.currency.symbol.slice(0, 2) : ''}
                       </div>
                     )}
                     <div>
-                      <p className="font-medium">{wallet.crypto.name}</p>
-                      <p className="text-sm text-gray-400">{wallet.crypto.symbol}</p>
+                      <p className="font-medium">{wallet.currency.name}</p>
+                      <p className="text-sm text-gray-400">{wallet.currency.symbol}</p>
                     </div>
                   </div>
                 </div>
@@ -401,10 +368,10 @@ export const DepositPage: React.FC = () => {
             <div className="mb-6 bg-gray-700 p-4 rounded-lg">
               <p className="text-sm text-gray-300 mb-1">Вы получите примерно:</p>
               <p className="text-xl font-bold text-purple-400">
-                {cryptoAmount} {wallets.find(w => w.id === selectedWalletId)?.crypto.symbol}
+                {cryptoAmount} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                Курс обмена: 1 {currency} = {exchangeRate.toFixed(8)} {wallets.find(w => w.id === selectedWalletId)?.crypto.symbol}
+                Курс обмена: 1 {currency} = {exchangeRate.toFixed(8)} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
               </p>
               <p className="text-xs text-gray-400 mt-1">
                 Точная сумма будет рассчитана в момент зачисления средств

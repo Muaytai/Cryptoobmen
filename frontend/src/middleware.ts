@@ -56,12 +56,15 @@ export function middleware(request: NextRequest) {
   // Если нет токена и пользователь пытается получить доступ к защищенным маршрутам
   if (!token && (
     request.nextUrl.pathname.startsWith('/profile') ||
+    request.nextUrl.pathname.startsWith('/dashboard') ||
     request.nextUrl.pathname.startsWith('/wallet') ||
-    request.nextUrl.pathname.startsWith('/funds/deposit')
+    request.nextUrl.pathname.startsWith('/funds') ||
+    request.nextUrl.pathname.startsWith('/exchange')
     // Добавьте другие защищенные маршруты здесь, если они есть
   )) {
-    // Сохраняем путь, куда пытался попасть пользователь, чтобы вернуться после авторизации
-    const redirect = encodeURIComponent(request.nextUrl.pathname);
+    // Сохраняем ПОЛНЫЙ путь (с параметрами), куда пытался попасть пользователь
+    const redirectPath = request.nextUrl.pathname + request.nextUrl.search;
+    const redirect = encodeURIComponent(redirectPath);
     console.log(`Middleware: Redirecting to /login?redirect=${redirect} because token was not found for a protected route.`);
     return NextResponse.redirect(new URL(`/login?redirect=${redirect}`, request.url));
   }
@@ -77,6 +80,7 @@ export const config = {
     '/dashboard/:path*',
     '/wallet/:path*',
     '/funds/:path*',
+    '/exchange/:path*',
     '/login/:path*',
     '/register/:path*',
   ],

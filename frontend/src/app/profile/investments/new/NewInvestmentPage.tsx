@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import axios from 'axios';
+import api from '@/lib/api/fetch';
 import Image from 'next/image';
 import Link from 'next/link';
 
 // Типы данных
 interface Wallet {
   id: number;
-  crypto: {
+  currency: {
     id: number;
     name: string;
     symbol: string;
@@ -50,7 +50,7 @@ interface NewInvestmentData {
 export const NewInvestmentPage: React.FC = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { tokens, user } = useAuthStore();
+  const { tokens, user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const token = tokens?.access;
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -69,48 +69,55 @@ export const NewInvestmentPage: React.FC = () => {
 
   // Получение данных кошельков и инвестиционных планов
   useEffect(() => {
-    const fetchData = async () => {
-      if (!token) {
-        router.push('/login?redirect=profile/investments/new');
-        return;
-      }
+    if (authLoading) {
+      console.log('NewInvestmentPage: authLoading is true, ожидаем завершения проверки сессии...');
+      setLoading(true);
+      return;
+    }
 
+    console.log(`NewInvestmentPage: authLoading is false. isAuthenticated: ${isAuthenticated}, user: ${!!user}`);
+
+    if (!isAuthenticated || !user) {
+      console.log('NewInvestmentPage: Пользователь НЕ аутентифицирован (после authLoading: false). Перенаправление на /login.');
+      const redirectPath = `/profile/investments/new${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+      router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
+      return;
+    }
+    
+    // Если пользователь аутентифицирован, загружаем данные страницы
+    const fetchData = async () => {
+      console.log('NewInvestmentPage: Пользователь аутентифицирован. Загрузка данных страницы...');
+      setLoading(true);
       try {
-        setLoading(true);
-        
-        // Получаем кошельки пользователя
-        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
+        // Используем api.get с относительными путями
+        const walletsResponse = await api.get('/crypto/wallets/');
         setWallets(walletsResponse.data);
         
-        // Если в URL есть параметр wallet_id, выбираем этот кошелек
-        const walletId = searchParams.get('wallet_id');
-        if (
-          walletId &&
-          walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletId))
-        ) {
-          setSelectedWalletId(parseInt(walletId));
-          const selectedWallet = walletsResponse.data.find((w: Wallet) => w.id === parseInt(walletId));
-          if (selectedWallet && selectedWallet.crypto && selectedWallet.crypto.id) {
-            const plansResponse = await axios.get(
-              `${process.env.NEXT_PUBLIC_API_URL}/crypto/investment-plans/by_crypto/?crypto_id=${selectedWallet.crypto.id}`
+        const walletIdParam = searchParams.get('wallet_id');
+        if (walletIdParam) {
+          const walletFromParam = walletsResponse.data.find((w: Wallet) => w.id === parseInt(walletIdParam));
+          if (walletFromParam && walletFromParam.currency && walletFromParam.currency.id) {
+            setSelectedWalletId(walletFromParam.id);
+            // Загружаем планы только если кошелек выбран через URL и он валиден
+            const plansResponse = await api.get(
+              `/crypto/investment-plans/by_crypto/?crypto_id=${walletFromParam.currency.id}`
             );
             setPlans(plansResponse.data);
           }
+        } else {
+          setPlans([]); 
         }
-        
-        setLoading(false);
+        setError(null);
       } catch (err) {
-        console.error('Ошибка при получении данных:', err);
+        console.error('NewInvestmentPage: Ошибка при получении начальных данных:', err);
         setError('Не удалось загрузить данные. Пожалуйста, попробуйте позже.');
-        setLoading(false);
       }
+      setLoading(false);
     };
 
     fetchData();
-  }, [token, router, searchParams]);
+
+  }, [authLoading, isAuthenticated, user, router, searchParams]);
 
   // Загрузка инвестиционных планов при выборе кошелька
   useEffect(() => {
@@ -118,13 +125,14 @@ export const NewInvestmentPage: React.FC = () => {
       if (selectedWalletId) {
         try {
           const selectedWallet = wallets.find(w => w.id === selectedWalletId);
-          if (selectedWallet && selectedWallet.crypto && selectedWallet.crypto.id) {
-            const plansResponse = await axios.get(
-              `${process.env.NEXT_PUBLIC_API_URL}/crypto/investment-plans/by_crypto/?crypto_id=${selectedWallet.crypto.id}`
+          if (selectedWallet && selectedWallet.currency && selectedWallet.currency.id) {
+            // Используем api.get с относительным путем
+            const plansResponse = await api.get(
+              `/crypto/investment-plans/by_crypto/?crypto_id=${selectedWallet.currency.id}`
             );
             setPlans(plansResponse.data);
-            setSelectedPlanId(null); // Сбрасываем выбранный план при смене кошелька
-            setAmount(''); // Сбрасываем сумму при смене кошелька
+            setSelectedPlanId(null); 
+            setAmount(''); 
           }
         } catch (err) {
           console.error('Ошибка при получении инвестиционных планов:', err);
@@ -236,23 +244,21 @@ export const NewInvestmentPage: React.FC = () => {
         amount: parseFloat(amount)
       };
       
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/investments/`, 
-        investmentData,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      // Используем api.post с относительным путем
+      const postResponse = await api.post('/investments/', investmentData);
       
       setSuccess(true);
-      setInvestmentId(response.data.investment_id);
+      setInvestmentId(postResponse.data.id); // Предполагаем, что ID возвращается в data.id
+      console.log('NewInvestmentPage: Инвестиция успешно создана:', postResponse.data);
       
       // Очищаем форму
       setAmount('');
       setSelectedPlanId(null);
       
       setSubmitting(false);
-    } catch (err: any) {
-      console.error('Ошибка при отправке запроса:', err);
-      setError(err.response?.data?.error || 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.');
+    } catch (error: any) {
+      console.error('Ошибка при отправке запроса:', error);
+      setError(error.response?.data?.error || 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.');
       setSubmitting(false);
     }
   };
@@ -280,7 +286,7 @@ export const NewInvestmentPage: React.FC = () => {
     return `${value} ${unit}`;
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
@@ -343,27 +349,31 @@ export const NewInvestmentPage: React.FC = () => {
                   `}
                 >
                   <div className="flex items-center">
-                    {wallet.crypto.icon ? (
+                    {wallet.currency.icon ? (
                       <Image 
-                        src={`${process.env.NEXT_PUBLIC_API_URL}${wallet.crypto.icon}`} 
-                        alt={wallet.crypto.symbol} 
+                        src={
+                          wallet.currency.icon.startsWith('http')
+                            ? wallet.currency.icon
+                            : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`
+                        } 
+                        alt={wallet.currency.symbol} 
                         width={32} 
                         height={32} 
                         className="rounded-full mr-3"
                       />
                     ) : (
                       <div className="w-8 h-8 bg-gray-700 rounded-full mr-3 flex items-center justify-center">
-                        {wallet.crypto && wallet.crypto.symbol ? (
-                          wallet.crypto.symbol.slice(0, 2)
+                        {wallet.currency && wallet.currency.symbol ? (
+                          wallet.currency.symbol.slice(0, 2)
                         ) : (
                           ''
                         )}
                       </div>
                     )}
                     <div>
-                      <p className="font-medium">{wallet.crypto.name}</p>
+                      <p className="font-medium">{wallet.currency.name}</p>
                       <p className="text-sm text-gray-400">
-                        {parseFloat(wallet.available_balance).toFixed(8)} {wallet.crypto.symbol}
+                        {parseFloat(wallet.available_balance).toFixed(8)} {wallet.currency.symbol}
                       </p>
                     </div>
                   </div>
@@ -477,19 +487,19 @@ export const NewInvestmentPage: React.FC = () => {
                 <div>
                   <p className="text-sm text-gray-400">Инвестиция:</p>
                   <p className="text-lg font-bold">
-                    {parseFloat(amount).toFixed(8)} {wallets.find(w => w.id === selectedWalletId)?.crypto.symbol}
+                    {parseFloat(amount).toFixed(8)} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-400">Ожидаемый возврат:</p>
                   <p className="text-lg font-bold text-green-500">
-                    {expectedReturn} {wallets.find(w => w.id === selectedWalletId)?.crypto.symbol}
+                    {expectedReturn} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-400">Прибыль:</p>
                   <p className="text-md font-medium text-green-400">
-                    {(parseFloat(expectedReturn) - parseFloat(amount)).toFixed(8)} {wallets.find(w => w.id === selectedWalletId)?.crypto.symbol}
+                    {(parseFloat(expectedReturn) - parseFloat(amount)).toFixed(8)} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
                   </p>
                 </div>
                 <div>

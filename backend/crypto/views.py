@@ -129,7 +129,7 @@ class UserWalletViewSet(viewsets.ModelViewSet):
         
         for wallet in wallets:
             # Получаем последнюю цену для криптовалюты
-            latest_price = CryptoPrice.objects.filter(crypto=wallet.crypto).order_by('-timestamp').first()
+            latest_price = CryptoPrice.objects.filter(crypto=wallet.currency).order_by('-timestamp').first()
             if latest_price:
                 total_usd_balance += wallet.balance * latest_price.price_usd
         
