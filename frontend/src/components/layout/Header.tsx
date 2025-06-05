@@ -66,25 +66,29 @@ export function Header() {
   // Функция для обработки нажатия на кнопку "Войти"
   const handleLogin = async () => {
     try {
-      // Сначала очищаем все куки
-      const cookies = [
-        'access_token',
-        'refresh_token',
-        'sessionid',
-        'dj_session_id',
-        'csrftoken',
-        'auth_token',
-        'next_hmr_refresh_hash'
+      // Сначала очищаем НЕ HttpOnly куки и localStorage
+      const clientSideCookies = [
+        // 'access_token', // HttpOnly, управляется бэкендом
+        // 'refresh_token', // HttpOnly, управляется бэкендом
+        // 'sessionid',
+        // 'dj_session_id',
+        // 'csrftoken',
+        // 'auth_token',
+        'next_hmr_refresh_hash' // Пример клиентской куки
       ];
 
-      cookies.forEach(cookie => {
+      clientSideCookies.forEach(cookie => {
         document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
         document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+        document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`; // Добавлено для большей надежности
       });
 
-      // Очищаем localStorage
-      localStorage.clear();
-      sessionStorage.clear();
+      // Очищаем localStorage и sessionStorage
+      localStorage.removeItem('user');
+      localStorage.removeItem('auth-storage');
+      // localStorage.removeItem('access_token');
+      // localStorage.removeItem('refresh_token');
+      // sessionStorage.clear(); // Если используется
 
       // Очищаем состояние в store
       setDisableAutoLogin(true);

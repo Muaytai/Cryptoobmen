@@ -8,43 +8,21 @@ import { useRouter } from "next/navigation";
 export const Profile = () => {
   const { theme, toggleTheme } = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
-  const { user, isAuthenticated, isLoading: authLoading, checkAuthStatus } = useAuthStore();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const router = useRouter();
-  const [яisSessionChecked, setIsSessionChecked] = useState(false);
 
-  // При монтировании компонента проверяем авторизацию
   useEffect(() => {
-    // Проверяем наличие сессионной куки
-    const hasSession = document.cookie.includes('sessionid=') || 
-                        document.cookie.includes('dj_session_id=') || 
-                        document.cookie.includes('auth_token=') ||
-                        document.cookie.includes('csrftoken=');
-                        
-    if (hasSession && !isAuthenticated) {
-      // Если есть сессия, но пользователь не авторизован - проверяем статус
-      console.log('В профиле: есть сессия, но пользователь не авторизован. Проверяем...');
-      checkAuthStatus();
-    } else if (!hasSession) {
-      // Если нет сессии - переходим на страницу входа
-      console.log('В профиле: нет сессии, переходим на страницу входа');
-      router.push('/login');
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        console.log('Профиль: Пользователь не аутентифицирован (согласно AuthStore). Перенаправление на /login.');
+        router.push('/login?from=profile');
+      } else {
+        console.log('Профиль: Пользователь аутентифицирован (согласно AuthStore).');
+      }
     }
-    
-    setIsSessionChecked(true);
-  }, []);
+  }, [isAuthenticated, authLoading, router]);
 
-  // Эффект для перенаправления, если пользователь не авторизован
-  useEffect(() => {
-    if (authLoading) return;
-
-    if (!isAuthenticated && isSessionChecked) {
-      console.log('Пользователь не авторизован, перенаправление на страницу входа');
-      router.push('/login');
-    }
-  }, [isAuthenticated, authLoading, router, isSessionChecked]);
-
-  // Отображаем загрузчик, пока проверяем авторизацию
-  if (authLoading || !isSessionChecked || !user) {
+  if (authLoading) {
     return (
       <div className="flex w-full min-h-screen bg-[#0d0d0d] text-white items-center justify-center">
         <div>Загрузка данных профиля...</div>
