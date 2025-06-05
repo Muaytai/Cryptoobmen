@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import axios from 'axios';
+import api from '@/lib/api/fetch';
 import Image from 'next/image';
 import Link from 'next/link';
 
 // Типы данных
 interface Wallet {
   id: number;
-  crypto: {
+  currency: {
     id: number;
     name: string;
     symbol: string;
@@ -41,7 +41,7 @@ interface WithdrawalData {
 export const WithdrawPage: React.FC = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { tokens, user } = useAuthStore();
+  const { tokens, user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const token = tokens?.access;
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -62,49 +62,57 @@ export const WithdrawPage: React.FC = () => {
 
   // Получение данных кошельков пользователя
   useEffect(() => {
-    const fetchData = async () => {
-      if (!token) {
-        router.push('/login?redirect=funds/withdraw');
-        return;
-      }
+    if (authLoading) {
+      console.log('WithdrawPage: authLoading is true, ожидаем завершения проверки сессии...');
+      setLoading(true);
+      return;
+    }
 
+    console.log(`WithdrawPage: authLoading is false. isAuthenticated: ${isAuthenticated}, user: ${!!user}`);
+
+    if (!isAuthenticated || !user) {
+      console.log('WithdrawPage: Пользователь НЕ аутентифицирован (после authLoading: false). Перенаправление на /login.');
+      const redirectPath = `/funds/withdraw${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+      router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
+      return;
+    }
+
+    // Если пользователь аутентифицирован, загружаем данные страницы
+    const fetchData = async () => {
+      console.log('WithdrawPage: Пользователь аутентифицирован. Загрузка данных страницы...');
+      setLoading(true);
       try {
-        setLoading(true);
+        // Используем api.get с правильными эндпоинтами
+        const walletsResponse = await api.get('/wallets/'); 
+        const pricesResponse = await api.get('/crypto-prices/latest/');
         
-        // Получаем кошельки пользователя
-        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/wallets/`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        // Получаем последние цены криптовалют
-        const pricesResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/crypto-prices/latest/`);
-        
+        // Данные пользователя уже должны быть в response.data согласно реализации api.get
         setWallets(walletsResponse.data);
         setPrices(pricesResponse.data);
         
-        // Если в URL есть параметр wallet_id, выбираем этот кошелек
-        const walletId = searchParams.get('wallet_id');
-        if (walletId && walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletId))) {
-          setSelectedWalletId(parseInt(walletId));
+        const walletIdParam = searchParams.get('wallet_id');
+        if (walletIdParam && walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletIdParam))) {
+          setSelectedWalletId(parseInt(walletIdParam));
         }
-        
-        setLoading(false);
-      } catch (err) {
-        console.error('Ошибка при получении данных:', err);
-        setError('Не удалось загрузить данные. Пожалуйста, попробуйте позже.');
+        setError(null);
+      } catch (err: any) {
+        console.error('WithdrawPage: Ошибка при получении данных страницы:', err);
+        setError(err.message || 'Не удалось загрузить данные.');
+      } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [token, router, searchParams]);
+
+  }, [authLoading, isAuthenticated, user, router, searchParams]);
 
   // Обновление расчета комиссии при изменении суммы или кошелька
   useEffect(() => {
     if (selectedWalletId && amount && !isNaN(parseFloat(amount))) {
       const selectedWallet = wallets.find(w => w.id === selectedWalletId);
       if (selectedWallet) {
-        const cryptoPrice = prices.find(p => p.crypto.id === selectedWallet.crypto.id);
+        const cryptoPrice = prices.find(p => p.crypto.id === selectedWallet.currency.id);
         if (cryptoPrice) {
           // Расчет комиссии (примерно 0.1% от суммы вывода)
           const feePercentage = 0.1;
@@ -173,7 +181,7 @@ export const WithdrawPage: React.FC = () => {
     const availableBalance = parseFloat(wallet.available_balance);
     
     if (amountValue > availableBalance) {
-      setError(`Недостаточно средств. Доступно: ${availableBalance} ${wallet.crypto.symbol}`);
+      setError(`Недостаточно средств. Доступно: ${availableBalance} ${wallet.currency.symbol}`);
       return;
     }
     
@@ -187,11 +195,7 @@ export const WithdrawPage: React.FC = () => {
         destination_address: destinationAddress
       };
       
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/withdrawals/`, 
-        withdrawalData,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await api.post('/withdrawals/', withdrawalData);
       
       setSuccess(true);
       setWithdrawalId(response.data.transaction_id);
@@ -208,7 +212,7 @@ export const WithdrawPage: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
@@ -272,23 +276,27 @@ export const WithdrawPage: React.FC = () => {
                   `}
                 >
                   <div className="flex items-center">
-                    {wallet.crypto.icon ? (
+                    {wallet.currency.icon ? (
                       <Image 
-                        src={`${process.env.NEXT_PUBLIC_API_URL || ''}${wallet.crypto.icon}`} 
-                        alt={wallet.crypto.symbol} 
+                        src={
+                          wallet.currency.icon.startsWith('http')
+                            ? wallet.currency.icon
+                            : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`
+                        } 
+                        alt={wallet.currency.symbol} 
                         width={32} 
                         height={32} 
                         className="rounded-full mr-3"
                       />
                     ) : (
                       <div className="w-8 h-8 bg-gray-700 rounded-full mr-3 flex items-center justify-center">
-                        {wallet.crypto.symbol.slice(0, 2)}
+                        {wallet.currency.symbol.slice(0, 2)}
                       </div>
                     )}
                     <div>
-                      <p className="font-medium">{wallet.crypto.name}</p>
+                      <p className="font-medium">{wallet.currency.name}</p>
                       <p className="text-sm text-gray-400">
-                        Доступно: {parseFloat(wallet.available_balance).toFixed(8)} {wallet.crypto.symbol}
+                        Доступно: {parseFloat(wallet.available_balance).toFixed(8)} {wallet.currency.symbol}
                       </p>
                     </div>
                   </div>
@@ -330,7 +338,7 @@ export const WithdrawPage: React.FC = () => {
                 id="destinationAddress"
                 value={destinationAddress}
                 onChange={(e) => setDestinationAddress(e.target.value)}
-                placeholder={`Введите адрес ${wallets.find(w => w.id === selectedWalletId)?.crypto.symbol}`}
+                placeholder={`Введите адрес ${wallets.find(w => w.id === selectedWalletId)?.currency.symbol}`}
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
               <p className="text-xs text-gray-400 mt-1">
@@ -347,19 +355,19 @@ export const WithdrawPage: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="text-gray-400">Сумма вывода:</span>
                   <span>
-                    {amount} {wallets.find(w => w.id === selectedWalletId)?.crypto.symbol}
+                    {amount} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Комиссия сети:</span>
                   <span className="text-yellow-400">
-                    {fee} {wallets.find(w => w.id === selectedWalletId)?.crypto.symbol} (≈${feeUsd})
+                    {fee} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol} (≈${feeUsd})
                   </span>
                 </div>
                 <div className="border-t border-gray-600 my-2 pt-2 flex justify-between font-semibold">
                   <span>Вы получите:</span>
                   <span className="text-green-400">
-                    {netAmount} {wallets.find(w => w.id === selectedWalletId)?.crypto.symbol}
+                    {netAmount} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
                   </span>
                 </div>
               </div>

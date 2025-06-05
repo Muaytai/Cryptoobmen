@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const checkAuthStatus = useAuthStore((state) => state.checkAuthStatus);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isLoading = useAuthStore((state) => state.isLoading);
   const disableAutoLogin = useAuthStore((state) => state.disableAutoLogin);
   const setDisableAutoLogin = useAuthStore((state) => state.setDisableAutoLogin);
   const pathname = usePathname();
@@ -36,16 +37,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const storedDisableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
       console.log('AuthProvider init: storedDisableAutoLogin =', storedDisableAutoLogin, ', Zustand disableAutoLogin =', disableAutoLogin);
 
-      if (!storedDisableAutoLogin && hasAnyToken) {
-        console.log('AuthProvider init: Обнаружены токены и автовход не выключен, пытаемся проверить авторизацию.');
-        if (disableAutoLogin) {
-            setDisableAutoLogin(false);
+      // Новая логика: всегда вызываем checkAuthStatus, если автовход не выключен в localStorage
+      if (!storedDisableAutoLogin) {
+        console.log('AuthProvider init: Автовход не выключен (storedDisableAutoLogin=false). Вызов checkAuthStatus().');
+        // Если Zustand disableAutoLogin был true, но localStorage говорит, что автовход разрешен, синхронизируем Zustand
+        if (disableAutoLogin) { 
+            setDisableAutoLogin(false); 
         }
-        localStorage.removeItem('disableAutoLogin');
-        checkAuthStatus(); // This will manage isLoading: true -> false
+        // checkAuthStatus() сам управляет localStorage.removeItem('disableAutoLogin') при успехе
+        checkAuthStatus(); // Всегда пытаемся проверить сессию через API, если автовход не запрещен
       } else {
-        console.log('AuthProvider init: Токены не обнаружены или автовход выключен. Автоматический вход невозможен. Установка isLoading: false.');
-        useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false, disableAutoLogin: storedDisableAutoLogin });
+        // Автовход выключен через localStorage
+        console.log('AuthProvider init: Автовход выключен (storedDisableAutoLogin=true). Устанавливаем неаутентифицированное состояние.');
+        useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false, disableAutoLogin: true });
       }
       setIsInitialized(true);
     }
@@ -62,30 +66,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       refresh_token: localStorage.getItem('refresh_token')
     });
     
-    // Пропускаем страницы логина/регистрации и первую загрузку
-    if (!['/login', '/register'].includes(pathname) && isInitialized && !disableAutoLogin) {
-      // Проверяем наличие JWT токенов
+    // Выполняем логику только если не идет загрузка из useAuthStore и другие условия соблюдены
+    if (!isLoading && !['/login', '/register'].includes(pathname) && isInitialized && !disableAutoLogin) {
+      // Проверяем наличие JWT токенов (это упрощенная проверка, т.к. HttpOnly куки не видны)
       const hasSession = document.cookie.includes('auth-token=') || 
                         document.cookie.includes('refresh-token=') ||
-                        document.cookie.includes('access_token=') ||
-                        document.cookie.includes('refresh_token=');
+                        document.cookie.includes('access_token=') || // Для обратной совместимости или не-HttpOnly токенов
+                        document.cookie.includes('refresh_token='); // Для обратной совместимости
+
+      console.log('AuthProvider (isInitialized, !isLoading, !disableAutoLogin): Проверка сессии:', { hasSession, pathname, isAuthenticated });
       
-      console.log('Проверка сессии:', { hasSession, pathname, isAuthenticated });
-      
-      // Если есть токены, но не авторизованы в состоянии - проверяем статус
+      // Если есть токены (по мнению document.cookie), но не авторизованы в состоянии - проверяем статус
       if (hasSession && !isAuthenticated) {
-        console.log('Есть JWT токены, но не авторизованы в состоянии - проверяем статус');
-        localStorage.removeItem('disableAutoLogin');
+        console.log('AuthProvider: Есть JWT токены в куках (клиентских), но isAuthenticated false. Проверяем статус.');
+        localStorage.removeItem('disableAutoLogin'); // Разрешаем автовход для этой проверки
         setDisableAutoLogin(false);
         checkAuthStatus();
       }
-      // Если нет токенов, но статус авторизации true - выполняем проверку
+      // Если нет токенов (по мнению document.cookie), но статус авторизации true в состоянии
       else if (!hasSession && isAuthenticated) {
-        console.log('Нет JWT токенов, но статус авторизации true - проверяем статус');
-        checkAuthStatus();
+        // Проверяем, есть ли данные пользователя в сторе.
+        if (!useAuthStore.getState().user) { 
+          // Если данных пользователя нет, это может быть "зависшее" состояние isAuthenticated. Сбрасываем.
+          console.log('AuthProvider: Нет JWT токенов в куках (клиентских), isAuthenticated был true, НО user is null. Принудительный сброс.');
+          useAuthStore.setState({ isAuthenticated: false, user: null, tokens: null, isLoading: false });
+          localStorage.setItem('disableAutoLogin', 'true'); // Блокируем автовход после сброса
+          setDisableAutoLogin(true);
+        } else {
+          // Данные пользователя есть. Это, скорее всего, ситуация сразу после логина (HttpOnly куки)
+          // или успешного checkAuthStatus. Доверяем состоянию стора.
+          console.log('AuthProvider: Нет JWT токенов в куках (клиентских), но isAuthenticated true И user существует. Доверяем состоянию из store (возможно, HttpOnly куки).');
+        }
       }
+    } else if (isLoading) {
+      console.log('AuthProvider: Проверка сессии пропущена, так как isLoading is true.');
+    } else if (!isInitialized) {
+      console.log('AuthProvider: Проверка сессии пропущена, так как isInitialized is false.');
+    } else if (disableAutoLogin) {
+       console.log('AuthProvider: Проверка сессии пропущена, так как disableAutoLogin is true.');
     }
-  }, [pathname, isInitialized, isAuthenticated, checkAuthStatus, setDisableAutoLogin, disableAutoLogin]);
+  }, [pathname, isInitialized, isAuthenticated, checkAuthStatus, setDisableAutoLogin, disableAutoLogin, isLoading]); // Добавили isLoading
 
   // Пример глобального лоадера на время самой первой проверки сессии
   // if (isLoadingInitial) {

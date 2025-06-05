@@ -12,17 +12,23 @@ export const Profile = () => {
   const router = useRouter();
 
   useEffect(() => {
+    console.log(`[Profile useEffect] Running. authLoading: ${authLoading}, isAuthenticated: ${isAuthenticated}`);
     if (!authLoading) {
       if (!isAuthenticated) {
-        console.log('Профиль: Пользователь не аутентифицирован (согласно AuthStore). Перенаправление на /login.');
+        console.log(`[Profile useEffect] Condition met: !authLoading (${!authLoading}) && !isAuthenticated (${!isAuthenticated}). Redirecting to /login.`);
         router.push('/login?from=profile');
       } else {
-        console.log('Профиль: Пользователь аутентифицирован (согласно AuthStore).');
+        console.log(`[Profile useEffect] Condition met: !authLoading (${!authLoading}) && isAuthenticated (${isAuthenticated}). User is authenticated. No redirect.`);
       }
+    } else {
+      console.log(`[Profile useEffect] authLoading is true. Waiting for auth check to complete.`);
     }
   }, [isAuthenticated, authLoading, router]);
 
+  console.log(`[Profile Render] authLoading: ${authLoading}, isAuthenticated: ${isAuthenticated}, user: ${user ? user.email : 'null'}`);
+
   if (authLoading) {
+    console.log("[Profile Render] Displaying loading state because authLoading is true.");
     return (
       <div className="flex w-full min-h-screen bg-[#0d0d0d] text-white items-center justify-center">
         <div>Загрузка данных профиля...</div>
@@ -30,8 +36,15 @@ export const Profile = () => {
     );
   }
 
-  const userEmail = user?.email || "N/A";
-  const userName = user?.username || user?.first_name || "Пользователь";
+  if (!isAuthenticated || !user) {
+    console.log(`[Profile Render] authLoading is false. Condition !isAuthenticated (${!isAuthenticated}) || !user (${!user}) is true. Returning null to allow useEffect to redirect or handle.`);
+    return null;
+  }
+
+  console.log("[Profile Render] Proceeding to render profile content.");
+
+  const userEmail = user.email || "N/A";
+  const userName = user.username || user.first_name || "Пользователь";
   const userInitials = userName.substring(0, 2).toUpperCase();
 
   return (

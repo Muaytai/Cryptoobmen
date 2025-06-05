@@ -178,56 +178,81 @@ export const useAuthStore = create<AuthState>()(
           console.error("[AuthStore] logout: Ошибка при выходе на бэкенде:", error.message);
           // Продолжаем очистку на клиенте независимо от ошибки бэкенда
         }
-        clearAuthData();
-        get().setDisableAutoLogin(true); // Устанавливаем флаг для предотвращения авто-входа
-        set({ user: null, isAuthenticated: false, isLoading: false });
+        clearAuthData(); // clearAuthData устанавливает disableAutoLogin в localStorage
+        // get().setDisableAutoLogin(true); // Больше не нужно здесь, clearAuthData это делает
+        set({ user: null, isAuthenticated: false, isLoading: false, tokens: null, disableAutoLogin: true }); // Убедимся, что disableAutoLogin в сторе тоже true
         console.log('[AuthStore] logout: Выход выполнен, disableAutoLogin установлен.');
       },
       
       checkAuthStatus: async (isLoginProcess = false) => {
         const store = get();
+        
         if (!isLoginProcess && store.disableAutoLogin) {
           console.warn(
             '[AuthStore] checkAuthStatus: Выполнение прервано из-за флага disableAutoLogin (не в процессе логина).'
           );
-          set({ isLoading: false, user: null, isAuthenticated: false });
+          set({ isLoading: false, user: null, isAuthenticated: false, tokens: null });
           return;
         }
 
-        console.log('[AuthStore] checkAuthStatus: Начало проверки статуса аутентификации.');
-        // Устанавливаем isLoading в true только если это не процесс логина,
-        // так как login уже установил isLoading: true.
-        // Или всегда устанавливать, а login в finally сбросит. Лучше всегда устанавливать для консистентности.
-        set({ isLoading: true });
+        console.log(`[AuthStore] checkAuthStatus: Начало проверки. isLoginProcess: ${isLoginProcess}, disableAutoLogin в сторе: ${store.disableAutoLogin}`);
+        set({ isLoading: true, error: null });
+
         try {
-          const response = await api.auth.getUser(); // Получаем полный ответ
-          const userData = response.data; // Извлекаем данные пользователя из response.data
+          console.log('[AuthStore] checkAuthStatus: Попытка загрузить профиль пользователя (api.auth.getUser).');
+          const response = await api.auth.getUser(); 
+          const userData = response?.data;
 
           if (userData) {
+            console.log('[AuthStore] checkAuthStatus: Профиль пользователя успешно загружен:', userData);
             set({
-              user: userData, // Теперь userData должен иметь правильный тип User
+              user: userData,
               isAuthenticated: true,
               isLoading: false,
               error: null,
+              disableAutoLogin: false, 
+              tokens: store.tokens, 
             });
-            store.setDisableAutoLogin(false); // Успешная аутентификация, сбрасываем флаг
-            console.log('[AuthStore] checkAuthStatus: Пользователь аутентифицирован:', userData);
+            if (localStorage.getItem('disableAutoLogin') === 'true') {
+              localStorage.removeItem('disableAutoLogin');
+              console.log('[AuthStore] checkAuthStatus: Флаг disableAutoLogin удален из localStorage.');
+            }
+            return; 
           } else {
-            // Этого не должно происходить при успешном getUser, но на всякий случай
-            console.warn('[AuthStore] checkAuthStatus: Пользователь НЕ аутентифицирован (нет данных пользователя).');
-            clearAuthData(); // Очищаем все локальные данные
-            set({ user: null, isAuthenticated: false, isLoading: false });
+            console.warn('[AuthStore] checkAuthStatus: Профиль пользователя загружен, но данные отсутствуют (userData is null/undefined). Это неожиданно.');
+            // Если userData пустой, но запрос прошел успешно (что странно), считаем не аутентифицированным
+            // Это приведет к установке неаутентифицированного состояния ниже
           }
         } catch (error: any) {
-          console.warn('[AuthStore] checkAuthStatus: Ошибка при проверке статуса или пользователь не аутентифицирован:', error.message);
-          clearAuthData(); // Очищаем все локальные данные при ошибке (например, 401)
-          set({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-            // Не устанавливаем error здесь, т.к. это может быть обычная проверка (нет сессии)
-          });
-          // Важно: не сбрасываем disableAutoLogin при ошибке, он сбрасывается только при успехе
+          console.warn(`[AuthStore] checkAuthStatus: Ошибка при загрузке профиля пользователя (вероятно, не аутентифицирован или API недоступен):`, error.message);
+          if (isLoginProcess) {
+            console.log('[AuthStore] checkAuthStatus: Ошибка в процессе логина, пробрасываю дальше.');
+            set({ isLoading: false }); // Устанавливаем isLoading false перед пробросом
+            throw error; // Позволяем функции login обработать эту ошибку
+          }
+          // Если не процесс логина, то просто фиксируем ошибку и далее установим неаутентифицированное состояние
+          // (ошибка уже залогирована)
+        }
+
+        // Если мы здесь, значит, userData не был получен или была ошибка (не в процессе логина)
+        console.log('[AuthStore] checkAuthStatus: Установка неаутентифицированного состояния (профиль не загружен или ошибка).');
+        set({
+          user: null,
+          isAuthenticated: false,
+          isLoading: false, 
+          error: !isLoginProcess ? (store.error || 'Не удалось проверить сессию.') : store.error,
+          // disableAutoLogin не меняем здесь принудительно на true, если это была ошибка API,
+          // но если это был не логин процесс и проверка не удалась, то disableAutoLogin установится.
+        });
+
+        if (!isLoginProcess) {
+          // Если это была фоновая проверка и она не удалась, тогда устанавливаем disableAutoLogin,
+          // чтобы не пытаться автоматически логиниться с невалидной сессией.
+          const currentDisableAutoLogin = get().disableAutoLogin;
+          if (!currentDisableAutoLogin) { // Устанавливаем, только если еще не установлен
+             get().setDisableAutoLogin(true); 
+             console.log('[AuthStore] checkAuthStatus: Установлен disableAutoLogin т.к. фоновая проверка сессии не удалась.');
+          }
         }
       },
       

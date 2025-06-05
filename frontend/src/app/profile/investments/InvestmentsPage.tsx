@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import axios from 'axios';
+import api from '@/lib/api/fetch';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -56,8 +56,7 @@ interface InvestmentStats {
 
 export const InvestmentsPage: React.FC = () => {
   const router = useRouter();
-  const { tokens, user, isAuthenticated } = useAuthStore();
-  const token = tokens?.access;
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
 
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [stats, setStats] = useState<InvestmentStats | null>(null);
@@ -69,37 +68,28 @@ export const InvestmentsPage: React.FC = () => {
 
   // Получение инвестиций пользователя
   useEffect(() => {
-    const fetchInvestments = async () => {
-      // Проверяем наличие токена и авторизации
-      if (!token || !isAuthenticated) {
-        console.log('Нет токена или не авторизован, перенаправляем на страницу входа');
-        router.push('/login?redirect=profile/investments');
-        return;
-      }
-      
-      // Дополнительная проверка на наличие токена в заголовках
-      if (!token) {
-        console.log('Токен отсутствует в заголовках');
-        router.push('/login?redirect=profile/investments');
-        return;
-      }
+    if (authLoading) {
+      console.log('InvestmentsPage: authLoading is true, ожидаем завершения проверки сессии...');
+      setLoading(true);
+      return;
+    }
 
-      console.log('Начинаем загрузку данных инвестиций');
+    if (!isAuthenticated || !user) {
+      console.log('InvestmentsPage: Пользователь НЕ аутентифицирован (после authLoading: false). Перенаправление на /login.');
+      router.push('/login?redirect=profile/investments');
+      return;
+    }
+
+    const fetchInvestments = async () => {
+      console.log('InvestmentsPage: Пользователь аутентифицирован. Загрузка данных инвестиций...');
+      setLoading(true);
       try {
-        setLoading(true);
-        
-        // Получаем инвестиции пользователя
-        console.log('Запрашиваем инвестиции по URL:', `${process.env.NEXT_PUBLIC_API_URL}/crypto/investments/`);
-        const investmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/investments/`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        console.log('Запрашиваем инвестиции по URL:', '/crypto/investments/');
+        const investmentsResponse = await api.get('/crypto/investments/');
         console.log('Получен ответ по инвестициям:', investmentsResponse.data);
         
-        // Получаем статистику по инвестициям
-        console.log('Запрашиваем статистику по URL:', `${process.env.NEXT_PUBLIC_API_URL}/crypto/investments/stats/`);
-        const statsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/investments/stats/`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        console.log('Запрашиваем статистику по URL:', '/crypto/investments/stats/');
+        const statsResponse = await api.get('/crypto/investments/stats/');
         console.log('Получен ответ по статистике:', statsResponse.data);
         
         setInvestments(investmentsResponse.data);
@@ -113,7 +103,7 @@ export const InvestmentsPage: React.FC = () => {
     };
 
     fetchInvestments();
-  }, [token, router, withdrawSuccess]);
+  }, [authLoading, isAuthenticated, user, router, withdrawSuccess]);
 
   // Форматирование даты
   const formatDate = (dateString: string): string => {
@@ -183,7 +173,7 @@ export const InvestmentsPage: React.FC = () => {
 
   // Досрочный вывод инвестиции
   const handleWithdrawEarly = async (investmentId: number) => {
-    if (!token) {
+    if (!isAuthenticated || !user) {
       router.push('/login?redirect=profile/investments');
       return;
     }
@@ -192,11 +182,7 @@ export const InvestmentsPage: React.FC = () => {
       setWithdrawingId(investmentId);
       setWithdrawError(null);
       
-      await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/investments/${investmentId}/withdraw_early/`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post(`/investments/${investmentId}/withdraw_early/`, {});
       
       setWithdrawSuccess(true);
       setWithdrawingId(null);
@@ -253,7 +239,6 @@ export const InvestmentsPage: React.FC = () => {
         <p>Error: {error || 'none'}</p>
         <p>Investments Count: {investments.length}</p>
         <p>Stats: {stats ? 'Есть данные' : 'Нет данных'}</p>
-        <p>Token: {token ? 'Есть токен' : 'Нет токена'}</p>
         <p>Authenticated: {isAuthenticated ? 'true' : 'false'}</p>
       </div>
       
