@@ -5,7 +5,7 @@ import re
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError, AuthenticationFailed
-from django.contrib.auth import logout
+from django.contrib.auth import logout as django_logout
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,6 +16,9 @@ class JWTCookieMiddleware:
         self.jwt_auth = JWTAuthentication()
 
     def __call__(self, request):
+        # САМЫЙ ПЕРВЫЙ ЛОГ: Показывает каждый запрос, проходящий через middleware
+        logger.info(f"JWTCookieMiddleware __call__: Path: {request.path}, Method: {request.method}")
+
         # Пропускаем проверку JWT для определенных путей
         exempt_paths = [
             '/accounts/google/',
@@ -32,87 +35,102 @@ class JWTCookieMiddleware:
             '/accounts/google/login/callback/',
             '/accounts/yandex/login/',
             '/accounts/yandex/login/callback/',
+            # '/api/auth/logout/', # Убираем logout из явных исключений здесь, чтобы _set_jwt_auth_header не выполнялся для него ДО LogoutView
         ]
         
-        # Пропускаем проверку для путей авторизации
-        if any(request.path.startswith(path) for path in exempt_paths):
-            return self.get_response(request)
-            
-        # Для остальных путей проверяем JWT
-        self._set_jwt_auth_header(request)
+        # Пропускаем проверку для путей авторизации, КРОМЕ logout, если он не в exempt_paths явно
+        is_exempt_for_set_auth_header = False
+        # Проверяем, нужно ли пропускать _set_jwt_auth_header
+        # LogoutView сама обработает выход, нам не нужно пытаться аутентифицировать пользователя по JWT перед этим.
+        if request.path == '/api/auth/logout/':
+            logger.info(f"JWTCookieMiddleware: Path {request.path} is logout, skipping _set_jwt_auth_header initially.")
+            is_exempt_for_set_auth_header = True
+        else:
+            for path_prefix in exempt_paths:
+                if request.path.startswith(path_prefix):
+                    logger.info(f"JWTCookieMiddleware: Path {request.path} is exempt from _set_jwt_auth_header by prefix {path_prefix}.")
+                    is_exempt_for_set_auth_header = True
+                    break
+        
+        if not is_exempt_for_set_auth_header:
+            logger.info(f"JWTCookieMiddleware: Path {request.path} is NOT exempt. Calling _set_jwt_auth_header.")
+            # Для всех неисключенных путей (включая /api/auth/logout/, если его нет в exempt_paths)
+            # сначала проверяем JWT и устанавливаем request.user, если токен валиден
+            self._set_jwt_auth_header(request)
+        
         response = self.get_response(request)
         
-        # Если это запрос на выход
+        # Специальная обработка для /api/auth/logout/ ПОСЛЕ того, как LogoutView отработала
         if request.path == '/api/auth/logout/' and request.method == 'POST':
-            self._remove_auth_cookies(response)
-            request.session.flush()
-            logout(request)
-            if 'HTTP_AUTHORIZATION' in request.META:
-                del request.META['HTTP_AUTHORIZATION']
-            request.user = None
-            response.status_code = 200
-            response.data = {'detail': 'Successfully logged out'}
-        
+            logger.info(f"JWTCookieMiddleware: Post-processing for /api/auth/logout/. User is: {request.user}")
+            # dj_rest_auth.LogoutView уже должна была вызвать django_logout и удалить JWT куки.
+            # Дополнительно убедимся, что сессионная кука Django также удалена.
+            session_cookie_name = settings.SESSION_COOKIE_NAME
+            if session_cookie_name in request.COOKIES:
+                logger.info(f"JWTCookieMiddleware: Django session cookie '{session_cookie_name}' found in request to logout. Ensuring it's deleted in response.")
+                response.delete_cookie(
+                    session_cookie_name,
+                    path=settings.SESSION_COOKIE_PATH,
+                    domain=settings.SESSION_COOKIE_DOMAIN
+                )
+            else:
+                logger.info(f"JWTCookieMiddleware: Django session cookie '{session_cookie_name}' not found in request to logout. No explicit deletion needed from here.")
+            
+            # Принудительно удаляем все аутентификационные куки
+            logger.info("JWTCookieMiddleware: Forcefully calling _remove_auth_cookies for /api/auth/logout/")
+            self._remove_auth_cookies(response, request)
+
         return response
 
     def _set_jwt_auth_header(self, request):
-        access_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE'])
+        access_token_cookie_name = settings.SIMPLE_JWT['AUTH_COOKIE']
+        access_token = request.COOKIES.get(access_token_cookie_name)
         if access_token:
             try:
                 validated_token = self.jwt_auth.get_validated_token(access_token)
                 user = self.jwt_auth.get_user(validated_token)
-                request.user = user
-                request.META['HTTP_AUTHORIZATION'] = f"{settings.SIMPLE_JWT['AUTH_HEADER_TYPES'][0]} {access_token}"
+                if user:
+                    request.user = user
+                    request.META['HTTP_AUTHORIZATION'] = f"{settings.SIMPLE_JWT['AUTH_HEADER_TYPES'][0]} {access_token}"
             except (InvalidToken, TokenError, AuthenticationFailed) as e:
-                logger.warning(f"Ошибка аутентификации JWT: {str(e)}")
-                # При ошибке аутентификации просто сбрасываем пользователя
-                # Куки будут удалены при следующем запросе на выход или при выходе из фронтенда
+                logger.warning(f"JWTCookieMiddleware: Invalid JWT cookie '{access_token_cookie_name}': {e}")
                 request.user = None
                 if 'HTTP_AUTHORIZATION' in request.META:
                     del request.META['HTTP_AUTHORIZATION']
             except Exception as e:
-                logger.error(f"Непредвиденная ошибка при аутентификации JWT: {str(e)}")
+                logger.error(f"JWTCookieMiddleware: Unexpected error during JWT authentication: {e}")
                 request.user = None
                 if 'HTTP_AUTHORIZATION' in request.META:
                     del request.META['HTTP_AUTHORIZATION']
 
-    def _remove_auth_cookies(self, response):
+    def _remove_auth_cookies(self, response, request):
+        logger.info("JWTCookieMiddleware: Attempting to remove authentication cookies.")
+        if request.COOKIES:
+            logger.info(f"Cookies present in the logout request: {request.COOKIES.keys()}")
+        else:
+            logger.info("No cookies found in the logout request.")
+
         cookies_to_delete = [
-            'access_token',
-            'refresh_token',
+            settings.SIMPLE_JWT['AUTH_COOKIE'], 
+            settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'refresh_token'),
             'sessionid',
             'dj_session_id',
             'csrftoken',
-            'auth_token',
-            'next_hmr_refresh_hash'
         ]
         
-        # Добавляем имя куки из настроек, если оно не включено в список
-        if settings.SIMPLE_JWT.get('AUTH_COOKIE') and settings.SIMPLE_JWT['AUTH_COOKIE'] not in cookies_to_delete:
-            cookies_to_delete.append(settings.SIMPLE_JWT['AUTH_COOKIE'])
-        
-        for cookie in cookies_to_delete:
-            if cookie:
-                # Удаляем куки с разными параметрами path и domain для большей надежности
-                # Сначала с текущими настройками
+        cookies_to_delete = list(set(cookies_to_delete))
+        logger.info(f"JWTCookieMiddleware: Will attempt to delete cookies: {cookies_to_delete}")
+
+        for cookie_name in cookies_to_delete:
+            if cookie_name:
+                logger.info(f"Deleting cookie: {cookie_name}")
                 response.delete_cookie(
-                    cookie,
-                    path='/',
-                    domain=None,
-                    samesite='Lax'
+                    cookie_name,
+                    path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
+                    domain=settings.SIMPLE_JWT.get('AUTH_COOKIE_DOMAIN', None),
+                    samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
                 )
-                
-                # Затем с корневым путем
-                response.delete_cookie(
-                    cookie,
-                    path='/',
-                    domain=None
-                )
-                
-                # И наконец без дополнительных параметров
-                response.delete_cookie(cookie)
-        
-        logger.debug("Куки аутентификации удалены")
+        logger.info("JWTCookieMiddleware: Finished attempting to remove cookies.")
         return response
 
 

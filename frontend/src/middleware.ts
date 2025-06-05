@@ -25,34 +25,48 @@ export function middleware(request: NextRequest) {
       request.nextUrl.pathname.includes('/google/') ||
       request.nextUrl.pathname.includes('/yandex/') ||
       request.nextUrl.pathname.includes('/login/callback/')) {
+    // console.log('Middleware: Path is for API or social auth, skipping.');
     return NextResponse.next();
   }
 
   // Проверяем наличие токенов в URL
   const searchParams = request.nextUrl.searchParams;
-  const access_token = searchParams.get('access_token');
-  const refresh_token = searchParams.get('refresh_token');
+  const access_token_url = searchParams.get('access_token'); // Переименовал для ясности
+  const refresh_token_url = searchParams.get('refresh_token'); // Переименовал для ясности
 
-  // Если есть токены в URL, пропускаем запрос
-  if (access_token && refresh_token) {
+  if (access_token_url && refresh_token_url) {
+    console.log('Middleware: Tokens found in URL, skipping cookie check.');
     return NextResponse.next();
   }
 
   // Проверяем наличие токенов в cookies или localStorage
-  const cookieName = process.env.NEXT_PUBLIC_AUTH_COOKIE_NAME || 'auth-token';
-  const token = request.cookies.get(cookieName)?.value || request.cookies.get('access_token')?.value;
+  const cookieNameFromEnv = process.env.NEXT_PUBLIC_AUTH_COOKIE_NAME;
+  const primaryCookieNameToCheck = cookieNameFromEnv || 'auth-token';
+  
+  let token = request.cookies.get(primaryCookieNameToCheck)?.value;
+  console.log(`Middleware: Attempting to read cookie "${primaryCookieNameToCheck}": ${token ? 'FOUND' : 'NOT FOUND'}`);
+
+  if (!token) {
+    token = request.cookies.get('access_token')?.value;
+    console.log(`Middleware: Attempting to read fallback cookie "access_token": ${token ? 'FOUND' : 'NOT FOUND'}`);
+  }
+  
+  console.log(`Middleware: Final token check for path "${request.nextUrl.pathname}": ${token ? 'Token EXISTS' : 'Token NOT FOUND'}`);
 
   // Если нет токена и пользователь пытается получить доступ к защищенным маршрутам
   if (!token && (
     request.nextUrl.pathname.startsWith('/profile') ||
     request.nextUrl.pathname.startsWith('/wallet') ||
     request.nextUrl.pathname.startsWith('/funds/deposit')
+    // Добавьте другие защищенные маршруты здесь, если они есть
   )) {
     // Сохраняем путь, куда пытался попасть пользователь, чтобы вернуться после авторизации
     const redirect = encodeURIComponent(request.nextUrl.pathname);
+    console.log(`Middleware: Redirecting to /login?redirect=${redirect} because token was not found for a protected route.`);
     return NextResponse.redirect(new URL(`/login?redirect=${redirect}`, request.url));
   }
-
+  
+  console.log(`Middleware: Proceeding with request for path "${request.nextUrl.pathname}". Token presence: ${token ? 'EXISTS' : 'NOT FOUND'}`);
   return NextResponse.next();
 }
 

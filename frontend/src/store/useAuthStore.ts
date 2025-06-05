@@ -62,7 +62,7 @@ interface AuthState {
   register: (data: RegistrationData) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
-  checkAuthStatus: () => Promise<void>;
+  checkAuthStatus: (isLoginProcess?: boolean) => Promise<void>;
   setShowEmailConfirmedModal: (show: boolean) => void;
   setDisableAutoLogin: (disable: boolean) => void;
   setTokens: (tokens: Tokens | null) => void;
@@ -81,27 +81,25 @@ const handleApiError = (error: any, defaultMessage: string): string => {
 const clearAuthData = () => {
   console.log('clearAuthData: Очистка данных аутентификации');
   // Очищаем специфичные ключи из localStorage
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
   localStorage.removeItem('user'); // Если пользователь хранится отдельно
   localStorage.removeItem('auth-storage'); // Ключ persist от Zustand
-  // sessionStorage.removeItem('some_auth_key'); // Если используется sessionStorage
+  // localStorage.removeItem('access_token'); // Больше не храним в localStorage
+  // localStorage.removeItem('refresh_token'); // Больше не храним в localStorage
 
-  // Очищаем все куки
-  const cookies = [
-    'access_token',
-    'refresh_token',
-    'sessionid',
-    'dj_session_id',
-    'csrftoken',
-    'auth_token',
-    // 'next_hmr_refresh_hash' // этот можно оставить, если он не связан с сессией
+  // Очищаем НЕ HttpOnly куки, если они есть и управляются фронтом
+  const clientSideCookiesToDelete = [
+    // 'sessionid', // Управляется бэкендом (HttpOnly)
+    // 'csrftoken', // Управляется бэкендом (может быть не HttpOnly, но лучше оставить бэкенду)
+    'text', // Пример какой-то клиентской куки, если есть. Если такой нет, массив будет пустым.
+    // 'dj_session_id', // Управляется бэкендом (HttpOnly)
+    // 'auth_token', // Это другое название для access_token, управляется бэкендом (HttpOnly)
   ];
 
-  cookies.forEach(cookie => {
-    document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
-    document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
-    document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  clientSideCookiesToDelete.forEach(cookieName => {
+    // Удаляем куку для основного пути
+    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax;`;
+    // Пытаемся удалить и без указания SameSite, если вдруг была установлена так
+    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`; 
   });
   
   // Устанавливаем флаг блокировки автовхода
@@ -125,26 +123,33 @@ export const useAuthStore = create<AuthState>()(
       },
       
       login: async (credentials: Credentials) => {
+        console.log('[AuthStore] login: Начало входа');
         set({ isLoading: true, error: null });
         try {
-          // 1. Вызываем /api/auth/login/, который должен установить HttpOnly cookies
           await api.auth.login(credentials.email, credentials.password); 
-          
-          // 2. После успешного вызова login, немедленно проверяем статус аутентификации.
-          //    checkAuthStatus загрузит пользователя и обновит isAuthenticated, isLoading.
-          await get().checkAuthStatus(); 
-
+          console.log('[AuthStore] login: api.auth.login успешно выполнен. Вызов checkAuthStatus(true)...');
+          await get().checkAuthStatus(true);
+          console.log(
+            '[AuthStore] login: checkAuthStatus завершен. Текущее состояние: user: ',
+            get().user,
+            ', isAuthenticated: ',
+            get().isAuthenticated
+          );
         } catch (error: any) {
           console.error('[useAuthStore login] Ошибка входа или проверки статуса:', error);
-          clearAuthData(); // Убедимся, что все старые данные аутентификации очищены
+          clearAuthData();
           set({
             error: handleApiError(error, 'Ошибка входа. Проверьте email и пароль или попробуйте позже.'),
-            isLoading: false,
+            isLoading: false, 
             isAuthenticated: false,
             user: null,
-            tokens: null, // Очищаем состояние токенов в Zustand на случай, если они там были
+            tokens: null, 
             disableAutoLogin: true,
           });
+          console.log('[AuthStore] login: Ошибка, состояние сброшено.');
+        } finally {
+          console.log('[AuthStore] login: Блок finally, установка isLoading: false.');
+          set({ isLoading: false });
         }
       },
       
@@ -164,24 +169,65 @@ export const useAuthStore = create<AuthState>()(
       },
       
       logout: async () => {
+        console.log('[AuthStore] logout: Начало выхода.');
         set({ isLoading: true, error: null });
         try {
           await api.auth.logout();
+          console.log('[AuthStore] logout: api.auth.logout успешно выполнен.');
         } catch (error: any) {
-          console.error("Ошибка при выходе на бэкенде:", error.message);
+          console.error("[AuthStore] logout: Ошибка при выходе на бэкенде:", error.message);
+          // Продолжаем очистку на клиенте независимо от ошибки бэкенда
         }
-        get().setTokens(null);
+        clearAuthData();
+        get().setDisableAutoLogin(true); // Устанавливаем флаг для предотвращения авто-входа
         set({ user: null, isAuthenticated: false, isLoading: false });
+        console.log('[AuthStore] logout: Выход выполнен, disableAutoLogin установлен.');
       },
       
-      checkAuthStatus: async () => {
-        set({ isLoading: true, error: null });
+      checkAuthStatus: async (isLoginProcess = false) => {
+        const store = get();
+        if (!isLoginProcess && store.disableAutoLogin) {
+          console.warn(
+            '[AuthStore] checkAuthStatus: Выполнение прервано из-за флага disableAutoLogin (не в процессе логина).'
+          );
+          set({ isLoading: false, user: null, isAuthenticated: false });
+          return;
+        }
+
+        console.log('[AuthStore] checkAuthStatus: Начало проверки статуса аутентификации.');
+        // Устанавливаем isLoading в true только если это не процесс логина,
+        // так как login уже установил isLoading: true.
+        // Или всегда устанавливать, а login в finally сбросит. Лучше всегда устанавливать для консистентности.
+        set({ isLoading: true });
         try {
-          const response = await api.auth.getUser();
-          set({ user: response.data, isAuthenticated: true, isLoading: false });
-        } catch (error) {
-          get().setTokens(null);
-          set({ user: null, isAuthenticated: false, isLoading: false });
+          const response = await api.auth.getUser(); // Получаем полный ответ
+          const userData = response.data; // Извлекаем данные пользователя из response.data
+
+          if (userData) {
+            set({
+              user: userData, // Теперь userData должен иметь правильный тип User
+              isAuthenticated: true,
+              isLoading: false,
+              error: null,
+            });
+            store.setDisableAutoLogin(false); // Успешная аутентификация, сбрасываем флаг
+            console.log('[AuthStore] checkAuthStatus: Пользователь аутентифицирован:', userData);
+          } else {
+            // Этого не должно происходить при успешном getUser, но на всякий случай
+            console.warn('[AuthStore] checkAuthStatus: Пользователь НЕ аутентифицирован (нет данных пользователя).');
+            clearAuthData(); // Очищаем все локальные данные
+            set({ user: null, isAuthenticated: false, isLoading: false });
+          }
+        } catch (error: any) {
+          console.warn('[AuthStore] checkAuthStatus: Ошибка при проверке статуса или пользователь не аутентифицирован:', error.message);
+          clearAuthData(); // Очищаем все локальные данные при ошибке (например, 401)
+          set({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            // Не устанавливаем error здесь, т.к. это может быть обычная проверка (нет сессии)
+          });
+          // Важно: не сбрасываем disableAutoLogin при ошибке, он сбрасывается только при успехе
         }
       },
       
@@ -192,12 +238,16 @@ export const useAuthStore = create<AuthState>()(
       },
       
       setDisableAutoLogin: (disable: boolean) => {
-        if (disable) {
-          localStorage.setItem('disableAutoLogin', 'true');
-        } else {
-          localStorage.removeItem('disableAutoLogin');
-        }
         set({ disableAutoLogin: disable });
+        if (typeof window !== 'undefined') {
+          if (disable) {
+            localStorage.setItem('disableAutoLogin', 'true');
+            console.log('[AuthStore] setDisableAutoLogin: localStorage.disableAutoLogin установлен в true');
+          } else {
+            localStorage.removeItem('disableAutoLogin');
+            console.log('[AuthStore] setDisableAutoLogin: localStorage.disableAutoLogin удален');
+          }
+        }
       },
     }),
     {

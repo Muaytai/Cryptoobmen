@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import axios from 'axios';
+import { api } from '@/lib/api/fetch';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -60,8 +60,7 @@ interface ExchangeCalculation {
 export default function ExchangePageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { tokens, user } = useAuthStore();
-  const token = tokens?.access;
+  const { user } = useAuthStore();
 
   // Состояния для данных
   const [cryptocurrencies, setCryptocurrencies] = useState<Cryptocurrency[]>([]);
@@ -87,7 +86,8 @@ export default function ExchangePageClient() {
   // Загрузка данных при монтировании компонента
   useEffect(() => {
     const fetchData = async () => {
-      if (!token) {
+      const authStoreState = useAuthStore.getState();
+      if (!authStoreState.isAuthenticated && !authStoreState.isLoading) {
         router.push('/login?redirect=exchange');
         return;
       }
@@ -96,25 +96,16 @@ export default function ExchangePageClient() {
         setLoading(true);
         
         // Получаем список криптовалют
-        const cryptoResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/crypto/cryptocurrencies/`
-        );
+        const cryptoResponse = await api.get('/crypto/cryptocurrencies/');
         
         // Получаем список пар обмена
-        const pairsResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/crypto/pairs/`
-        );
+        const pairsResponse = await api.get('/crypto/pairs/');
         
         // Получаем последние цены криптовалют
-        const pricesResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/crypto/prices/`
-        );
+        const pricesResponse = await api.get('/crypto/prices/');
         
         // Получаем кошельки пользователя
-        const walletsResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        const walletsResponse = await api.get('/crypto/wallets/');
         
         setCryptocurrencies(cryptoResponse.data);
         setExchangePairs(pairsResponse.data);
@@ -196,7 +187,7 @@ export default function ExchangePageClient() {
     };
 
     fetchData();
-  }, [token, router, searchParams]);
+  }, [router, searchParams]);
 
   // Обновление выбранной пары при изменении криптовалют
   useEffect(() => {
@@ -227,14 +218,10 @@ export default function ExchangePageClient() {
           const calculationData = {
             from_crypto: selectedPair.from_crypto.id,
             to_crypto: selectedPair.to_crypto.id,
-            exchange_pair: selectedPair.id,
             amount: parseFloat(amount)
           };
           
-          const response = await axios.post(
-            `${process.env.NEXT_PUBLIC_API_URL}/api/calculator/`,
-            calculationData
-          );
+          const response = await api.post('/crypto/calculator/', calculationData);
           
           setCalculation(response.data);
           setCalculating(false);
@@ -315,27 +302,18 @@ export default function ExchangePageClient() {
 
   // Отправка формы обмена
   const handleExchange = async () => {
-    if (!token) {
-      router.push('/login?redirect=exchange');
+    // Проверка аутентификации (если еще не сделана глобально для страницы или компонента)
+    // В нашем случае, useAuthStore и проверка в fetchData уже должны были отработать.
+    // Если selectedPair или amount не установлены, или нет данных для calculation (если они нужны для валидации)
+    if (!selectedPair || !amount || parseFloat(amount) <= 0) {
+      setError('Пожалуйста, выберите криптовалюты, введите корректную сумму и дождитесь расчета.');
       return;
     }
     
-    if (!selectedPair || !amount || !calculation) {
-      setError('Пожалуйста, выберите криптовалюты и введите сумму для обмена');
-      return;
-    }
-    
-    const wallet = wallets.find(w => w.crypto.id === fromCryptoId);
-    if (!wallet) {
-      setError('Кошелек не найден');
-      return;
-    }
-    
-    const amountValue = parseFloat(amount);
-    const availableBalance = parseFloat(wallet.available_balance);
-    
-    if (amountValue > availableBalance) {
-      setError(`Недостаточно средств. Доступно: ${availableBalance} ${wallet.crypto.symbol}`);
+    // Дополнительная проверка баланса перед отправкой
+    const fromWallet = wallets.find(w => w.crypto.id === selectedPair.from_crypto.id);
+    if (!fromWallet || parseFloat(fromWallet.available_balance) < parseFloat(amount)) {
+      setError('Недостаточно средств на выбранном кошельке для совершения обмена.');
       return;
     }
     
@@ -343,25 +321,29 @@ export default function ExchangePageClient() {
       setSubmitting(true);
       setError(null);
       
-      const exchangeData = {
-        from_crypto: selectedPair.from_crypto.id,
-        to_crypto: selectedPair.to_crypto.id,
-        from_amount: amountValue,
-        rate: calculation ? parseFloat(calculation.rate) : 0,
-        fee_percentage: calculation ? parseFloat(calculation.fee_percentage) : 0
+      // Формируем данные для запроса в соответствии с ожиданиями бэкенда
+      const exchangePayload = {
+        from_symbol: selectedPair.from_crypto.symbol, // Используем символ валюты
+        to_symbol: selectedPair.to_crypto.symbol,     // Используем символ валюты
+        amount_from: parseFloat(amount).toString()      // Сумма как строка
       };
       
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/exchanges/`,
-        exchangeData,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      // Используем правильный эндпоинт и обновленные данные
+      const response = await api.post('/crypto/exchange-currency/', exchangePayload);
       
       setSuccess(true);
-      setExchangeId(response.data.transaction_id || response.data.id);
+      // Убедимся, что получаем ID транзакции или обмена из ответа бэкенда
+      // Это может быть response.data.transaction_id, response.data.exchange_id, или просто response.data.id
+      // В ExchangeCurrencyView мы возвращали {'message': 'Exchange successful', 'exchange_id': new_exchange.id, 'transaction_from_id': trans_from.id, 'transaction_to_id': trans_to.id}
+      setExchangeId(response.data.exchange_id || response.data.transaction_from_id || 'N/A');
       
       // Очищаем форму
       setAmount('');
+      setCalculation(null); // Также сбрасываем расчет
+      
+      // Опционально: обновить балансы пользователя после успешного обмена
+      // const updatedWalletsResponse = await api.get('/crypto/wallets/');
+      // setWallets(updatedWalletsResponse.data);
       
       setSubmitting(false);
     } catch (err: any) {

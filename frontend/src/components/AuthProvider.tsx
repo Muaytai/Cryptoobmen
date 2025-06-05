@@ -9,7 +9,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const disableAutoLogin = useAuthStore((state) => state.disableAutoLogin);
   const setDisableAutoLogin = useAuthStore((state) => state.setDisableAutoLogin);
-  const isLoadingInitial = useAuthStore((state) => state.isLoading && state.user === null && !state.isAuthenticated);
   const pathname = usePathname();
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -18,27 +17,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (typeof window !== 'undefined' && !isInitialized) {
       const urlParams = new URLSearchParams(window.location.search);
       const forceLogin = urlParams.get('force_login') === 'true';
+      const cookieString = document.cookie;
+      const hasAnyToken = cookieString.includes('access_token') || 
+                          cookieString.includes('refresh_token') || 
+                          cookieString.includes('sessionid'); // Fallback check
 
       if (forceLogin) {
         console.log('AuthProvider: Принудительная очистка данных авторизации из-за force_login');
-        const cookiesToClear = [
-          'access_token', 'refresh_token', 'sessionid',
-          'dj_session_id', 'csrftoken', 'auth_token',
-          // 'next_hmr_refresh_hash' // этот можно оставить
-        ];
-        cookiesToClear.forEach(cookie => {
-          document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
-          document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
-          document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-        });
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
         localStorage.removeItem('user');
-        localStorage.removeItem('auth-storage'); // zustand persist key
-        // sessionStorage.clear(); // Если используется
-        
+        localStorage.removeItem('auth-storage'); 
         localStorage.setItem('disableAutoLogin', 'true');
-        setDisableAutoLogin(true); // Обновляем состояние в store
+        setDisableAutoLogin(true); 
+        useAuthStore.setState({ isAuthenticated: false, user: null, isLoading: false }); // Ensure loading is false
         setIsInitialized(true);
         return;
       }
@@ -46,56 +36,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const storedDisableAutoLogin = localStorage.getItem('disableAutoLogin') === 'true';
       console.log('AuthProvider init: storedDisableAutoLogin =', storedDisableAutoLogin, ', Zustand disableAutoLogin =', disableAutoLogin);
 
-      if (storedDisableAutoLogin) {
-        console.log('AuthProvider init: Флаг disableAutoLogin активен, автоматический вход не будет выполнен.');
-        if (!disableAutoLogin) { // Синхронизируем состояние Zustand, если оно отличается
-            setDisableAutoLogin(true);
-        }
-        checkAuthStatus().finally(() => {
-          console.log('[AuthProvider Init] checkAuthStatus completed. Final store state:', { 
-            isAuthenticated: useAuthStore.getState().isAuthenticated, 
-            user: useAuthStore.getState().user,
-            tokens: useAuthStore.getState().tokens,
-            disableAutoLogin: useAuthStore.getState().disableAutoLogin 
-          });
-          setIsInitialized(true);
-        }); 
-        return; 
-      }
-
-      // Если автологин не отключен (storedDisableAutoLogin === false), проверяем наличие токенов
-      const accessTokenCookie = document.cookie.includes('access_token=');
-      const refreshTokenCookie = document.cookie.includes('refresh_token=');
-      const accessTokenLocal = localStorage.getItem('access_token');
-      const refreshTokenLocal = localStorage.getItem('refresh_token');
-
-      const hasAnyToken = accessTokenCookie || refreshTokenCookie || !!accessTokenLocal || !!refreshTokenLocal;
-      console.log('AuthProvider init: Результаты проверки токенов:', {
-        accessTokenCookie,
-        refreshTokenCookie,
-        hasAccessTokenLocal: !!accessTokenLocal,
-        hasRefreshTokenLocal: !!refreshTokenLocal,
-        hasAnyToken
-      });
-
-      if (hasAnyToken) {
-        console.log('AuthProvider init: Обнаружены токены, пытаемся проверить авторизацию.');
-        // Если есть токены, убеждаемся, что disableAutoLogin сброшен (на случай если он был true в Zustand, но false в localStorage)
+      if (!storedDisableAutoLogin && hasAnyToken) {
+        console.log('AuthProvider init: Обнаружены токены и автовход не выключен, пытаемся проверить авторизацию.');
         if (disableAutoLogin) {
             setDisableAutoLogin(false);
         }
-        localStorage.removeItem('disableAutoLogin'); // Убираем из localStorage, если был
-        checkAuthStatus();
+        localStorage.removeItem('disableAutoLogin');
+        checkAuthStatus(); // This will manage isLoading: true -> false
       } else {
-        console.log('AuthProvider init: Токены не обнаружены, автоматический вход невозможен. Пользователь не авторизован.');
-        // Если токенов нет и disableAutoLogin не был активен, пользователь просто не залогинен.
-        // Не нужно устанавливать disableAutoLogin в true здесь, это задача logout или force_login.
-        // Убедимся, что isAuthenticated в store false, если checkAuthStatus не будет вызван.
-        // Это должно быть обработано в checkAuthStatus или начальном состоянии store.
+        console.log('AuthProvider init: Токены не обнаружены или автовход выключен. Автоматический вход невозможен. Установка isLoading: false.');
+        useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false, disableAutoLogin: storedDisableAutoLogin });
       }
       setIsInitialized(true);
     }
-  }, [isInitialized, checkAuthStatus, setDisableAutoLogin, disableAutoLogin]);
+  }, [isInitialized, checkAuthStatus, setDisableAutoLogin, disableAutoLogin, pathname]); // Added pathname to dependencies if urlParams are used
 
   // Эффект для проверки авторизации при смене страницы
   useEffect(() => {

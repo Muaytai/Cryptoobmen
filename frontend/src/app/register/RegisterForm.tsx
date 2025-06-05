@@ -94,25 +94,29 @@ export default function RegisterForm() {
 
     // Функция для очистки всех данных аутентификации
     const clearAllAuthData = () => {
-        // Очищаем куки
-        const cookies = [
-            'access_token',
-            'refresh_token',
-            'sessionid',
-            'dj_session_id',
-            'csrftoken',
-            'auth_token',
-            'next_hmr_refresh_hash'
+        // Очищаем НЕ HttpOnly куки, если они есть и управляются фронтом
+        const clientSideCookies = [
+            // 'access_token',
+            // 'refresh_token',
+            // 'sessionid',
+            // 'dj_session_id',
+            // 'csrftoken',
+            // 'auth_token',
+            'next_hmr_refresh_hash' // Пример клиентской куки
         ];
 
-        cookies.forEach(cookie => {
+        clientSideCookies.forEach(cookie => {
             document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost; samesite=lax`;
             document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; samesite=lax`;
+            document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`; // Добавлено для большей надежности
         });
 
         // Очищаем localStorage и sessionStorage
-        localStorage.clear();
-        sessionStorage.clear();
+        localStorage.removeItem('user');
+        localStorage.removeItem('auth-storage');
+        // localStorage.removeItem('access_token');
+        // localStorage.removeItem('refresh_token');
+        // sessionStorage.clear(); // Если используется
 
         // Устанавливаем флаг блокировки автовхода
         localStorage.setItem('disableAutoLogin', 'true');
