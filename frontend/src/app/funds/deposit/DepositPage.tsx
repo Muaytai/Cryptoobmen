@@ -1,35 +1,29 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import api from '@/lib/api/fetch';
-import Image from 'next/image';
 import Link from 'next/link';
 
-// Типы данных
-interface Wallet {
+// --- Interfaces ---
+interface Currency {
   id: number;
-  currency: {
-    id: number;
-    name: string;
-    symbol: string;
-    icon: string;
-  };
-  balance: string;
-  available_balance: string;
-  locked_balance: string;
-  address: string;
+  name: string;
+  symbol: string;
+  icon: string;
+  currency_type: string;
 }
 
-interface CryptoPrice {
+interface Wallet {
   id: number;
-  crypto: {
-    id: number;
-    name: string;
-    symbol: string;
-  };
-  price_usd: string;
+  currency: Currency;
+  balance: string;
+}
+
+interface FiatCurrency {
+  code: string;
+  name: string;
 }
 
 interface CardDepositData {
@@ -40,428 +34,333 @@ interface CardDepositData {
   card_brand?: string;
 }
 
+// --- Component ---
 export const DepositPage: React.FC = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { tokens, user, isAuthenticated, isLoading: authLoading } = useAuthStore();
-  const token = tokens?.access;
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
 
+  // --- State ---
+  // Data
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [prices, setPrices] = useState<CryptoPrice[]>([]);
+  const [fiatCurrencies, setFiatCurrencies] = useState<FiatCurrency[]>([]);
+  
+  // UI State
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
   const [depositId, setDepositId] = useState<string | null>(null);
 
-  // Данные формы
+  // Form State
   const [selectedWalletId, setSelectedWalletId] = useState<number | null>(null);
   const [amount, setAmount] = useState<string>('');
-  const [currency, setCurrency] = useState<string>('RUB');
-  const [cryptoAmount, setCryptoAmount] = useState<string>('0');
-  const [exchangeRate, setExchangeRate] = useState<number>(0);
+  const [fiatCurrency, setFiatCurrency] = useState<string>('RUB');
+  const [convertedAmount, setConvertedAmount] = useState<string>('0.00');
   const [cardNumber, setCardNumber] = useState<string>('');
-  const [cardExpiry, setCardExpiry] = useState<string>('');
-  const [cardCvv, setCardCvv] = useState<string>('');
-  const [cardHolder, setCardHolder] = useState<string>('');
+  const [expiryDate, setExpiryDate] = useState<string>('');
+  const [cvv, setCvv] = useState<string>('');
 
-  // Получение данных кошельков пользователя
+  // --- Effects ---
+  // Initial data fetching
   useEffect(() => {
-    // Этот эффект должен реагировать ТОЛЬКО на изменение статуса загрузки аутентификации
-    // и на изменение пользователя/статуса аутентификации, когда загрузка ЗАВЕРШЕНА.
     if (authLoading) {
-      // Если все еще идет первоначальная загрузка состояния аутентификации, ничего не делаем
-      console.log('DepositPage: authLoading is true, ожидаем завершения проверки сессии...');
-      setLoading(true); // Показываем лоадер страницы, пока идет проверка сессии
+      setLoading(true);
       return;
     }
-
-    console.log(`DepositPage: authLoading is false. isAuthenticated: ${isAuthenticated}, user: ${!!user}`);
-
-    if (!isAuthenticated || !user) {
-      console.log('DepositPage: Пользователь НЕ аутентифицирован (после authLoading: false). Перенаправление на /login.');
-      // Сохраняем полный путь для редиректа, включая searchParams
+    if (!isAuthenticated) {
       const redirectPath = `/funds/deposit${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
       router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
       return;
     }
 
-    // Если пользователь аутентифицирован, загружаем данные страницы
     const fetchData = async () => {
-      console.log('DepositPage: Пользователь аутентифицирован. Загрузка данных страницы...');
       setLoading(true);
       try {
-        // Токен больше не передается явно, axios должен использовать HttpOnly cookie
-        const walletsResponse = await api.get('/crypto/wallets/');
-        const pricesResponse = await api.get('/crypto/prices/latest/');
+        const [walletsResponse, fiatResponse] = await Promise.all([
+          api.get('/crypto/wallets/'),
+          api.get('/crypto/fiat/'),
+        ]);
 
-        setWallets(walletsResponse.data);
-        setPrices(pricesResponse.data);
+        const cryptoWallets = walletsResponse.data.filter((w: Wallet) => w.currency.currency_type.toLowerCase() !== 'fiat');
+        setWallets(cryptoWallets);
+        setFiatCurrencies(fiatResponse.data);
 
-        const walletIdParam = searchParams.get('wallet_id');
-        if (walletIdParam && walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletIdParam))) {
-          setSelectedWalletId(parseInt(walletIdParam));
+        // Set default fiat currency if available
+        if (fiatResponse.data.length > 0) {
+          setFiatCurrency(fiatResponse.data[0].code);
         }
-        setError(null);
+
+        // Pre-select wallet if ID is in URL
+        const walletIdParam = searchParams.get('wallet_id');
+        if (walletIdParam) {
+          const walletId = parseInt(walletIdParam);
+          if (cryptoWallets.some((w: Wallet) => w.id === walletId)) {
+            setSelectedWalletId(walletId);
+          }
+        }
+        
       } catch (err) {
-        console.error('DepositPage: Ошибка при получении данных страницы:', err);
-        setError('Не удалось загрузить данные для страницы. Пожалуйста, попробуйте позже.');
+        console.error('Failed to fetch deposit page data:', err);
+        setError('Не удалось загрузить данные. Пожалуйста, попробуйте обновить страницу.');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchData();
+  }, [authLoading, isAuthenticated, router, searchParams]);
 
-  }, [authLoading, isAuthenticated, user, router, searchParams]);
-
-  // Обновление расчета криптовалюты при изменении суммы или кошелька
+  // Exchange rate calculation
   useEffect(() => {
-    if (selectedWalletId && amount && !isNaN(parseFloat(amount))) {
-      const selectedWallet = wallets.find(w => w.id === selectedWalletId);
-      if (selectedWallet) {
-        const cryptoPrice = prices.find(p => p.crypto.id === selectedWallet.currency.id);
-        if (cryptoPrice) {
-          // Курс обмена: сколько криптовалюты за 1 единицу фиатной валюты
-          // Для простоты используем курс USD, в реальном приложении нужно использовать API для конвертации валют
-          const rate = 1 / parseFloat(cryptoPrice.price_usd);
-          // Для рубля используем примерный курс к USD
-          const rubToUsdRate = 0.011; // примерно 90 рублей за 1 доллар
-          
-          let finalRate = rate;
-          if (currency === 'RUB') {
-            finalRate = rate * rubToUsdRate;
-          }
-          
-          setExchangeRate(finalRate);
-          setCryptoAmount((parseFloat(amount) * finalRate).toFixed(8));
-        }
+    const calculateRate = async () => {
+      if (!selectedWalletId || !amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0 || wallets.length === 0) {
+        setConvertedAmount('0.00');
+        return;
       }
-    } else {
-      setCryptoAmount('0');
-    }
-  }, [selectedWalletId, amount, currency, wallets, prices]);
+      const selectedWallet = wallets.find(w => w.id === selectedWalletId);
+      if (!selectedWallet) return;
 
-  // Форматирование номера карты
-  const formatCardNumber = (value: string) => {
-    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-    const matches = v.match(/\d{4,16}/g);
-    const match = matches && matches[0] || '';
-    const parts = [];
+      try {
+        const params = new URLSearchParams({
+          source_currency_symbol: fiatCurrency,
+          target_currency_symbol: selectedWallet.currency.symbol,
+        });
+        const response = await api.get(`/crypto/exchange-rate/?${params.toString()}`);
+        const rate = response.data.rate;
+        if (rate) {
+          setConvertedAmount((parseFloat(amount) * rate).toFixed(8));
+        }
+      } catch (error) {
+        console.error('Error fetching exchange rate:', error);
+        setConvertedAmount('0.00');
+      }
+    };
 
-    for (let i = 0, len = match.length; i < len; i += 4) {
-      parts.push(match.substring(i, i + 4));
-    }
+    const timer = setTimeout(calculateRate, 300);
+    return () => clearTimeout(timer);
+  }, [selectedWalletId, amount, fiatCurrency, wallets]);
 
-    if (parts.length) {
-      return parts.join(' ');
-    } else {
-      return value;
-    }
-  };
+  // --- Memoized Values ---
+  const selectedWallet = useMemo(() => wallets.find(w => w.id === selectedWalletId), [selectedWalletId, wallets]);
 
-  // Форматирование срока действия карты
-  const formatCardExpiry = (value: string) => {
-    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-    
-    if (v.length >= 2) {
-      return `${v.substring(0, 2)}/${v.substring(2, 4)}`;
-    }
-    
-    return v;
-  };
-
-  // Обработчики изменения полей формы
+  // --- Handlers ---
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setCardNumber(formatCardNumber(value));
-  };
-
-  const handleCardExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setCardExpiry(formatCardExpiry(value));
-  };
-
-  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    // Разрешаем только числа и одну точку
-    if (/^\d*\.?\d*$/.test(value) || value === '') {
-      setAmount(value);
+    const value = e.target.value.replace(/\s/g, '');
+    const formattedValue = value.replace(/(\d{4})/g, '$1 ').trim();
+    if (formattedValue.length <= 19) {
+      setCardNumber(formattedValue);
     }
   };
 
-  // Отправка формы
+  const handleExpiryDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/[^\d]/g, '');
+    if (value.length > 2 && value.indexOf('/') === -1) {
+      value = value.slice(0, 2) + '/' + value.slice(2);
+    }
+    if (value.length <= 5) {
+      setExpiryDate(value);
+    }
+  };
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!selectedWalletId || !amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-      setError('Пожалуйста, выберите кошелек и введите корректную сумму пополнения');
+    if (!selectedWalletId || !amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0 || !cardNumber || !expiryDate || !cvv) {
+      setError('Пожалуйста, заполните все поля корректно.');
       return;
     }
     
-    if (!cardNumber || !cardExpiry || !cardCvv || !cardHolder) {
-      setError('Пожалуйста, заполните все данные карты');
-      return;
-    }
-    
-    // Базовая валидация карты
+    // Card Validation
     if (cardNumber.replace(/\s/g, '').length !== 16) {
-      setError('Неверный номер карты');
-      return;
+        setError('Номер карты должен состоять из 16 цифр.');
+        return;
     }
-    
-    if (cardCvv.length !== 3) {
-      setError('Неверный CVV код');
-      return;
+    if (!/^\d{3}$/.test(cvv)) {
+        setError('CVV должен состоять из 3 цифр.');
+        return;
     }
-    
+    const expiryRegex = /^(0[1-9]|1[0-2])\/?([0-9]{2})$/;
+    const match = expiryDate.match(expiryRegex);
+    if (!match) {
+        setError('Неверный формат срока действия. Используйте ММ/ГГ.');
+        return;
+    }
+    const [, month, year] = match;
+    const currentYear = new Date().getFullYear() % 100;
+    const currentMonth = new Date().getMonth() + 1;
+    if (Number(year) < currentYear || (Number(year) === currentYear && Number(month) < currentMonth)) {
+        setError('Срок действия карты истек.');
+        return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
     try {
-      setSubmitting(true);
-      setError(null);
-      
       const depositData: CardDepositData = {
         wallet: selectedWalletId,
         amount: parseFloat(amount),
-        currency: currency,
+        currency: fiatCurrency,
         card_last4: cardNumber.replace(/\s/g, '').slice(-4),
-        card_brand: cardNumber.startsWith('4') ? 'Visa' : 
-                    cardNumber.startsWith('5') ? 'MasterCard' : 
-                    cardNumber.startsWith('3') ? 'American Express' : 'Unknown'
+        card_brand: 'Unknown', // Logic can be added to detect brand from number
       };
       
-      const postResponse = await api.post('/deposits/card/', depositData);
-      
-      setSuccess(true);
-      setDepositId(postResponse.data.id);
-      console.log('DepositPage: Заявка на пополнение успешно создана:', postResponse.data);
-      
-      // Очищаем форму
-      setAmount('');
-      setCardNumber('');
-      setCardExpiry('');
-      setCardCvv('');
-      setCardHolder('');
-      
-      setSubmitting(false);
+      const response = await api.post('/crypto/card-deposits/', depositData);
+
+      if (response && response.data && response.data.deposit_id) {
+        setSuccess(true);
+        setDepositId(response.data.deposit_id);
+      } else {
+        setError((response.data as any)?.detail || 'Произошла ошибка при создании депозита.');
+      }
     } catch (err: any) {
-      console.error('Ошибка при отправке запроса:', err);
-      setError(err.response?.data?.error || 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.');
+      setError(err.response?.data?.detail || 'Неизвестная ошибка сервера.');
+    } finally {
       setSubmitting(false);
     }
   };
 
-  if (authLoading || loading) {
-    return (
-      <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
-        <p className="mt-4 text-gray-300">Загрузка данных...</p>
-      </div>
-    );
+  // --- Render Logic ---
+  if (loading) {
+    return <div className="text-center p-10">Загрузка...</div>;
+  }
+  
+  if (error) {
+    return <div className="container mx-auto p-4 text-center text-red-500">{error}</div>;
   }
 
   if (success) {
     return (
-      <div className="container mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="bg-green-500 bg-opacity-20 p-8 rounded-xl max-w-md w-full text-center">
-          <svg className="w-16 h-16 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          <h2 className="text-2xl font-bold mb-4">Запрос на пополнение успешно создан!</h2>
-          <p className="mb-6">Идентификатор операции: {depositId}</p>
-          <p className="mb-6 text-sm text-gray-400">
-            Средства будут зачислены на ваш кошелек после подтверждения платежа. 
-            Обычно это занимает от нескольких минут до часа.
-          </p>
-          <div className="flex flex-col space-y-3">
-            <Link href="/wallet" className="bg-purple-600 text-white py-2 px-6 rounded-lg hover:bg-purple-700 transition">
-              Вернуться к кошельку
-            </Link>
-            <Link href="/profile" className="text-purple-400 hover:text-purple-300 transition">
-              Перейти в профиль
-            </Link>
-          </div>
-        </div>
+      <div className="container mx-auto p-4 text-center">
+        <h2 className="text-2xl font-bold text-green-500 mb-4">Заявка на пополнение принята!</h2>
+        <p>Ваша заявка на пополнение (ID: {depositId}) успешно создана и находится в обработке.</p>
+        <p>Средства поступят на ваш кошелек в ближайшее время.</p>
+        <Link href="/wallet" className="mt-6 inline-block bg-indigo-600 text-white font-bold py-2 px-4 rounded hover:bg-indigo-700">
+          Вернуться в кошелек
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 text-center">Пополнение кошелька</h1>
-        
-        {error && (
-          <div className="bg-red-500 bg-opacity-20 p-4 rounded-lg mb-6">
-            <p className="text-red-500">{error}</p>
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="bg-gray-800 rounded-xl p-6 shadow-lg">
-          {/* Выбор кошелька */}
-          <div className="mb-6">
-            <label className="block text-gray-300 mb-2">Выберите кошелек для пополнения</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-6 text-center">Пополнение кошелька</h1>
+      <div className="max-w-lg mx-auto bg-gray-800 p-8 rounded-lg shadow-lg">
+        <form onSubmit={handleSubmit}>
+          {/* Wallet Selector */}
+          <div className="mb-4">
+            <label htmlFor="wallet" className="block text-sm font-medium text-gray-300 mb-2">
+              Выберите кошелек для пополнения
+            </label>
+            <select
+              id="wallet"
+              value={selectedWalletId ?? ''}
+              onChange={(e) => setSelectedWalletId(Number(e.target.value))}
+              className="w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm p-2.5 text-white focus:ring-indigo-500 focus:border-indigo-500"
+              required
+            >
+              <option value="" disabled>-- Выберите криптовалюту --</option>
               {wallets.map((wallet) => (
-                <div 
-                  key={wallet.id}
-                  onClick={() => setSelectedWalletId(wallet.id)}
-                  className={`
-                    border rounded-lg p-3 cursor-pointer transition
-                    ${selectedWalletId === wallet.id 
-                      ? 'border-purple-500 bg-purple-900 bg-opacity-20' 
-                      : 'border-gray-700 hover:border-gray-500'}
-                  `}
-                >
-                  <div className="flex items-center">
-                    {wallet.currency && wallet.currency.icon ? (
-                      <Image 
-                        src={
-                          wallet.currency.icon.startsWith('http')
-                            ? wallet.currency.icon
-                            : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`
-                        }
-                        alt={wallet.currency.symbol}
-                        width={32}
-                        height={32}
-                        className="rounded-full mr-3"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 bg-gray-700 rounded-full mr-3 flex items-center justify-center">
-                        {wallet.currency && wallet.currency.symbol ? wallet.currency.symbol.slice(0, 2) : ''}
-                      </div>
-                    )}
-                    <div>
-                      <p className="font-medium">{wallet.currency.name}</p>
-                      <p className="text-sm text-gray-400">{wallet.currency.symbol}</p>
-                    </div>
-                  </div>
-                </div>
+                <option key={wallet.id} value={wallet.id}>
+                  {wallet.currency.name} ({wallet.currency.symbol})
+                </option>
               ))}
-            </div>
+            </select>
           </div>
-          
-          {/* Сумма и валюта */}
-          <div className="mb-6">
-            <label htmlFor="amount" className="block text-gray-300 mb-2">Сумма пополнения</label>
-            <div className="flex">
+
+          {/* Amount and Fiat Currency */}
+          <div className="mb-4">
+            <label htmlFor="amount" className="block text-sm font-medium text-gray-300 mb-2">
+              Сумма
+            </label>
+            <div className="flex items-center">
               <input
-                type="text"
+                type="number"
                 id="amount"
                 value={amount}
-                onChange={handleAmountChange}
-                placeholder="0.00"
-                className="flex-grow bg-gray-700 border border-gray-600 rounded-l-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                onChange={(e) => setAmount(e.target.value)}
+                className="flex-grow w-full bg-gray-700 border border-gray-600 rounded-l-md p-2.5 text-white focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="1000"
+                required
+                min="0"
+                step="any"
               />
               <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                className="bg-gray-700 border border-gray-600 rounded-r-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                id="fiat-currency"
+                value={fiatCurrency}
+                onChange={(e) => setFiatCurrency(e.target.value)}
+                className="bg-gray-700 border-t border-b border-r border-gray-600 rounded-r-md p-2.5 text-white focus:ring-indigo-500 focus:border-indigo-500 h-[46px]"
               >
-                <option value="RUB">RUB</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
+                {fiatCurrencies.map(fiat => (
+                  <option key={fiat.code} value={fiat.code}>
+                    {fiat.code}
+                  </option>
+                ))}
               </select>
             </div>
+            {selectedWallet && parseFloat(amount) > 0 && (
+              <p className="text-sm text-gray-400 mt-2">
+                Вы получите примерно: {convertedAmount} {selectedWallet.currency.symbol}
+              </p>
+            )}
           </div>
-          
-          {/* Расчет криптовалюты */}
-          {selectedWalletId && amount && parseFloat(amount) > 0 && (
-            <div className="mb-6 bg-gray-700 p-4 rounded-lg">
-              <p className="text-sm text-gray-300 mb-1">Вы получите примерно:</p>
-              <p className="text-xl font-bold text-purple-400">
-                {cryptoAmount} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                Курс обмена: 1 {currency} = {exchangeRate.toFixed(8)} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                Точная сумма будет рассчитана в момент зачисления средств
-              </p>
-            </div>
-          )}
-          
-          {/* Данные карты */}
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-4">Данные банковской карты</h3>
-            
+
+          {/* Card Details */}
+          <div className="mb-4">
+            <h3 className="text-lg font-medium mb-2">Данные банковской карты</h3>
             <div className="mb-4">
-              <label htmlFor="cardNumber" className="block text-gray-300 mb-2">Номер карты</label>
+              <label htmlFor="cardNumber" className="block text-sm font-medium text-gray-300 mb-2">
+                Номер карты
+              </label>
               <input
                 type="text"
                 id="cardNumber"
                 value={cardNumber}
                 onChange={handleCardNumberChange}
+                className="w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm p-2.5 text-white"
                 placeholder="0000 0000 0000 0000"
-                maxLength={19}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                required
               />
             </div>
-            
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="cardExpiry" className="block text-gray-300 mb-2">Срок действия</label>
+                <label htmlFor="expiryDate" className="block text-sm font-medium text-gray-300 mb-2">
+                  Срок (MM/YY)
+                </label>
                 <input
                   type="text"
-                  id="cardExpiry"
-                  value={cardExpiry}
-                  onChange={handleCardExpiryChange}
-                  placeholder="MM/YY"
-                  maxLength={5}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  id="expiryDate"
+                  value={expiryDate}
+                  onChange={handleExpiryDateChange}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm p-2.5 text-white"
+                  placeholder="ММ/ГГ"
+                  required
                 />
               </div>
               <div>
-                <label htmlFor="cardCvv" className="block text-gray-300 mb-2">CVV</label>
+                <label htmlFor="cvv" className="block text-sm font-medium text-gray-300 mb-2">
+                  CVV
+                </label>
                 <input
-                  type="password"
-                  id="cardCvv"
-                  value={cardCvv}
-                  onChange={(e) => e.target.value.length <= 3 && setCardCvv(e.target.value.replace(/\D/g, ''))}
+                  type="text"
+                  id="cvv"
+                  value={cvv}
+                  onChange={(e) => setCvv(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm p-2.5 text-white"
                   placeholder="123"
-                  maxLength={3}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  required
                 />
               </div>
             </div>
-            
-            <div className="mb-4">
-              <label htmlFor="cardHolder" className="block text-gray-300 mb-2">Имя держателя карты</label>
-              <input
-                type="text"
-                id="cardHolder"
-                value={cardHolder}
-                onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
-                placeholder="IVAN IVANOV"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
           </div>
-          
-          {/* Кнопка отправки */}
-          <div className="flex justify-center">
-            <button
-              type="submit"
-              disabled={submitting}
-              className={`
-                w-full py-3 px-6 rounded-lg text-white font-medium transition
-                ${submitting 
-                  ? 'bg-gray-600 cursor-not-allowed' 
-                  : 'bg-purple-600 hover:bg-purple-700'}
-              `}
-            >
-              {submitting ? (
-                <span className="flex items-center justify-center">
-                  <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></span>
-                  Обработка...
-                </span>
-              ) : (
-                'Пополнить кошелек'
-              )}
-            </button>
-          </div>
-          
-          <p className="text-xs text-gray-400 mt-4 text-center">
-            Нажимая кнопку "Пополнить кошелек", вы соглашаетесь с условиями использования сервиса и политикой конфиденциальности
-          </p>
+
+          <button
+            type="submit"
+            disabled={submitting || loading}
+            className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-md hover:bg-indigo-700 disabled:bg-gray-500 transition-colors"
+          >
+            {submitting ? 'Обработка...' : 'Пополнить'}
+          </button>
         </form>
       </div>
     </div>
