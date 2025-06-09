@@ -19,6 +19,13 @@
   gap: 40px;
 }
 
+@media  (max-width: 768px) {
+  .cryptoGrid {
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+}
+
 
 .cryptoCard {
   background-color: var(--color-card);

@@ -48,7 +48,7 @@ export const ViewByAnima = (): JSX.Element => {
         {/* Left card - Gift box information */}
         <Card
           className="flex flex-col md:flex-row gap-4 w-full p-5 md:w-2/3 shadow-[0px_0px_20px_#0000004c] rounded-[15px] md:rounded-[25px] ">
-          <CardContent className="p-0 md:p-0">
+          <CardContent className="md:w-[50%] w-full p-0 md:p-0">
             <div className="text-subcard-text/60 text-base md:text-lg font-medium">
               Открывай наши уникальные подарочные боксы и получай ценные награды
               – токены, USDT и другие бонусы! Каждый бокс содержит случайный
@@ -96,7 +96,7 @@ export const ViewByAnima = (): JSX.Element => {
                 Стоимость: 5 USDT или 55 токенов
               </div>
 
-              <div className="flex flex-col lg:flex-row justify-between gap-3 md:gap-4 mt-4 md:mt-5">
+              <div className="flex flex-col lg:flex-row justify-center items-center gap-3 md:gap-4 mt-4 md:mt-5 pb-4">
                 <Button className="w-[160px] h-[36px] md:h-[48px] bg-violet-600 rounded-[15px] ">
                   <span
                     className="font-medium text-white text-sm md:text-lg text-center [font-family:'Manrope',Helvetica]">
