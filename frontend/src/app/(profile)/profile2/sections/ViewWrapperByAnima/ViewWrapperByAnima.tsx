@@ -14,6 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import clsx from "clsx";
 import styles from "./ViewWrapperByAnima.module.css";
 
 export const ViewWrapperByAnima = (): JSX.Element => {
@@ -46,7 +47,7 @@ export const ViewWrapperByAnima = (): JSX.Element => {
 
       <div className={styles.content}>
         {/* Token Info Card */}
-        <Card className="w-full md:w-[520px] rounded-[15px] md:rounded-[25px] shadow-[0px_0px_20px_#0000004c]">
+        <Card className={clsx(styles.tokenInfoCard, "w-full rounded-[15px] md:rounded-[25px] shadow-[0px_0px_20px_#0000004c]")}>
           <CardContent className="p-4 md:p-5 relative">
             <div className="mb-8 md:mb-12">
               <h3

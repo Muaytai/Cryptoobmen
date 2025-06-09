@@ -1,6 +1,7 @@
 .cryptoCard {
   background-color: var(--color-card);
   border-radius: 25px;
+  width: 100%;
 }
 
 .cardContent {
