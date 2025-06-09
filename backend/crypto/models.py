@@ -328,8 +328,59 @@ class CardDeposit(models.Model):
     completed_at = models.DateTimeField(blank=True, null=True, verbose_name=_('Completed At'))
     
     def __str__(self):
-        return f"{self.user.username} - {self.amount} {self.currency} to {self.wallet.currency.symbol}"
-    
+        return f"Card deposit of {self.amount} {self.currency} by {self.user.username} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        # Логика для автоматического зачисления средств при смене статуса на 'completed'
+        if self.pk is not None:
+            orig = CardDeposit.objects.get(pk=self.pk)
+            if orig.status != 'completed' and self.status == 'completed':
+                from .services import get_exchange_rates
+                from decimal import Decimal
+
+                self.completed_at = timezone.now()
+                
+                # Получаем целевой кошелек
+                target_wallet = self.wallet
+                target_crypto = target_wallet.currency
+                
+                # Получаем фиатную валюту из заявки
+                try:
+                    fiat_currency = Cryptocurrency.objects.get(symbol=self.currency, currency_type='fiat')
+                except Cryptocurrency.DoesNotExist:
+                    # Обработка случая, если фиатная валюта не найдена
+                    # Здесь можно добавить логирование или другую логику
+                    super().save(*args, **kwargs) # Сохраняем статус, но не проводим зачисление
+                    return
+
+                all_rates = get_exchange_rates()
+                
+                fiat_coingecko_id = fiat_currency.coingecko_id
+                target_coingecko_id = target_crypto.coingecko_id
+                
+                fiat_rate_usd = all_rates.get(fiat_coingecko_id, {}).get('usd')
+                target_rate_usd = all_rates.get(target_coingecko_id, {}).get('usd')
+
+                if fiat_rate_usd and target_rate_usd:
+                    try:
+                        fiat_rate_usd_dec = Decimal(str(fiat_rate_usd))
+                        target_rate_usd_dec = Decimal(str(target_rate_usd))
+                        
+                        exchange_rate = fiat_rate_usd_dec / target_rate_usd_dec
+                        crypto_amount_to_add = self.amount * exchange_rate
+                        
+                        self.exchange_rate = exchange_rate
+                        self.crypto_amount = crypto_amount_to_add
+                        
+                        target_wallet.balance += crypto_amount_to_add
+                        target_wallet.save()
+                        
+                    except (ValueError, TypeError):
+                        # Обработка ошибки конвертации
+                        pass
+        
+        super().save(*args, **kwargs)
+
     class Meta:
         verbose_name = _('card deposit')
         verbose_name_plural = _('card deposits')

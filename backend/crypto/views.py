@@ -3,7 +3,7 @@ from rest_framework import viewsets, permissions, status, generics, filters
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
-from django.db.models import Q, F, Sum
+from django.db.models import Q, F, Sum, OuterRef, Subquery
 from decimal import Decimal
 import requests
 from datetime import datetime
@@ -17,9 +17,20 @@ from transactions.models import Transaction as TX, Exchange as TransactionExchan
 from .serializers import (
     CryptocurrencySerializer, CryptoPriceSerializer, ExchangePairSerializer,
     UserWalletSerializer, ExchangeCalculatorSerializer, InvestmentPlanSerializer,
-    UserInvestmentSerializer, CardDepositSerializer
+    UserInvestmentSerializer, CardDepositSerializer, CardDepositCreateSerializer,
+    FiatCurrencySerializer
 )
 from .services import get_exchange_rates
+
+
+class FiatCurrencyViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet для получения списка активных фиатных валют.
+    Доступно только для аутентифицированных пользователей.
+    """
+    queryset = Cryptocurrency.objects.filter(currency_type='fiat', is_active=True)
+    serializer_class = FiatCurrencySerializer
+    permission_classes = [IsAuthenticated]
 
 
 class CryptocurrencyViewSet(viewsets.ReadOnlyModelViewSet):
@@ -69,6 +80,50 @@ class CryptoPriceViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+
+class LatestCryptoPricesView(APIView):
+    """
+    Возвращает последние актуальные цены для всех активных криптовалют
+    в указанных валютах.
+    Принимает GET-параметр `vs_currencies` (через запятую), например: ?vs_currencies=usd,eur,btc
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        vs_currencies_str = request.query_params.get('vs_currencies', 'usd')
+        vs_currencies = [currency.strip().lower() for currency in vs_currencies_str.split(',')]
+        
+        # Получаем самые свежие курсы из нашего сервиса
+        rates = get_exchange_rates(vs_currencies=vs_currencies)
+
+        if rates is None:
+            return Response(
+                {"error": "Could not fetch exchange rates from the provider."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+        
+        # Нам нужны ID криптовалют, чтобы затем найти их в БД
+        coingecko_ids = list(rates.keys())
+        
+        # Находим соответствующие объекты Cryptocurrency
+        crypto_map = {
+            c.coingecko_id: c for c in Cryptocurrency.objects.filter(coingecko_id__in=coingecko_ids)
+        }
+        
+        # Формируем ответ, обогащая его данными из нашей БД
+        response_data = []
+        for coingecko_id, price_data in rates.items():
+            crypto_obj = crypto_map.get(coingecko_id)
+            if crypto_obj:
+                response_data.append({
+                    "crypto_id": crypto_obj.id,
+                    "name": crypto_obj.name,
+                    "symbol": crypto_obj.symbol,
+                    "prices": price_data, # {'usd': 123, 'eur': 456}
+                })
+
+        return Response(response_data)
 
 
 class ExchangePairViewSet(viewsets.ReadOnlyModelViewSet):
@@ -392,24 +447,43 @@ class UserInvestmentViewSet(viewsets.ModelViewSet):
 
 class CardDepositViewSet(viewsets.ModelViewSet):
     """АРI для пополнения кошелька с банковской карты"""
-    serializer_class = CardDepositSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
-        """Пользователь может видеть только свои пополнения"""
+        """Пользователь видит только свои депозиты"""
         return CardDeposit.objects.filter(user=self.request.user)
-    
+
+    def get_serializer_class(self):
+        """Используем разные сериализаторы для создания и отображения"""
+        if self.action == 'create':
+            return CardDepositCreateSerializer
+        return CardDepositSerializer
+
     def perform_create(self, serializer):
-        """Этот ViewSet для CardDeposit также требует доработки
-        - Интеграция с платежной системой (если не эмуляция)
-        - Создание транзакции типа "deposit"
-        - Обновление баланса UserWallet ПОСЛЕ успешного платежа
-        ... (пропущена сложная логика)"""
-        serializer.save(user=self.request.user)
-    
+        """
+        Сохраняем заявку. Пользователь будет взят из контекста запроса
+        внутри сериализатора.
+        """
+        serializer.save()
+
+    def create(self, request, *args, **kwargs):
+        """
+        Создает новую заявку на пополнение и возвращает полный объект заявки.
+        """
+        create_serializer = self.get_serializer(data=request.data)
+        create_serializer.is_valid(raise_exception=True)
+        self.perform_create(create_serializer)
+        
+        # Для ответа используем полный сериализатор, чтобы вернуть все данные
+        instance = create_serializer.instance
+        response_serializer = CardDepositSerializer(instance, context=self.get_serializer_context())
+        
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     @action(detail=False, methods=['get'])
     def stats(self, request):
-        """Статистика по пополнениям пользователя"""
+        """Возвращает статистику по депозитам пользователя"""
         deposits = CardDeposit.objects.filter(user=request.user)
         
         # Статистика по завершенным пополнениям
@@ -569,111 +643,128 @@ class ExchangeCurrencyView(APIView):
         amount_from_str = request.data.get('amount_from')
 
         if not all([from_symbol, to_symbol, amount_from_str]):
-            return Response({"error": "Missing required fields: from_symbol, to_symbol, amount_from."},
+            return Response({'error': 'Необходимо указать from_symbol, to_symbol и amount_from.'},
                             status=status.HTTP_400_BAD_REQUEST)
+
         try:
             amount_from = Decimal(amount_from_str)
-        except Exception:
-            return Response({"error": "Invalid amount_from format."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if amount_from <= 0:
-            return Response({"error": "Amount_from must be positive."}, status=status.HTTP_400_BAD_REQUEST)
+            if amount_from <= 0:
+                raise ValueError("Сумма должна быть положительной")
+        except (ValueError, TypeError):
+            return Response({'error': 'Некорректная сумма для обмена.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = request.user
 
         try:
-            currency_from = Cryptocurrency.objects.get(symbol=from_symbol, is_active=True)
-            currency_to = Cryptocurrency.objects.get(symbol=to_symbol, is_active=True)
+            from_wallet = get_object_or_404(UserWallet, user=user, currency__symbol=from_symbol)
+            to_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=get_object_or_404(Cryptocurrency,
+                                                                                                    symbol=to_symbol))
         except Cryptocurrency.DoesNotExist:
-            return Response({"error": "One or both currencies not found or not active."},
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Одна из указанных валют не найдена.'}, status=status.HTTP_404_NOT_FOUND)
 
-        if currency_from == currency_to:
-            return Response({"error": "Cannot exchange a currency for itself."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            wallet_from = UserWallet.objects.get(user=user, currency=currency_from, is_system_wallet=False)
-        except UserWallet.DoesNotExist:
-            return Response({"error": f"Wallet for {from_symbol} not found for this user."},
-                            status=status.HTTP_404_NOT_FOUND)
-        
-        wallet_to, _ = UserWallet.objects.get_or_create(
-            user=user, currency=currency_to, is_system_wallet=False,
-            defaults={'balance': Decimal('0.0'), 'available_balance': Decimal('0.0')}
-        )
-
-        if wallet_from.available_balance < amount_from:
-            return Response({"error": f"Insufficient available balance for {from_symbol}."},
+        if from_wallet.available_balance < amount_from:
+            return Response({'error': 'Недостаточно средств на балансе для обмена.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        rates = get_exchange_rates()
-        if rates is None: # Означает ошибку при запросе к CoinGecko
-            return Response({"error": "Could not fetch exchange rates. Exchange temporarily unavailable."},
-                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        if not rates: # Означает, что CoinGecko вернул пустой ответ (например, все coingecko_id неверны)
-            return Response({"error": "Exchange rate provider returned no data for the requested currencies."},
-                            status=status.HTTP_404_NOT_FOUND)
+        live_rates = get_exchange_rates([from_wallet.currency.coingecko_id], [to_wallet.currency.coingecko_id])
 
-        rate_from_to_usd = None
-        if currency_from.currency_type == 'crypto' and currency_from.coingecko_id in rates:
-            rate_from_to_usd = Decimal(str(rates[currency_from.coingecko_id].get('usd', 0)))
-        elif currency_from.symbol == 'USD':
-            rate_from_to_usd = Decimal('1.0')
+        if not live_rates or from_wallet.currency.coingecko_id not in live_rates or to_wallet.currency.coingecko_id not in live_rates[from_wallet.currency.coingecko_id]:
+            return Response({"error": "Не удалось получить актуальный курс для указанной пары."},
+                            status=status.HTTP_400_BAD_REQUEST)
         
-        if rate_from_to_usd is None or rate_from_to_usd <= 0:
-            return Response({"error": f"Could not get USD exchange rate for {from_symbol} from provider or it is invalid."},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        rate = Decimal(str(live_rates[from_wallet.currency.coingecko_id][to_wallet.currency.coingecko_id]))
+        amount_to = amount_from * rate
 
-        rate_to_to_usd = None
-        if currency_to.currency_type == 'crypto' and currency_to.coingecko_id in rates:
-            rate_to_to_usd = Decimal(str(rates[currency_to.coingecko_id].get('usd', 0)))
-        elif currency_to.symbol == 'USD':
-            rate_to_to_usd = Decimal('1.0')
+        # Списываем средства с одного кошелька и зачисляем на другой
+        from_wallet.balance -= amount_from
+        from_wallet.save()
 
-        if rate_to_to_usd is None or rate_to_to_usd <= 0:
-            return Response({"error": f"Could not get USD exchange rate for {to_symbol} from provider or it is invalid."},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-        effective_rate = rate_from_to_usd / rate_to_to_usd
-        amount_to = amount_from * effective_rate
-        
-        amount_to_final = amount_to # Пока без комиссий
-        # Примерные данные по комиссии, если бы она была:
-        # fee_percentage_decimal = Decimal('0.002') # 0.2%
-        # fee_amount_target = amount_to * fee_percentage_decimal
-        # amount_to_final = amount_to - fee_amount_target
-        # fee_db_percentage = fee_percentage_decimal * 100
-        # fee_db_amount = fee_amount_target
+        to_wallet.balance += amount_to
+        to_wallet.save()
 
-        wallet_from.balance -= amount_from
-        wallet_from.available_balance -= amount_from
-        wallet_from.save()
-
-        wallet_to.balance += amount_to_final
-        wallet_to.available_balance += amount_to_final
-        wallet_to.save()
-
-        tx_notes = f"Exchange {amount_from} {from_symbol} to {amount_to_final:.8f} {to_symbol} at rate {effective_rate:.8f} {to_symbol}/{from_symbol}"
-        tx = TX.objects.create(
-            user=user, type='exchange', status='completed',
-            amount=amount_from, crypto=currency_from, notes=tx_notes
-        )
-        
-        exchange_record = TransactionExchange.objects.create(
-            user=user, transaction=tx, from_crypto=currency_from,
-            to_crypto=currency_to, from_amount=amount_from,
-            to_amount=amount_to_final, rate=effective_rate,
-            # Поля для комиссии в модели transactions.Exchange:
-            # fee_percentage=fee_db_percentage if 'fee_db_percentage' in locals() else Decimal('0.0'), 
-            # fee_amount=fee_db_amount if 'fee_db_amount' in locals() else Decimal('0.0')
-            fee_percentage=Decimal('0.0'), # Заглушка
-            fee_amount=Decimal('0.0')    # Заглушка
+        # Создаем запись об обмене
+        exchange = TransactionExchange.objects.create(
+            user=user,
+            from_currency=from_wallet.currency,
+            to_currency=to_wallet.currency,
+            amount_from=amount_from,
+            amount_to=amount_to,
+            rate=rate
         )
 
         return Response({
-            "message": "Exchange successful.",
-            "from_currency": from_symbol, "to_currency": to_symbol,
-            "amount_from": amount_from, "amount_to": f"{amount_to_final:.8f}",
-            "rate": f"{effective_rate:.8f}", "transaction_id": tx.transaction_id,
-            "exchange_id": exchange_record.id
+            'success': 'Обмен успешно выполнен.',
+            'from_wallet': UserWalletSerializer(from_wallet).data,
+            'to_wallet': UserWalletSerializer(to_wallet).data,
+            'exchange_details': {
+                'id': exchange.id,
+                'from': exchange.from_currency.symbol,
+                'to': exchange.to_currency.symbol,
+                'amount_from': exchange.amount_from,
+                'amount_to': exchange.amount_to,
+                'rate': exchange.rate,
+                'timestamp': exchange.timestamp
+            }
         }, status=status.HTTP_200_OK)
+
+
+class ExchangeRateView(APIView):
+    """
+    View to get the exchange rate between two currencies.
+    Expects query parameters: ?source_currency_symbol=RUB&target_currency_symbol=BTC
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        from decimal import Decimal, InvalidOperation
+
+        source_symbol = request.query_params.get('source_currency_symbol')
+        target_symbol = request.query_params.get('target_currency_symbol')
+
+        if not source_symbol or not target_symbol:
+            return Response(
+                {"error": "Both source_currency_symbol and target_currency_symbol are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            source_currency = Cryptocurrency.objects.get(symbol__iexact=source_symbol)
+            target_currency = Cryptocurrency.objects.get(symbol__iexact=target_symbol)
+
+            # The service function fetches all available rates against USD.
+            all_rates = get_exchange_rates() 
+
+            if all_rates is None:
+                return Response(
+                    {"error": "Could not connect to the exchange rate service."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+            
+            # Get the USD rate for the source currency
+            source_rate_data = all_rates.get(source_currency.coingecko_id)
+            if not source_rate_data or 'usd' not in source_rate_data:
+                return Response({"error": f"Rate for source currency {source_symbol} not available."}, status=status.HTTP_404_NOT_FOUND)
+            source_rate_usd = Decimal(str(source_rate_data['usd']))
+
+            # Get the USD rate for the target currency
+            target_rate_data = all_rates.get(target_currency.coingecko_id)
+            if not target_rate_data or 'usd' not in target_rate_data:
+                return Response({"error": f"Rate for target currency {target_symbol} not available."}, status=status.HTTP_404_NOT_FOUND)
+            target_rate_usd = Decimal(str(target_rate_data['usd']))
+            
+            if target_rate_usd == 0:
+                 return Response({"error": f"Target currency rate for {target_symbol} is zero, cannot divide."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Calculate the cross rate
+            cross_rate = source_rate_usd / target_rate_usd
+
+            return Response({"rate": cross_rate}, status=status.HTTP_200_OK)
+
+        except Cryptocurrency.DoesNotExist:
+            return Response({"error": "One or both of the specified currency symbols do not exist."}, status=status.HTTP_404_NOT_FOUND)
+        except (InvalidOperation, TypeError) as e:
+            print(f"Error in ExchangeRateView (Decimal conversion): {e}")
+            return Response({"error": "Error converting currency rate to number."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            print(f"Error in ExchangeRateView: {e}")
+            return Response({"error": "An unexpected error occurred while retrieving the exchange rate."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
