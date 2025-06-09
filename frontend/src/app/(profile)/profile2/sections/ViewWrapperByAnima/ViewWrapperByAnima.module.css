@@ -13,28 +13,28 @@
 
 .content {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 16px;
 }
 
-@media (min-width: 768px) {
-  .content {
-    flex-direction: row;
-  }
-}
-
 .tokenInfoCard {
-  width: 100%;
+  width: 520px;
   background-color: var(--color-card);
   border-radius: 25px;
   padding: 20px;
 }
 
-@media (min-width: 768px) {
-  .tokenInfoCard {
-    width: 520px;
+@media (max-width: 986px) {
+  .content {
+    flex-direction: column;
   }
+
+  .tokenInfoCard {
+    width: 100%;
+  }
+
 }
+
 
 .cardContent {
   padding: 0;
@@ -148,12 +148,6 @@
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
   border-radius: 25px;
   padding: 20px;
-}
-
-@media (min-width: 768px) {
-  .chartCard {
-    width: 1080px;
-  }
 }
 
 .chartHeader {
