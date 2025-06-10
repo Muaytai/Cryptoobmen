@@ -93,7 +93,7 @@ export const DivWrapperByAnima = (): JSX.Element => {
                 <ToggleGroup
                   type="single"
                   defaultValue="1d"
-                  className="bg-gray-100 rounded-[15px]"
+                  className="bg-subcard rounded-[15px]"
                 >
                   {timePeriods.map((period, i) => (
                     <ToggleGroupItem
@@ -101,8 +101,8 @@ export const DivWrapperByAnima = (): JSX.Element => {
                       value={period.value}
                       className={`px-2.5 py-[9px] text-lg font-normal [font-family:'Manrope',Helvetica] ${
                         period.value === "1d"
-                          ? "bg-violet-600 text-white font-medium"
-                          : "text-[#1a1a1a]"
+                          ? "!bg-violet-600 font-medium"
+                          : "text-subcard-text"
                       } ${i === 0 ? "rounded-l-[15px]" : ""} ${
                         i === timePeriods.length - 1 ? "rounded-r-[15px]" : ""
                       }`}
