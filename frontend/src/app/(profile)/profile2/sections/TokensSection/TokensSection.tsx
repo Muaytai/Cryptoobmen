@@ -15,9 +15,9 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import clsx from "clsx";
-import styles from "./ViewWrapperByAnima.module.css";
+import styles from "./TokensSection.module.css";
 
-export const ViewWrapperByAnima = (): JSX.Element => {
+export const TokensSection = (): JSX.Element => {
   const data = [
     {date: '11.03', value: 0.07},
     {date: '15.03', value: 0.08},
@@ -182,7 +182,7 @@ export const ViewWrapperByAnima = (): JSX.Element => {
                       className={`px-2 md:px-2.5 py-2 md:py-[9px] text-sm md:text-lg font-normal ${
                         period.active
                           ? "!bg-violet-600 font-medium"
-                          : "text-subcard-text"
+                          : "text-subcard-text/80 hover:!text-subcard-text"
                       } [font-family:'Manrope',Helvetica]`}
                     >
                       {period.label}

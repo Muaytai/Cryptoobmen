@@ -14,7 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import styles from "./DivWrapperByAnima.module.css";
+import styles from "./InvestmentsSection.module.css";
 import {clsx} from "clsx";
 
 const cryptoData = [
@@ -65,7 +65,7 @@ const timePeriods = [
   { value: "1h", label: "1ч" },
 ];
 
-export const DivWrapperByAnima = (): JSX.Element => {
+export const InvestmentsSection = (): JSX.Element => {
   return (
     <section className={styles.container}>
       <h2 className="text-violet-600 text-3xl font-normal mb-8 [font-family:'Manrope',Helvetica]">
@@ -102,7 +102,7 @@ export const DivWrapperByAnima = (): JSX.Element => {
                       className={`px-2.5 py-[9px] text-lg font-normal [font-family:'Manrope',Helvetica] ${
                         period.value === "1d"
                           ? "!bg-violet-600 font-medium"
-                          : "text-subcard-text"
+                          : "text-subcard-text/80 hover:!text-subcard-text"
                       } ${i === 0 ? "rounded-l-[15px]" : ""} ${
                         i === timePeriods.length - 1 ? "rounded-r-[15px]" : ""
                       }`}

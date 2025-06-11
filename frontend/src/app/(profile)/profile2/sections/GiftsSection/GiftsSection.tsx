@@ -1,11 +1,11 @@
 import React, {JSX, useState} from "react";
 import {Button} from "../../components/ui/button";
 import {Card, CardContent} from "../../components/ui/card";
-import styles from "./ViewByAnima.module.css";
+import styles from "./GiftsSection.module.css";
 import {GiftBoxModal} from "@/app/(profile)/components/modals/giftBoxModal/GiftBoxModal";
 import {Modal} from "@/app/(profile)/components/modals/Modal";
 
-export const ViewByAnima = (): JSX.Element => {
+export const GiftsSection = (): JSX.Element => {
   const [modalOpen, setModalOpen] = useState(false);
 
 
