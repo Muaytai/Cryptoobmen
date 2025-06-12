@@ -52,7 +52,7 @@ const FormSelect = ({ label, required, error, options, ...rest }: Props) => {
 
   const classNames: ClassNamesConfig<OptionType> = {
     control: ({ isFocused }) =>
-      `bg-background border rounded-lg py-2 px-3 mt-1 text-gray-100 ${
+      `bg-card border rounded-lg py-2 px-3 mt-1 text-gray-100 ${
         isFocused
           ? "ring-2 ring-violet-500 border-violet-500"
           : "ring-2 ring-gray-500 border-gray-500"

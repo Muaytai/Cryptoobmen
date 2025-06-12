@@ -2,18 +2,19 @@
 
 import React, {JSX, useState} from "react";
 
-import {DivByAnima} from "./sections/DivByAnima";
-import {DivWrapperByAnima} from "./sections/DivWrapperByAnima/DivWrapperByAnima";
-import {ViewByAnima} from "./sections/ViewByAnima";
-import {ViewWrapperByAnima} from "./sections/ViewWrapperByAnima";
+import {PersonalSection} from "@/app/(profile)/profile2/sections/PersonalSection";
+import {GiftsSection} from "./sections/GiftsSection";
+import {TokensSection} from "./sections/TokensSection";
+import {InvestmentsSection} from "./sections/InvestmentsSection/InvestmentsSection";
 
 export const Profile = (): JSX.Element => {
+
   return (
     <>
-      <DivByAnima/>
-      <DivWrapperByAnima/>
-      <ViewWrapperByAnima/>
-      <ViewByAnima/>
+      <PersonalSection/>
+      <InvestmentsSection/>
+      <TokensSection/>
+      <GiftsSection/>
     </>
   );
 };

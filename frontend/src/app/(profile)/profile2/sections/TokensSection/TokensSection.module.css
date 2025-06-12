@@ -14,12 +14,12 @@
 .content {
   display: flex;
   flex-direction: row;
-  gap: 16px;
+  gap: 40px;
 }
 
 .tokenInfoCard {
   width: 520px;
-  background-color: var(--color-card);
+  /*background-color: var(--color-card);*/
   border-radius: 25px;
   padding: 20px;
 }

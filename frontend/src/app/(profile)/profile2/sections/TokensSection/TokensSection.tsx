@@ -15,9 +15,9 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import clsx from "clsx";
-import styles from "./ViewWrapperByAnima.module.css";
+import styles from "./TokensSection.module.css";
 
-export const ViewWrapperByAnima = (): JSX.Element => {
+export const TokensSection = (): JSX.Element => {
   const data = [
     {date: '11.03', value: 0.07},
     {date: '15.03', value: 0.08},
@@ -47,8 +47,8 @@ export const ViewWrapperByAnima = (): JSX.Element => {
 
       <div className={styles.content}>
         {/* Token Info Card */}
-        <Card className={clsx(styles.tokenInfoCard, "w-full rounded-[15px] md:rounded-[25px] shadow-[0px_0px_20px_#0000004c]")}>
-          <CardContent className="p-4 md:p-5 relative">
+        <Card className={clsx(styles.tokenInfoCard, "w-full !bg-card rounded-[15px] md:rounded-[25px] shadow-[0px_0px_20px_#0000004c]")}>
+          <CardContent className="!p-0 md:p-5 relative">
             <div className="mb-8 md:mb-12">
               <h3
                 className="text-lg md:text-xl font-normal text-[#1a1a1a] dark:text-white [font-family:'Manrope',Helvetica]">
@@ -152,7 +152,7 @@ export const ViewWrapperByAnima = (): JSX.Element => {
         </Card>
 
         {/* Chart Card */}
-        <Card className={styles.chartCard}>
+        <Card className={clsx(styles.chartCard, "!bg-card")}>
           <CardContent className={styles.cardContent}>
             <div className="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-0 mb-6 md:mb-8">
               <div className="flex items-center gap-3 md:gap-5">
@@ -181,8 +181,8 @@ export const ViewWrapperByAnima = (): JSX.Element => {
                       value={period.value}
                       className={`px-2 md:px-2.5 py-2 md:py-[9px] text-sm md:text-lg font-normal ${
                         period.active
-                          ? "bg-violet-600 text-white font-medium"
-                          : "text-[#1a1a1a] dark:text-white"
+                          ? "!bg-violet-600 font-medium"
+                          : "text-subcard-text/80 hover:!text-subcard-text"
                       } [font-family:'Manrope',Helvetica]`}
                     >
                       {period.label}
