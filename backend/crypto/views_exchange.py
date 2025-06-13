@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from .models import Cryptocurrency, UserWallet, ExchangePair, SystemWallet
+from .models import Cryptocurrency, UserWallet, ExchangePair
 from transactions.models import Transaction, Exchange
 from django.db import transaction
 from django.utils import timezone
@@ -121,15 +121,6 @@ class ExchangeView(APIView):
             
             # Рассчитываем сумму к получению
             to_amount = (amount - fee_amount) * exchange_rate
-            
-            # Проверяем наличие системного кошелька для целевой валюты
-            if to_crypto.is_system:
-                try:
-                    system_wallet = SystemWallet.objects.get(crypto=to_crypto)
-                    if system_wallet.available_balance < to_amount:
-                        return Response({'error': 'Недостаточно ликвидности для обмена'}, status=status.HTTP_400_BAD_REQUEST)
-                except SystemWallet.DoesNotExist:
-                    return Response({'error': 'Системный кошелек не настроен'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             # Создаем запись об обмене
             exchange = Exchange.objects.create(
@@ -251,12 +242,6 @@ class ExchangeView(APIView):
             # Пополняем целевой кошелек
             exchange.to_wallet.available_balance += exchange.to_amount
             exchange.to_wallet.save()
-            
-            # Если целевая валюта системная, обновляем системный кошелек
-            if exchange.to_wallet.crypto.is_system:
-                system_wallet = SystemWallet.objects.get(crypto=exchange.to_wallet.crypto)
-                system_wallet.available_balance -= exchange.to_amount
-                system_wallet.save()
             
             # Обновляем статус обмена
             exchange.status = 'completed'

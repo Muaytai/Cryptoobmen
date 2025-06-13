@@ -4,10 +4,6 @@ from crypto.models import Cryptocurrency, UserWallet
 
 CURRENCIES_DATA = [
     {
-        "name": "US Dollar", "symbol": "USD", "currency_type": "fiat", 
-        "network": None, "coingecko_id": None, "is_active": True
-    },
-    {
         "name": "Bitcoin", "symbol": "BTC", "currency_type": "crypto",
         "network": "Bitcoin", "coingecko_id": "bitcoin", "is_active": True
     },

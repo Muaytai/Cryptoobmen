@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, InvestmentPlan, UserInvestment, CardDeposit
+from .models import Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, InvestmentPlan, UserInvestment
 
 
 class CryptocurrencySerializer(serializers.ModelSerializer):
@@ -132,75 +132,27 @@ class UserInvestmentSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = UserInvestment
-        fields = ['id', 'investment_id', 'user', 'wallet', 'plan', 'plan_name',
-                 'crypto_symbol', 'crypto_name', 'amount', 'expected_return',
-                 'interest_rate', 'start_date', 'end_date', 'status', 'status_display',
-                 'actual_return', 'completed_date', 'progress', 'created_at', 'updated_at']
+        fields = ['id', 'investment_id', 'user', 'user_email', 'wallet', 'plan',
+                  'amount', 'expected_return', 'start_date', 'end_date', 'status',
+                  'status_display', 'actual_return', 'completed_date', 'created_at', 'updated_at']
         read_only_fields = ['id', 'investment_id', 'expected_return', 'end_date',
                            'actual_return', 'completed_date', 'created_at', 'updated_at']
 
 
-class CardDepositSerializer(serializers.ModelSerializer):
-    """Сериализатор для пополнения кошелька с банковской карты"""
-    user_email = serializers.ReadOnlyField(source='user.email')
-    crypto_symbol = serializers.ReadOnlyField(source='wallet.crypto.symbol')
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
-    class Meta:
-        model = CardDeposit
-        fields = ['id', 'deposit_id', 'user', 'user_email', 'wallet', 'crypto_symbol',
-                 'amount', 'currency', 'card_last4', 'card_brand', 'status',
-                 'status_display', 'payment_id', 'fee', 'crypto_amount', 'exchange_rate',
-                 'created_at', 'updated_at', 'completed_at']
-        read_only_fields = ['id', 'deposit_id', 'payment_id', 'crypto_amount',
-                           'exchange_rate', 'created_at', 'updated_at', 'completed_at']
+class DepositInfoRequestSerializer(serializers.Serializer):
+    """
+    Сериализатор для валидации запроса на получение информации для депозита.
+    """
+    currency_symbol = serializers.CharField(max_length=10)
+    network = serializers.CharField(max_length=50)
 
+    def validate_currency_symbol(self, value):
+        """Проверяет, что такая криптовалюта существует и активна."""
+        if not Cryptocurrency.objects.filter(symbol__iexact=value, is_active=True).exists():
+            raise serializers.ValidationError(f"Криптовалюта {value} не найдена или неактивна.")
+        return value.upper()
 
-class CardDepositCreateSerializer(serializers.ModelSerializer):
-    """Сериализатор для создания заявки на пополнение с карты."""
-    wallet = serializers.PrimaryKeyRelatedField(
-        queryset=UserWallet.objects.all(),
-        write_only=True
-    )
-
-    class Meta:
-        model = CardDeposit
-        fields = ('amount', 'currency', 'wallet', 'card_brand', 'card_last4')
-
-    def validate_wallet(self, value):
-        """Проверяем, что кошелек принадлежит текущему пользователю."""
-        if value.user != self.context['request'].user:
-            raise serializers.ValidationError("Вы можете пополнять только свой кошелек.")
+    def validate_network(self, value):
+        """Проверяет, что такая сеть поддерживается (опционально, можно расширить)."""
+        # Здесь можно добавить более сложную логику, например, сверку с доступными сетями для валюты
         return value
-
-    def create(self, validated_data):
-        # Здесь должна быть логика интеграции с платежным шлюзом.
-        # Для примера, мы просто создаем запись о депозите со статусом 'pending'.
-        # В реальном приложении статус бы менялся после callback'а от платежной системы.
-        
-        user = self.context['request'].user
-        
-        # Упрощенная логика: создаем депозит в статусе pending
-        card_deposit = CardDeposit.objects.create(
-            user=user,
-            wallet=validated_data['wallet'],
-            amount=validated_data['amount'],
-            currency=validated_data['currency'],
-            card_brand=validated_data.get('card_brand', ''),
-            card_last4=validated_data.get('card_last4', ''),
-            status='pending' 
-        )
-        
-        # Здесь мог бы быть вызов к celery задаче для обработки платежа
-        # process_payment.delay(card_deposit.id)
-
-        return card_deposit
-
-
-class FiatCurrencySerializer(serializers.ModelSerializer):
-    """Сериализатор для фиатных валют."""
-    code = serializers.CharField(source='symbol')
-
-    class Meta:
-        model = Cryptocurrency
-        fields = ['code', 'name']

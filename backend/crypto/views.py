@@ -12,25 +12,14 @@ from django.utils import timezone
 from rest_framework.views import APIView
 from django.db import transaction
 from .models import (Cryptocurrency, CryptoPrice, ExchangePair, UserWallet,
-                    InvestmentPlan, UserInvestment, CardDeposit)
+                    InvestmentPlan, UserInvestment)
 from transactions.models import Transaction as TX, Exchange as TransactionExchange, Deposit, Withdrawal, Review
 from .serializers import (
     CryptocurrencySerializer, CryptoPriceSerializer, ExchangePairSerializer,
     UserWalletSerializer, ExchangeCalculatorSerializer, InvestmentPlanSerializer,
-    UserInvestmentSerializer, CardDepositSerializer, CardDepositCreateSerializer,
-    FiatCurrencySerializer
+    UserInvestmentSerializer
 )
 from .services import get_exchange_rates
-
-
-class FiatCurrencyViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    ViewSet для получения списка активных фиатных валют.
-    Доступно только для аутентифицированных пользователей.
-    """
-    queryset = Cryptocurrency.objects.filter(currency_type='fiat', is_active=True)
-    serializer_class = FiatCurrencySerializer
-    permission_classes = [IsAuthenticated]
 
 
 class CryptocurrencyViewSet(viewsets.ReadOnlyModelViewSet):
@@ -445,88 +434,6 @@ class UserInvestmentViewSet(viewsets.ModelViewSet):
         })
 
 
-class CardDepositViewSet(viewsets.ModelViewSet):
-    """АРI для пополнения кошелька с банковской карты"""
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        """Пользователь видит только свои депозиты"""
-        return CardDeposit.objects.filter(user=self.request.user)
-
-    def get_serializer_class(self):
-        """Используем разные сериализаторы для создания и отображения"""
-        if self.action == 'create':
-            return CardDepositCreateSerializer
-        return CardDepositSerializer
-
-    def perform_create(self, serializer):
-        """
-        Сохраняем заявку. Пользователь будет взят из контекста запроса
-        внутри сериализатора.
-        """
-        serializer.save()
-
-    def create(self, request, *args, **kwargs):
-        """
-        Создает новую заявку на пополнение и возвращает полный объект заявки.
-        """
-        create_serializer = self.get_serializer(data=request.data)
-        create_serializer.is_valid(raise_exception=True)
-        self.perform_create(create_serializer)
-        
-        # Для ответа используем полный сериализатор, чтобы вернуть все данные
-        instance = create_serializer.instance
-        response_serializer = CardDepositSerializer(instance, context=self.get_serializer_context())
-        
-        headers = self.get_success_headers(response_serializer.data)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-
-    @action(detail=False, methods=['get'])
-    def stats(self, request):
-        """Возвращает статистику по депозитам пользователя"""
-        deposits = CardDeposit.objects.filter(user=request.user)
-        
-        # Статистика по завершенным пополнениям
-        completed_deposits = deposits.filter(status='completed')
-        completed_count = completed_deposits.count()
-        completed_amount = completed_deposits.aggregate(total=Sum('amount'))['total'] or 0
-        completed_crypto = completed_deposits.aggregate(total=Sum('crypto_amount'))['total'] or 0
-        
-        # Статистика по обрабатываемым пополнениям
-        processing_deposits = deposits.filter(status='processing')
-        processing_count = processing_deposits.count()
-        processing_amount = processing_deposits.aggregate(total=Sum('amount'))['total'] or 0
-        
-        # Статистика по неудачным пополнениям
-        failed_deposits = deposits.filter(status__in=['failed', 'cancelled'])
-        failed_count = failed_deposits.count()
-        failed_amount = failed_deposits.aggregate(total=Sum('amount'))['total'] or 0
-        
-        # Общая статистика
-        total_count = deposits.count()
-        total_amount = deposits.aggregate(total=Sum('amount'))['total'] or 0
-        
-        return Response({
-            "completed_deposits": {
-                "count": completed_count,
-                "total_amount": completed_amount,
-                "total_crypto": completed_crypto
-            },
-            "processing_deposits": {
-                "count": processing_count,
-                "total_amount": processing_amount
-            },
-            "failed_deposits": {
-                "count": failed_count,
-                "total_amount": failed_amount
-            },
-            "total_deposits": {
-                "count": total_count,
-                "total_amount": total_amount
-            }
-        })
-
-
 class UserBalancesView(generics.ListAPIView):
     """
     Возвращает список кошельков и балансов для аутентифицированного пользователя.
@@ -571,62 +478,6 @@ class ExchangeRatesView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         return Response(processed_rates) # Возвращаем {'SYMBOL': rate}
-
-
-class FiatDepositView(APIView):
-    """
-    Эмулирует пополнение фиатного (USD) баланса пользователя.
-    Принимает {'amount': '100.00'}
-    """
-    permission_classes = [IsAuthenticated]
-
-    @transaction.atomic
-    def post(self, request, *args, **kwargs):
-        amount_str = request.data.get('amount')
-        if not amount_str:
-            return Response({"error": "Amount is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            amount = Decimal(amount_str)
-        except Exception: 
-            return Response({"error": "Invalid amount format."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if amount <= 0:
-            return Response({"error": "Amount must be positive."}, status=status.HTTP_400_BAD_REQUEST)
-
-        user = request.user
-        usd_currency, _ = Cryptocurrency.objects.get_or_create(
-            symbol="USD",
-            defaults={'name': "US Dollar", 'currency_type': 'fiat', 'is_active': True}
-        )
-        user_wallet, _ = UserWallet.objects.get_or_create(
-            user=user, currency=usd_currency,
-            defaults={'balance': Decimal('0.0'), 'available_balance': Decimal('0.0')}
-        )
-        
-        user_wallet.balance += amount
-        user_wallet.available_balance += amount
-        user_wallet.save()
-
-        card_deposit = CardDeposit.objects.create(
-            user=user, wallet=user_wallet, amount=amount,
-            currency=usd_currency.symbol, status='completed',
-        )
-        
-        tx = TX.objects.create(
-            user=user, type='deposit', status='completed',
-            amount=amount, crypto=usd_currency, 
-            notes=f"Fiat deposit emulation via card deposit ID: {card_deposit.deposit_id}"
-        )
-
-        return Response(
-            {"message": f"Successfully deposited {amount} {usd_currency.symbol}.",
-             "wallet_balance": user_wallet.balance,
-             "card_deposit_id": card_deposit.deposit_id,
-             "transaction_id": tx.transaction_id
-             },
-            status=status.HTTP_200_OK
-        )
 
 
 class ExchangeCurrencyView(APIView):

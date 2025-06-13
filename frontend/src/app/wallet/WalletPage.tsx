@@ -63,7 +63,9 @@ export const WalletPage: React.FC = () => {
       ]);
 
       setWallets(walletsResponse.data);
+      console.log('[WalletPage Debug] walletsResponse.data:', walletsResponse.data);
       setPrices(pricesResponse.data);
+      console.log('[WalletPage Debug] balanceResponse.data:', balanceResponse.data);
       setTotalUsdBalance(balanceResponse.data.total_usd_balance);
       setError(null);
     } catch (err) {
@@ -190,7 +192,7 @@ export const WalletPage: React.FC = () => {
           </select>
         </div>
         <div className="text-4xl font-bold text-green-500">
-          {totalBalanceInSelectedCurrency.toLocaleString('ru-RU', { style: 'currency', currency: displayCurrency, minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {totalUsdBalance.toLocaleString('ru-RU', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </div>
         <p className="text-sm text-gray-400 mt-1">Примерный эквивалент в {displayCurrency}</p>
       </div>

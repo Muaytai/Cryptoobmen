@@ -4,6 +4,9 @@ from django.utils.translation import gettext_lazy as _
 from decimal import Decimal
 from django.utils import timezone
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Типы валют
 CURRENCY_TYPE_CHOICES = [
@@ -30,6 +33,10 @@ class Cryptocurrency(models.Model):
     # Информация для API
     coingecko_id = models.CharField(max_length=100, blank=True, null=True, verbose_name=_('CoinGecko ID'))
     # api_id = models.CharField(max_length=100, blank=True, null=True) # Это поле кажется дублирующим coingecko_id, можно убрать если не используется специфично
+    
+    # Для токенов
+    contract_address = models.CharField(max_length=255, blank=True, null=True, verbose_name=_('Contract Address'))
+    decimals = models.PositiveSmallIntegerField(blank=True, null=True, verbose_name=_('Decimals'))
     
     # Минимальная и максимальная сумма для обмена (можно перенести в ExchangePair, если нужна гранулярность)
     min_exchange_amount = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal('0.0001'), verbose_name=_('Min Exchange Amount'))
@@ -286,101 +293,62 @@ class UserInvestment(models.Model):
         verbose_name_plural = _('user investments')
 
 
-class CardDeposit(models.Model):
-    """Модель для пополнения кошелька с банковской карты"""
-    STATUS_CHOICES = (
-        ('pending', _('Pending')),
-        ('processing', _('Processing')),
-        ('completed', _('Completed')),
-        ('failed', _('Failed')),
-        ('cancelled', _('Cancelled')),
-    )
-    
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='card_deposits')
-    wallet = models.ForeignKey(
-        UserWallet,
-        on_delete=models.CASCADE,
-        related_name='card_deposits',
-        null=True
-    )
-    
-    deposit_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    
-    # Информация о платеже
-    amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name=_('Amount'))
-    currency = models.CharField(max_length=3, default='RUB', verbose_name=_('Currency'))
-    
-    # Информация о карте (храним только маскированный номер)
-    card_last4 = models.CharField(max_length=4, blank=True, null=True, verbose_name=_('Last 4 digits'))
-    card_brand = models.CharField(max_length=20, blank=True, null=True, verbose_name=_('Card Brand'))
-    
-    # Информация о статусе
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name=_('Status'))
-    payment_id = models.CharField(max_length=255, blank=True, null=True, verbose_name=_('Payment ID'))
-    
-    # Дополнительная информация
-    fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name=_('Fee'))
-    crypto_amount = models.DecimalField(max_digits=24, decimal_places=8, blank=True, null=True, verbose_name=_('Crypto Amount'))
-    exchange_rate = models.DecimalField(max_digits=24, decimal_places=8, blank=True, null=True, verbose_name=_('Exchange Rate'))
-    
+class SystemWalletAddress(models.Model):
+    """
+    Адреса системных кошельков для пополнения.
+    Один адрес на каждую связку "валюта + сеть".
+    """
+    currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, related_name='system_addresses')
+    network = models.CharField(max_length=50, verbose_name=_('Network'))
+    address = models.CharField(max_length=255, unique=True, verbose_name=_('Address'))
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    completed_at = models.DateTimeField(blank=True, null=True, verbose_name=_('Completed At'))
-    
+
     def __str__(self):
-        return f"Card deposit of {self.amount} {self.currency} by {self.user.username} ({self.status})"
-
-    def save(self, *args, **kwargs):
-        # Логика для автоматического зачисления средств при смене статуса на 'completed'
-        if self.pk is not None:
-            orig = CardDeposit.objects.get(pk=self.pk)
-            if orig.status != 'completed' and self.status == 'completed':
-                from .services import get_exchange_rates
-                from decimal import Decimal
-
-                self.completed_at = timezone.now()
-                
-                # Получаем целевой кошелек
-                target_wallet = self.wallet
-                target_crypto = target_wallet.currency
-                
-                # Получаем фиатную валюту из заявки
-                try:
-                    fiat_currency = Cryptocurrency.objects.get(symbol=self.currency, currency_type='fiat')
-                except Cryptocurrency.DoesNotExist:
-                    # Обработка случая, если фиатная валюта не найдена
-                    # Здесь можно добавить логирование или другую логику
-                    super().save(*args, **kwargs) # Сохраняем статус, но не проводим зачисление
-                    return
-
-                all_rates = get_exchange_rates()
-                
-                fiat_coingecko_id = fiat_currency.coingecko_id
-                target_coingecko_id = target_crypto.coingecko_id
-                
-                fiat_rate_usd = all_rates.get(fiat_coingecko_id, {}).get('usd')
-                target_rate_usd = all_rates.get(target_coingecko_id, {}).get('usd')
-
-                if fiat_rate_usd and target_rate_usd:
-                    try:
-                        fiat_rate_usd_dec = Decimal(str(fiat_rate_usd))
-                        target_rate_usd_dec = Decimal(str(target_rate_usd))
-                        
-                        exchange_rate = fiat_rate_usd_dec / target_rate_usd_dec
-                        crypto_amount_to_add = self.amount * exchange_rate
-                        
-                        self.exchange_rate = exchange_rate
-                        self.crypto_amount = crypto_amount_to_add
-                        
-                        target_wallet.balance += crypto_amount_to_add
-                        target_wallet.save()
-                        
-                    except (ValueError, TypeError):
-                        # Обработка ошибки конвертации
-                        pass
-        
-        super().save(*args, **kwargs)
+        return f"System Address: {self.currency.symbol} ({self.network})"
 
     class Meta:
-        verbose_name = _('card deposit')
-        verbose_name_plural = _('card deposits')
+        unique_together = ('currency', 'network')
+        verbose_name = _('System Wallet Address')
+        verbose_name_plural = _('System Wallet Addresses')
+
+
+class UserDepositMemo(models.Model):
+    """
+    Уникальные Memo, выдаваемые пользователям для пополнения системных кошельков.
+    """
+    STATUS_CHOICES = (
+        ('waiting', _('Waiting for deposit')),
+        ('used', _('Used')),
+        ('expired', _('Expired')),
+    )
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='deposit_memos')
+    currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE)
+    network = models.CharField(max_length=50, verbose_name=_('Network'))
+    memo = models.CharField(max_length=128, unique=True, verbose_name=_('Memo/Destination Tag'))
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='waiting', db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(verbose_name=_('Expires At'))
+
+    def __str__(self):
+        return f"Memo {self.memo} for {self.user.email} - {self.currency.symbol} ({self.network})"
+
+    class Meta:
+        verbose_name = _('User Deposit Memo')
+        verbose_name_plural = _('User Deposit Memos')
+
+
+class BlockchainState(models.Model):
+    """
+    Хранит состояние сканера блокчейна, например, последний обработанный блок.
+    """
+    blockchain = models.CharField(max_length=50, unique=True, primary_key=True, verbose_name=_('Blockchain/Network'))
+    last_processed_block = models.BigIntegerField(default=0, verbose_name=_('Last Processed Block'))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.blockchain} - Last Block: {self.last_processed_block}"
+
+    class Meta:
+        verbose_name = _('Blockchain Scanner State')
+        verbose_name_plural = _('Blockchain Scanner States')

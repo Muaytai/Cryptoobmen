@@ -12,9 +12,9 @@ django-allauth==0.58.2
 django-cors-headers==4.3.1
 django-filter==25.1
 django-redis==5.4.0
-djangorestframework==3.14.0
+djangorestframework==3.15.1
 djangorestframework-simplejwt==5.3.1
-gunicorn==21.2.0
+gunicorn==22.0.0
 idna==3.10
 itypes==1.2.0
 Jinja2==3.1.6
@@ -42,3 +42,13 @@ whitenoise==6.7.0
 django-environ==0.11.2
 django-recaptcha==4.1.0
 django-axes==8.0.0
+django-phonenumber-field==7.3.0
+phonenumbers==8.13.35
+# Celery
+celery==5.3.6
+# Docs
+drf-yasg==1.21.7
+# Crypto libs
+tronpy==0.5.0
+# web3==6.15.1
+# bitcoinlib==0.6.7
