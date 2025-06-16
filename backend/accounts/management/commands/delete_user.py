@@ -3,7 +3,7 @@ from django.db import transaction
 from django.contrib.auth import get_user_model
 from django.db.models import Count
 from accounts.models import UserProfile, UserDocument
-from crypto.models import UserWallet, UserInvestment, CardDeposit
+from crypto.models import UserWallet, UserInvestment
 from transactions.models import Transaction, Exchange, Deposit, Withdrawal, Review
 import sys
 
@@ -113,11 +113,6 @@ class Command(BaseCommand):
         investments_count = UserInvestment.objects.filter(user=user).count()
         if investments_count > 0:
             self.stdout.write(f"  - Инвестиции пользователя: {investments_count}")
-        
-        # Пополнения с карты
-        card_deposits_count = CardDeposit.objects.filter(user=user).count()
-        if card_deposits_count > 0:
-            self.stdout.write(f"  - Пополнения с карты: {card_deposits_count}")
         
         # Транзакции
         transactions_count = Transaction.objects.filter(user=user).count()
@@ -244,11 +239,6 @@ class Command(BaseCommand):
         transactions_count = Transaction.objects.filter(user=user).count()
         Transaction.objects.filter(user=user).delete()
         deleted_data['Transaction'] = transactions_count
-        
-        # Удаляем пополнения с карты
-        card_deposits_count = CardDeposit.objects.filter(user=user).count()
-        CardDeposit.objects.filter(user=user).delete()
-        deleted_data['CardDeposit'] = card_deposits_count
         
         # Удаляем инвестиции
         investments_count = UserInvestment.objects.filter(user=user).count()
