@@ -105,14 +105,14 @@ export default function ExchangePageClient() {
       console.log('ExchangePage: Пользователь аутентифицирован. Загрузка данных страницы...');
       setLoading(true);
       try {
-        const cryptoResponse = await api.get('/crypto/cryptocurrencies/');
-        const pairsResponse = await api.get('/crypto/pairs/');
-        const pricesResponse = await api.get('/crypto/prices/');
-        const walletsResponse = await api.get('/crypto/wallets/');
+        const [cryptoResponse, pairsResponse, walletsResponse] = await Promise.all([
+            api.get('/crypto/cryptocurrencies/'),
+            api.get('/crypto/exchange-pairs/'),
+            api.get('/crypto/wallets/')
+        ]);
         
         setCryptocurrencies(cryptoResponse.data);
         setExchangePairs(pairsResponse.data);
-        setPrices(pricesResponse.data);
         setWallets(walletsResponse.data);
         
         // Если в URL есть параметр from_crypto, выбираем эту криптовалюту
@@ -219,12 +219,12 @@ export default function ExchangePageClient() {
           setCalculating(true);
           
           const calculationData = {
-            from_crypto: selectedPair.from_crypto.id,
-            to_crypto: selectedPair.to_crypto.id,
+            from_crypto_id: selectedPair.from_crypto.id,
+            to_crypto_id: selectedPair.to_crypto.id,
             amount: parseFloat(amount)
           };
           
-          const response = await api.post('/crypto/calculator/', calculationData);
+          const response = await api.post('/crypto/exchange/calculator/', calculationData);
           
           setCalculation(response.data);
           setCalculating(false);
@@ -305,53 +305,36 @@ export default function ExchangePageClient() {
 
   // Отправка формы обмена
   const handleExchange = async () => {
-    // Проверка аутентификации (если еще не сделана глобально для страницы или компонента)
-    // В нашем случае, useAuthStore и проверка в fetchData уже должны были отработать.
-    // Если selectedPair или amount не установлены, или нет данных для calculation (если они нужны для валидации)
-    if (!selectedPair || !amount || parseFloat(amount) <= 0) {
-      setError('Пожалуйста, выберите криптовалюты, введите корректную сумму и дождитесь расчета.');
+    if (!selectedPair || !amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      setError("Пожалуйста, введите корректную сумму для обмена.");
       return;
     }
-    
-    // Дополнительная проверка баланса перед отправкой
-    const fromWallet = wallets.find(w => w.currency.id === selectedPair.from_crypto.id);
-    if (!fromWallet || parseFloat(fromWallet.available_balance) < parseFloat(amount)) {
-      setError('Недостаточно средств на выбранном кошельке для совершения обмена.');
-      return;
-    }
-    
+
+    setSubmitting(true);
+    setError(null);
+    setSuccess(false);
+
     try {
-      setSubmitting(true);
-      setError(null);
-      
-      // Формируем данные для запроса в соответствии с ожиданиями бэкенда
-      const exchangePayload = {
-        from_symbol: selectedPair.from_crypto.symbol, // Используем символ валюты
-        to_symbol: selectedPair.to_crypto.symbol,     // Используем символ валюты
-        amount_from: parseFloat(amount).toString()      // Сумма как строка
+      const exchangeData = {
+        from_crypto_id: selectedPair.from_crypto.id,
+        to_crypto_id: selectedPair.to_crypto.id,
+        amount: parseFloat(amount),
       };
-      
-      // Используем правильный эндпоинт и обновленные данные
-      const response = await api.post('/crypto/exchange-currency/', exchangePayload);
-      
-      setSuccess(true);
-      // Убедимся, что получаем ID транзакции или обмена из ответа бэкенда
-      // Это может быть response.data.transaction_id, response.data.exchange_id, или просто response.data.id
-      // В ExchangeCurrencyView мы возвращали {'message': 'Exchange successful', 'exchange_id': new_exchange.id, 'transaction_from_id': trans_from.id, 'transaction_to_id': trans_to.id}
-      setExchangeId(response.data.exchange_id || response.data.transaction_from_id || 'N/A');
-      
-      // Очищаем форму
-      setAmount('');
-      setCalculation(null); // Также сбрасываем расчет
-      
-      // Опционально: обновить балансы пользователя после успешного обмена
-      // const updatedWalletsResponse = await api.get('/crypto/wallets/');
-      // setWallets(updatedWalletsResponse.data);
-      
-      setSubmitting(false);
+
+      const response = await api.post('/crypto/exchange/execute/', exchangeData);
+
+      if (response.data.success) {
+        setSuccess(true);
+        setExchangeId(response.data.exchange_id);
+        // Опционально: обновить данные кошельков после успешного обмена
+        // refetchWallets(); 
+      } else {
+        setError(response.data.error || 'Произошла неизвестная ошибка при обмене.');
+      }
     } catch (err: any) {
-      console.error('Ошибка при отправке запроса:', err);
-      setError(err.response?.data?.error || 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.');
+      console.error('Ошибка при выполнении обмена:', err);
+      setError(err.response?.data?.error || 'Не удалось выполнить обмен. Проверьте баланс и попробуйте снова.');
+    } finally {
       setSubmitting(false);
     }
   };
