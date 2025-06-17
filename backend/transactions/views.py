@@ -12,7 +12,7 @@ from .models import Transaction, Exchange, Deposit, Withdrawal, Review
 from .serializers import (
     TransactionSerializer, ExchangeSerializer, DepositSerializer,
     WithdrawalSerializer, ExchangeCreateSerializer, WithdrawalCreateSerializer,
-    ReviewSerializer
+    ReviewSerializer, TransactionHistorySerializer
 )
 
 
@@ -252,3 +252,26 @@ class ReviewViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+
+class TransactionHistoryView(generics.ListAPIView):
+    """
+    Возвращает историю транзакций для аутентифицированного пользователя.
+    """
+    serializer_class = TransactionHistorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Возвращает транзакции текущего пользователя,
+        оптимизируя запросы с помощью select_related и prefetch_related.
+        """
+        user = self.request.user
+        return Transaction.objects.filter(user=user).select_related(
+            'crypto'
+        ).prefetch_related(
+            'exchange_transaction__from_currency',
+            'exchange_transaction__to_currency',
+            'deposit_transaction',
+            'withdrawal_transaction'
+        ).order_by('-timestamp')

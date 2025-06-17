@@ -266,4 +266,51 @@ class ReviewSerializer(serializers.ModelSerializer):
     
     def get_date(self, obj):
         """Возвращает дату в формате дд.мм.гггг"""
-        return obj.created_at.strftime('%d.%m.%Y') 
+        return obj.created_at.strftime('%d.%m.%Y')
+
+
+class ExchangeDetailSerializer(serializers.ModelSerializer):
+    """Детальный сериализатор для обмена (для вложенного представления)."""
+    from_currency = CryptocurrencySerializer(read_only=True)
+    to_currency = CryptocurrencySerializer(read_only=True)
+
+    class Meta:
+        model = Exchange
+        fields = ['from_currency', 'to_currency', 'from_amount', 'to_amount', 'rate']
+
+
+class DepositDetailSerializer(serializers.ModelSerializer):
+    """Детальный сериализатор для пополнения."""
+    class Meta:
+        model = Deposit
+        fields = ['address', 'confirmed']
+
+
+class WithdrawalDetailSerializer(serializers.ModelSerializer):
+    """Детальный сериализатор для вывода."""
+    class Meta:
+        model = Withdrawal
+        fields = ['destination_address', 'is_email_confirmed', 'confirmed_by_admin']
+
+
+class TransactionHistorySerializer(serializers.ModelSerializer):
+    """Основной сериализатор для истории транзакций."""
+    crypto = CryptocurrencySerializer(read_only=True)
+    details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Transaction
+        fields = [
+            'transaction_id', 'type', 'status', 'amount', 'fee',
+            'crypto', 'timestamp', 'tx_hash', 'details'
+        ]
+
+    def get_details(self, obj):
+        """Возвращает детали для конкретного типа транзакции."""
+        if obj.type == 'exchange' and hasattr(obj, 'exchange_transaction'):
+            return ExchangeDetailSerializer(obj.exchange_transaction).data
+        if obj.type == 'deposit' and hasattr(obj, 'deposit_transaction'):
+            return DepositDetailSerializer(obj.deposit_transaction).data
+        if obj.type == 'withdrawal' and hasattr(obj, 'withdrawal_transaction'):
+            return WithdrawalDetailSerializer(obj.withdrawal_transaction).data
+        return None 

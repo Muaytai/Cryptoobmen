@@ -17,7 +17,7 @@ from transactions.models import Transaction as TX, Exchange as TransactionExchan
 from .serializers import (
     CryptocurrencySerializer, CryptoPriceSerializer, ExchangePairSerializer,
     UserWalletSerializer, ExchangeCalculatorSerializer, InvestmentPlanSerializer,
-    UserInvestmentSerializer
+    UserInvestmentSerializer, PerformExchangeSerializer
 )
 from .services import get_exchange_rates
 
@@ -528,9 +528,11 @@ class ExchangeCurrencyView(APIView):
 
         # Списываем средства с одного кошелька и зачисляем на другой
         from_wallet.balance -= amount_from
-        from_wallet.save()
-
+        from_wallet.available_balance -= amount_from
         to_wallet.balance += amount_to
+        to_wallet.available_balance += amount_to
+
+        from_wallet.save()
         to_wallet.save()
 
         # Создаем запись об обмене
@@ -619,3 +621,79 @@ class ExchangeRateView(APIView):
         except Exception as e:
             print(f"Error in ExchangeRateView: {e}")
             return Response({"error": "An unexpected error occurred while retrieving the exchange rate."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def perform_exchange_view(request):
+    """
+    Выполняет обмен валюты для пользователя.
+    """
+    serializer = PerformExchangeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    validated_data = serializer.validated_data
+    from_crypto_id = validated_data['from_crypto_id']
+    to_crypto_id = validated_data['to_crypto_id']
+    amount = validated_data['amount']
+    user = request.user
+
+    # Используем select_for_update для блокировки строк на время транзакции
+    try:
+        from_wallet = UserWallet.objects.select_for_update().get(user=user, currency_id=from_crypto_id)
+        to_wallet, _ = UserWallet.objects.select_for_update().get_or_create(
+            user=user, currency_id=to_crypto_id, defaults={'balance': 0}
+        )
+    except UserWallet.DoesNotExist:
+        return Response({"error": "Исходный кошелек не найден."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Проверка доступного баланса
+    if from_wallet.available_balance < amount:
+        return Response({"error": "Недостаточно средств на балансе."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Получение актуальных курсов
+    try:
+        from_crypto = Cryptocurrency.objects.get(id=from_crypto_id)
+        to_crypto = Cryptocurrency.objects.get(id=to_crypto_id)
+        live_rates = get_exchange_rates(vs_currencies=['usd'])
+        
+        from_usd_rate = Decimal(str(live_rates[from_crypto.coingecko_id]['usd']))
+        to_usd_rate = Decimal(str(live_rates[to_crypto.coingecko_id]['usd']))
+        
+        if from_usd_rate <= 0 or to_usd_rate <= 0:
+            raise ValueError("Invalid exchange rate")
+            
+    except (KeyError, ValueError) as e:
+        return Response({"error": f"Не удалось получить актуальный курс для обмена. {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    # Расчет суммы к получению
+    rate = from_usd_rate / to_usd_rate
+    to_amount = amount * rate # Упрощенный расчет без комиссии для примера
+
+    # Обновление балансов
+    from_wallet.balance -= amount
+    from_wallet.available_balance -= amount
+    to_wallet.balance += to_amount
+    to_wallet.available_balance += to_amount
+
+    from_wallet.save()
+    to_wallet.save()
+
+    # Создание записи о транзакции обмена
+    exchange_tx = TransactionExchange.objects.create(
+        user=user,
+        from_currency=from_crypto,
+        to_currency=to_crypto,
+        amount_from=amount,
+        amount_to=to_amount,
+        rate=rate,
+        status='completed'
+    )
+
+    return Response({
+        "success": True,
+        "message": "Обмен успешно выполнен.",
+        "exchange_id": exchange_tx.id
+    }, status=status.HTTP_200_OK)

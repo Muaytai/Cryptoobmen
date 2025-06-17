@@ -11,6 +11,9 @@ from rest_framework.documentation import include_docs_urls
 from rest_framework import permissions
 from rest_framework.routers import DefaultRouter
 from django.http import HttpResponseRedirect
+from rest_framework.schemas import get_schema_view
+from drf_yasg.views import get_schema_view
+from drf_yasg import openapi
 
 # Создаем главный роутер
 router = DefaultRouter()
@@ -29,11 +32,6 @@ def simple_email_redirect(request, key=None, *args, **kwargs):
     # Мгновенно перенаправляем на фронтенд без какой-либо обработки
     return HttpResponseRedirect(f"{settings.FRONTEND_URL}/verify-email?verified=true")
 
-# Функция для перенаправления на фронтенд после авторизации
-def auth_callback(request):
-    """Перенаправляет на эндпоинт обработки социальной авторизации"""
-    return HttpResponseRedirect(f"/api/accounts/social/callback/?next={settings.FRONTEND_URL}/profile")
-
 # Кастомные URL-адреса для регистрации dj_rest_auth, чтобы исправить обработку account-confirm-email
 dj_rest_auth_custom_registration_urls = [
     path('', RegisterView.as_view(), name='rest_register'),
@@ -44,6 +42,19 @@ dj_rest_auth_custom_registration_urls = [
          TemplateView.as_view(template_name="account/email_verification_sent.html"),
          name='account_email_verification_sent'),
 ]
+
+schema_view = get_schema_view(
+   openapi.Info(
+      title="Crypto Exchange API",
+      default_version='v1',
+      description="API documentation for the Crypto Exchange project.",
+      terms_of_service="https://www.google.com/policies/terms/",
+      contact=openapi.Contact(email="contact@example.com"),
+      license=openapi.License(name="BSD License"),
+   ),
+   public=True,
+   permission_classes=(permissions.AllowAny,),
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -78,6 +89,11 @@ urlpatterns = [
     
     # Документация API
     # path('api/docs/', include_docs_urls(title='Crypto Exchange API')),
+
+    # Swagger/OpenAPI
+    path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]
 
 # Добавляем медиа файлы в режиме разработки

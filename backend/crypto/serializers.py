@@ -156,3 +156,15 @@ class DepositInfoRequestSerializer(serializers.Serializer):
         """Проверяет, что такая сеть поддерживается (опционально, можно расширить)."""
         # Здесь можно добавить более сложную логику, например, сверку с доступными сетями для валюты
         return value
+
+
+class PerformExchangeSerializer(serializers.Serializer):
+    """Сериализатор для выполнения обмена."""
+    from_crypto_id = serializers.IntegerField()
+    to_crypto_id = serializers.IntegerField()
+    amount = serializers.DecimalField(max_digits=24, decimal_places=8)
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Сумма должна быть положительной.")
+        return value
