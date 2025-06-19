@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import axios from 'axios';
+import { http } from '@/lib/http';
 import Link from 'next/link';
 
 // Типы данных
@@ -49,7 +49,7 @@ export default function TransactionDetailsPage() {
       try {
         setLoading(true);
         
-        const response = await axios.get(
+        const response = await http.get(
           `${process.env.NEXT_PUBLIC_API_URL}/api/transactions/${transactionId}/`,
           { headers: { Authorization: `Bearer ${token}` } }
         );

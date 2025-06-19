@@ -15,6 +15,7 @@ interface Wallet {
     name: string;
     symbol: string;
     icon: string;
+    network?: string;
   };
   balance: string;
   available_balance: string;
@@ -51,6 +52,7 @@ export const WithdrawPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
   const [withdrawalId, setWithdrawalId] = useState<string | null>(null);
+  const [showInfoTips, setShowInfoTips] = useState<boolean>(true);
 
   // Данные формы
   const [selectedWalletId, setSelectedWalletId] = useState<number | null>(null);
@@ -83,8 +85,8 @@ export const WithdrawPage: React.FC = () => {
       setLoading(true);
       try {
         // Используем api.get с правильными эндпоинтами
-        const walletsResponse = await api.get('/wallets/'); 
-        const pricesResponse = await api.get('/crypto-prices/latest/');
+        const walletsResponse = await api.get('/crypto/wallets/'); 
+        const pricesResponse = await api.get('/crypto/prices/latest/');
         
         // Данные пользователя уже должны быть в response.data согласно реализации api.get
         setWallets(walletsResponse.data);
@@ -195,7 +197,7 @@ export const WithdrawPage: React.FC = () => {
         destination_address: destinationAddress
       };
       
-      const response = await api.post('/withdrawals/', withdrawalData);
+      const response = await api.post('/crypto/withdrawals/', withdrawalData);
       
       setSuccess(true);
       setWithdrawalId(response.data.transaction_id);
@@ -238,8 +240,8 @@ export const WithdrawPage: React.FC = () => {
             <Link href="/wallet" className="bg-purple-600 text-white py-2 px-6 rounded-lg hover:bg-purple-700 transition">
               Вернуться к кошельку
             </Link>
-            <Link href="/profile" className="text-purple-400 hover:text-purple-300 transition">
-              Перейти в профиль
+            <Link href="/transactions" className="text-purple-400 hover:text-purple-300 transition">
+              Перейти к истории транзакций
             </Link>
           </div>
         </div>
@@ -250,169 +252,205 @@ export const WithdrawPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 text-center">Вывод средств</h1>
+        <h1 className="text-2xl font-bold mb-6 text-center">Вывод криптовалюты</h1>
         
-        {error && (
-          <div className="bg-red-500 bg-opacity-20 p-4 rounded-lg mb-6">
-            <p className="text-red-500">{error}</p>
+        {/* Обучающая панель для новичков */}
+        {showInfoTips && (
+          <div className="bg-indigo-900 bg-opacity-50 rounded-xl p-6 mb-8 border border-indigo-700">
+            <div className="flex justify-between items-start mb-3">
+              <h2 className="text-xl font-bold text-indigo-300">ℹ️ Важная информация о выводе</h2>
+              <button 
+                onClick={() => setShowInfoTips(false)} 
+                className="text-indigo-400 hover:text-indigo-300"
+                title="Скрыть подсказку"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-3 text-indigo-100">
+              <p>При выводе криптовалюты обратите внимание на следующие моменты:</p>
+              <ul className="list-disc pl-5 space-y-1 text-sm">
+                <li>Убедитесь, что вы указываете правильный адрес кошелька получателя. Транзакции в блокчейне необратимы!</li>
+                <li>Проверьте, что выбранная сеть (например, TRC20, ERC20) совместима с кошельком получателя.</li>
+                <li>Комиссия за вывод составляет 0.1% от суммы.</li>
+                <li>Время обработки вывода может занимать от 15 минут до нескольких часов в зависимости от загруженности сети.</li>
+              </ul>
+            </div>
           </div>
         )}
-        
+
+        {error && (
+          <div className="bg-red-900 bg-opacity-20 p-4 rounded-lg mb-6 border-l-4 border-red-500">
+            <p className="text-red-300">{error}</p>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="bg-gray-800 rounded-xl p-6 shadow-lg">
           {/* Выбор кошелька */}
           <div className="mb-6">
-            <label className="block text-gray-300 mb-2">Выберите кошелек для вывода</label>
+            <label htmlFor="wallet" className="block text-sm font-medium text-gray-400 mb-2">
+              Выберите кошелек для вывода:
+            </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {wallets.map((wallet) => (
-                <div 
-                  key={wallet.id}
-                  onClick={() => setSelectedWalletId(wallet.id)}
-                  className={`
-                    border rounded-lg p-3 cursor-pointer transition
-                    ${selectedWalletId === wallet.id 
-                      ? 'border-purple-500 bg-purple-900 bg-opacity-20' 
-                      : 'border-gray-700 hover:border-gray-500'}
-                    ${parseFloat(wallet.available_balance) <= 0 ? 'opacity-50 cursor-not-allowed' : ''}
-                  `}
-                >
-                  <div className="flex items-center">
-                    {wallet.currency.icon ? (
-                      <Image 
-                        src={
-                          wallet.currency.icon.startsWith('http')
-                            ? wallet.currency.icon
-                            : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`
-                        } 
-                        alt={wallet.currency.symbol} 
-                        width={32} 
-                        height={32} 
-                        className="rounded-full mr-3"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 bg-gray-700 rounded-full mr-3 flex items-center justify-center">
-                        {wallet.currency.symbol.slice(0, 2)}
-                      </div>
-                    )}
-                    <div>
-                      <p className="font-medium">{wallet.currency.name}</p>
-                      <p className="text-sm text-gray-400">
-                        Доступно: {parseFloat(wallet.available_balance).toFixed(8)} {wallet.currency.symbol}
-                      </p>
+              {wallets
+                .filter(wallet => wallet.currency.symbol !== 'USD' && wallet.currency.symbol !== 'RUB')
+                .map(wallet => (
+                  <button
+                    key={wallet.id}
+                    type="button"
+                    onClick={() => setSelectedWalletId(wallet.id)}
+                    className={`p-4 rounded-lg flex items-center ${
+                      selectedWalletId === wallet.id 
+                        ? 'bg-purple-700 border-2 border-purple-500' 
+                        : 'bg-gray-700 hover:bg-gray-650'
+                    } transition`}
+                  >
+                    <div className="flex-shrink-0 mr-3">
+                      {wallet.currency.icon ? (
+                        <Image
+                          src={wallet.currency.icon.startsWith('http') ? wallet.currency.icon : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`}
+                          alt={wallet.currency.symbol}
+                          width={32}
+                          height={32}
+                          className="rounded-full"
+                          unoptimized
+                        />
+                      ) : (
+                        <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
+                          {wallet.currency.symbol.slice(0, 2)}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </div>
-              ))}
+                    <div className="flex-grow">
+                      <div className="font-medium">{wallet.currency.name}</div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-400">
+                          {wallet.currency.symbol} {wallet.currency.network ? `(${wallet.currency.network})` : ''}
+                        </span>
+                        <span className="font-medium">
+                          {parseFloat(wallet.available_balance).toFixed(4)}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
             </div>
           </div>
-          
+
           {/* Сумма вывода */}
-          {selectedWalletId && (
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-2">
-                <label htmlFor="amount" className="block text-gray-300">Сумма вывода</label>
-                <button 
-                  type="button"
-                  onClick={setMaxAmount}
-                  className="text-sm text-purple-400 hover:text-purple-300"
-                >
-                  Максимум: {parseFloat(getMaxAvailableAmount()).toFixed(8)}
-                </button>
-              </div>
+          <div className="mb-6">
+            <label htmlFor="amount" className="block text-sm font-medium text-gray-400 mb-2">
+              Сумма вывода:
+            </label>
+            <div className="relative">
               <input
-                type="text"
                 id="amount"
+                type="text"
                 value={amount}
                 onChange={handleAmountChange}
-                placeholder="0.00000000"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="0.0"
+                className="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-3 pr-20"
               />
+              <button
+                type="button"
+                onClick={setMaxAmount}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-purple-600 hover:bg-purple-700 text-white text-xs py-1 px-2 rounded transition"
+              >
+                МАКС
+              </button>
             </div>
-          )}
-          
-          {/* Адрес для вывода */}
-          {selectedWalletId && (
-            <div className="mb-6">
-              <label htmlFor="destinationAddress" className="block text-gray-300 mb-2">Адрес кошелька для вывода</label>
-              <input
-                type="text"
-                id="destinationAddress"
-                value={destinationAddress}
-                onChange={(e) => setDestinationAddress(e.target.value)}
-                placeholder={`Введите адрес ${wallets.find(w => w.id === selectedWalletId)?.currency.symbol}`}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Внимательно проверьте адрес перед отправкой. Транзакции в блокчейне необратимы.
+            {selectedWalletId && (
+              <p className="mt-1 text-sm text-gray-400">
+                Доступно: {getMaxAvailableAmount()} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
               </p>
-            </div>
-          )}
-          
-          {/* Расчет комиссии */}
-          {selectedWalletId && amount && parseFloat(amount) > 0 && (
-            <div className="mb-6 bg-gray-700 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold mb-2">Детали вывода</h3>
-              <div className="space-y-2">
+            )}
+          </div>
+
+          {/* Адрес получателя */}
+          <div className="mb-6">
+            <label htmlFor="address" className="block text-sm font-medium text-gray-400 mb-2">
+              Адрес кошелька получателя:
+            </label>
+            <input
+              id="address"
+              type="text"
+              value={destinationAddress}
+              onChange={(e) => setDestinationAddress(e.target.value)}
+              placeholder="Введите адрес кошелька получателя"
+              className="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-3"
+            />
+            <p className="mt-1 text-sm text-yellow-400">
+              ⚠️ Внимательно проверьте адрес! Транзакции в блокчейне необратимы.
+            </p>
+          </div>
+
+          {/* Информация о комиссии */}
+          {selectedWalletId && amount && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0 && (
+            <div className="mb-6 p-4 bg-gray-700 rounded-lg">
+              <h3 className="text-sm font-medium text-gray-300 mb-3">Детали вывода:</h3>
+              <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Сумма вывода:</span>
-                  <span>
-                    {amount} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
-                  </span>
+                  <span>{amount} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Комиссия сети:</span>
-                  <span className="text-yellow-400">
-                    {fee} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol} (≈${feeUsd})
-                  </span>
+                  <span className="text-gray-400">Комиссия (0.1%):</span>
+                  <span className="text-yellow-400">{fee} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol} (≈${feeUsd})</span>
                 </div>
-                <div className="border-t border-gray-600 my-2 pt-2 flex justify-between font-semibold">
-                  <span>Вы получите:</span>
-                  <span className="text-green-400">
-                    {netAmount} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}
-                  </span>
+                <div className="flex justify-between font-medium pt-2 border-t border-gray-600">
+                  <span>Итого к получению:</span>
+                  <span className="text-green-400">{netAmount} {wallets.find(w => w.id === selectedWalletId)?.currency.symbol}</span>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 mt-3">
-                * Фактическая комиссия сети может отличаться в зависимости от загруженности блокчейна.
-              </p>
             </div>
           )}
-          
-          {/* Предупреждение */}
-          <div className="mb-6 bg-yellow-500 bg-opacity-10 p-4 rounded-lg border border-yellow-500 border-opacity-20">
-            <h3 className="text-yellow-500 font-semibold mb-2">Важно!</h3>
-            <ul className="text-sm text-gray-300 space-y-1 list-disc pl-5">
-              <li>Убедитесь, что адрес получателя корректен и поддерживает выбранную криптовалюту.</li>
-              <li>Вывод средств может занять от 15 минут до нескольких часов в зависимости от загруженности сети.</li>
-              <li>Минимальная сумма вывода зависит от выбранной криптовалюты.</li>
+
+          {/* Предупреждение о безопасности */}
+          <div className="mb-6 p-4 bg-yellow-900 bg-opacity-20 rounded-lg border-l-4 border-yellow-500">
+            <h3 className="font-medium text-yellow-300 mb-2">Проверка безопасности</h3>
+            <p className="text-sm text-yellow-200">
+              Перед отправкой убедитесь, что:
+            </p>
+            <ul className="list-disc pl-5 mt-1 space-y-1 text-sm text-yellow-200">
+              <li>Вы указали правильный адрес кошелька получателя</li>
+              <li>Выбранная сеть совместима с кошельком получателя</li>
+              <li>Сумма вывода не превышает доступный баланс</li>
             </ul>
           </div>
-          
+
           {/* Кнопка отправки */}
-          <div className="flex justify-center">
+          <div className="flex flex-col space-y-4">
             <button
               type="submit"
-              disabled={submitting || !selectedWalletId || !amount || !destinationAddress || parseFloat(amount) <= 0}
-              className={`
-                w-full py-3 px-6 rounded-lg text-white font-medium transition
-                ${submitting || !selectedWalletId || !amount || !destinationAddress || parseFloat(amount) <= 0
-                  ? 'bg-gray-600 cursor-not-allowed' 
-                  : 'bg-purple-600 hover:bg-purple-700'}
-              `}
+              disabled={submitting || !selectedWalletId || !amount || !destinationAddress || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0}
+              className={`w-full py-3 px-4 rounded-lg flex items-center justify-center ${
+                submitting || !selectedWalletId || !amount || !destinationAddress || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0
+                  ? 'bg-gray-600 cursor-not-allowed'
+                  : 'bg-red-600 hover:bg-red-700'
+              } text-white transition`}
             >
               {submitting ? (
-                <span className="flex items-center justify-center">
-                  <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></span>
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
                   Обработка...
-                </span>
+                </>
               ) : (
-                'Вывести средства'
+                <>
+                  Вывести средства
+                </>
               )}
             </button>
+            
+            <Link href="/wallet" className="text-center text-purple-400 hover:text-purple-300 transition">
+              Вернуться к кошельку
+            </Link>
           </div>
-          
-          <p className="text-xs text-gray-400 mt-4 text-center">
-            Нажимая кнопку "Вывести средства", вы соглашаетесь с условиями использования сервиса и подтверждаете, что указанный адрес принадлежит вам.
-          </p>
         </form>
       </div>
     </div>

@@ -27,7 +27,7 @@ import {
   AlertIcon
 } from '@chakra-ui/react';
 import { InfoIcon } from '@chakra-ui/icons';
-import axios from 'axios';
+import { http } from '@/lib/http';
 import { useAuthStore } from '@/store/useAuthStore';
 
 interface CardData {
@@ -86,7 +86,7 @@ const CardDepositForm: React.FC = () => {
     const fetchData = async () => {
       try {
         // Загружаем криптовалюты
-        const currenciesResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/cryptocurrencies/`, {
+        const currenciesResponse = await http.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/cryptocurrencies/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -98,7 +98,7 @@ const CardDepositForm: React.FC = () => {
         setCurrencies(systemCurrencies);
         
         // Загружаем кошельки пользователя
-        const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
+        const walletsResponse = await http.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -112,7 +112,7 @@ const CardDepositForm: React.FC = () => {
             targetCurrency: defaultCurrency.symbol
           }));
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Ошибка при загрузке данных:', error);
         toast({
           title: 'Ошибка',
@@ -287,7 +287,7 @@ const CardDepositForm: React.FC = () => {
         target_currency: cardData.targetCurrency
       };
       
-      const response = await axios.post(
+      const response = await http.post(
         `${process.env.NEXT_PUBLIC_API_URL}/crypto/deposit/card/`,
         depositData,
         {
@@ -317,13 +317,13 @@ const CardDepositForm: React.FC = () => {
       setFee(0);
       
       // Обновляем список кошельков
-      const walletsResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
+      const walletsResponse = await http.get(`${process.env.NEXT_PUBLIC_API_URL}/crypto/wallets/`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       setWallets(walletsResponse.data);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Ошибка при пополнении:', error);
       toast({
         title: 'Ошибка',

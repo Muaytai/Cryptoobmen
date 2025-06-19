@@ -1,12 +1,15 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .services_deposit import DepositService
 from .serializers import DepositInfoRequestSerializer
 from .models import UserDepositMemo
 from django.views.decorators.cache import never_cache
 from django.utils.decorators import method_decorator
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DepositInfoView(APIView):
@@ -51,11 +54,14 @@ class DepositInfoView(APIView):
                 'network': network
             }, status=status.HTTP_200_OK)
 
+        except ValueError as e:
+            # Ошибки валидации бизнес-логики (не найдено или недоступно)
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            # В реальном проекте здесь будет логирование ошибки
+            logger.exception("deposit/info failed: %s", e)
             return Response(
                 {'error': 'Произошла внутренняя ошибка. Попробуйте позже.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_400_BAD_REQUEST
             )
 
 

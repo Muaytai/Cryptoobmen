@@ -1,0 +1,53 @@
+services:
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    env_file:
+      - ../backend/.env.backend
+    volumes:
+      - ../backend:/app
+    environment:
+      - DJANGO_ENV=development
+    ports:
+      - "8000:8000"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    env_file:
+      - ../backend/.env.backend
+    environment:
+      - DJANGO_ENV=development
+    depends_on:
+      - backend
+    command: celery -A core worker -l info
+
+  beat:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    env_file:
+      - ../backend/.env.backend
+    environment:
+      - DJANGO_ENV=development
+    depends_on:
+      - backend
+    command: celery -A core beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/frontend/Dockerfile
+      args:
+        BUILD_ENV: development
+    env_file:
+      - ../frontend/.env.development
+    volumes:
+      - ../frontend:/app
+    ports:
+      - "3000:3000"
+    command: npm run dev
+

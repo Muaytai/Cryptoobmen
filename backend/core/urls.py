@@ -34,7 +34,7 @@ def simple_email_redirect(request, key=None, *args, **kwargs):
 
 # Кастомные URL-адреса для регистрации dj_rest_auth, чтобы исправить обработку account-confirm-email
 dj_rest_auth_custom_registration_urls = [
-    path('', RegisterView.as_view(), name='rest_register'),
+    path('', RegisterView.as_view(permission_classes=(permissions.AllowAny,)), name='rest_register'),
     path('verify-email/', VerifyEmailView.as_view(), name='rest_verify_email'),
     path('resend-email/', ResendEmailVerificationView.as_view(), name="rest_resend_email"),
     # Не используем здесь ConfirmEmailView, так как мы хотим перенаправить на фронтенд

@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Установленные приложения
+    'channels',
     'corsheaders',
     'rest_framework',
     'rest_framework.authtoken',
@@ -64,6 +65,7 @@ INSTALLED_APPS = [
     'accounts',
     'crypto',
     'transactions',
+    'django_celery_beat',
 ]
 
 SITE_ID = 1
@@ -200,6 +202,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'core.wsgi.application'
+ASGI_APPLICATION = 'core.asgi.application'
 
 # Database
 DATABASES = {
@@ -463,6 +466,26 @@ SOCIALACCOUNT_PROVIDERS = {
 
 ADMIN_URL = 'admin/'
 
+# ----------------- Celery -----------------
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+# Периодические задачи
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    "scan_deposits_every_30s": {
+        "task": "crypto.tasks.check_blockchain_deposits",
+        "schedule": 30.0,  # каждые 30 секунд
+    },
+}
+
+
+# ----------------- i18n -----------------
 LOCALE_PATHS = [
     BASE_DIR / 'locale',
 ]

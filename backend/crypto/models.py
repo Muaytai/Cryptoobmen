@@ -17,7 +17,7 @@ CURRENCY_TYPE_CHOICES = [
 class Cryptocurrency(models.Model):
     """Модель для хранения информации о криптовалютах и фиатных валютах"""
     name = models.CharField(max_length=100, verbose_name=_('Name'))
-    symbol = models.CharField(max_length=20, unique=True, verbose_name=_('Symbol')) # Сделаем символ уникальным
+    symbol = models.CharField(max_length=20, verbose_name=_('Symbol')) # Убираем unique=True
     icon = models.ImageField(upload_to='crypto_icons/', blank=True, null=True, verbose_name=_('Icon'))
     
     currency_type = models.CharField(
@@ -49,12 +49,15 @@ class Cryptocurrency(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
+        if self.network:
+            return f"{self.name} ({self.symbol} - {self.network})"
         return f"{self.name} ({self.symbol})"
     
     class Meta:
         verbose_name = _('currency')
         verbose_name_plural = _('currencies')
         ordering = ['name']
+        unique_together = ['symbol', 'network']  # Делаем уникальной комбинацию символа и сети
 
 
 class CryptoPrice(models.Model):
@@ -120,6 +123,9 @@ class UserWallet(models.Model):
     locked_balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Locked Balance')) # Для ордеров, инвестиций и т.д.
     
     is_system_wallet = models.BooleanField(default=False, verbose_name=_('System Wallet'))
+
+    # Храним приватный ключ для системного кошелька в зашифрованном виде (Fernet)
+    encrypted_private_key = models.TextField(blank=True, null=True, verbose_name=_('Encrypted Private Key'))
     is_active = models.BooleanField(default=True, verbose_name=_('Active'))
     
     created_at = models.DateTimeField(auto_now_add=True)
@@ -166,131 +172,6 @@ class UserWallet(models.Model):
         verbose_name_plural = _('wallets')
 
 
-class InvestmentPlan(models.Model):
-    """Модель для инвестиционных планов"""
-    DURATION_CHOICES = (
-        ('day', _('Day')),
-        ('week', _('Week')),
-        ('month', _('Month')),
-        ('year', _('Year')),
-    )
-    
-    name = models.CharField(max_length=100, verbose_name=_('Name'))
-    description = models.TextField(verbose_name=_('Description'))
-    
-    crypto = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, related_name='investment_plans')
-    
-    # Процент доходности
-    interest_rate = models.DecimalField(max_digits=5, decimal_places=2, verbose_name=_('Interest Rate (%)'))
-    
-    # Продолжительность инвестиции
-    duration_value = models.PositiveIntegerField(default=1, verbose_name=_('Duration Value'))
-    duration_unit = models.CharField(max_length=10, choices=DURATION_CHOICES, default='month', verbose_name=_('Duration Unit'))
-    
-    # Минимальная и максимальная сумма инвестиции
-    min_investment = models.DecimalField(max_digits=18, decimal_places=8, verbose_name=_('Minimum Investment'))
-    max_investment = models.DecimalField(max_digits=18, decimal_places=8, verbose_name=_('Maximum Investment'))
-    
-    is_active = models.BooleanField(default=True, verbose_name=_('Active'))
-    
-    # Дополнительные настройки
-    early_withdrawal_allowed = models.BooleanField(default=False, verbose_name=_('Early Withdrawal Allowed'))
-    early_withdrawal_fee = models.DecimalField(max_digits=5, decimal_places=2, default=0, verbose_name=_('Early Withdrawal Fee (%)'))
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    def __str__(self):
-        return f"{self.name} - {self.interest_rate}% за {self.duration_value} {self.get_duration_unit_display()}"
-    
-    def get_duration_in_days(self):
-        """Возвращает продолжительность в днях"""
-        if self.duration_unit == 'day':
-            return self.duration_value
-        elif self.duration_unit == 'week':
-            return self.duration_value * 7
-        elif self.duration_unit == 'month':
-            return self.duration_value * 30
-        elif self.duration_unit == 'year':
-            return self.duration_value * 365
-        return 0
-    
-    class Meta:
-        verbose_name = _('investment plan')
-        verbose_name_plural = _('investment plans')
-
-
-class UserInvestment(models.Model):
-    """Модель для инвестиций пользователей"""
-    STATUS_CHOICES = (
-        ('active', _('Active')),
-        ('completed', _('Completed')),
-        ('cancelled', _('Cancelled')),
-        ('withdrawn', _('Withdrawn Early')),
-    )
-    
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='investments')
-    wallet = models.ForeignKey(
-        UserWallet,
-        on_delete=models.CASCADE,
-        related_name='investments',
-        null=True
-    )
-    plan = models.ForeignKey(InvestmentPlan, on_delete=models.CASCADE, related_name='user_investments')
-    
-    investment_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    
-    # Сумма инвестиции и ожидаемая прибыль
-    amount = models.DecimalField(max_digits=24, decimal_places=8, verbose_name=_('Investment Amount'))
-    expected_return = models.DecimalField(max_digits=24, decimal_places=8, verbose_name=_('Expected Return'))
-    
-    # Даты начала и окончания
-    start_date = models.DateTimeField(default=timezone.now, verbose_name=_('Start Date'))
-    end_date = models.DateTimeField(verbose_name=_('End Date'))
-    
-    # Статус инвестиции
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name=_('Status'))
-    
-    # Фактический возврат (может отличаться от ожидаемого при досрочном выводе)
-    actual_return = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True, verbose_name=_('Actual Return'))
-    completed_date = models.DateTimeField(null=True, blank=True, verbose_name=_('Completion Date'))
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    def __str__(self):
-        return f"{self.user.username} - {self.amount} {self.wallet.currency.symbol} - {self.plan.name}"
-    
-    def save(self, *args, **kwargs):
-        # Если это новая инвестиция
-        if not self.pk:
-            # Рассчитываем ожидаемый доход
-            interest_decimal = self.plan.interest_rate / Decimal('100.0')
-            self.expected_return = self.amount * interest_decimal
-            
-            # Устанавливаем дату окончания
-            days = self.plan.get_duration_in_days()
-            self.end_date = self.start_date + timezone.timedelta(days=days)
-        
-        super().save(*args, **kwargs)
-    
-    def get_progress_percentage(self):
-        """Возвращает процент выполнения инвестиции"""
-        if self.status != 'active':
-            return 100
-        
-        total_duration = (self.end_date - self.start_date).total_seconds()
-        elapsed_duration = (timezone.now() - self.start_date).total_seconds()
-        
-        if total_duration <= 0:
-            return 0
-        
-        progress = (elapsed_duration / total_duration) * 100
-        return min(max(progress, 0), 100)  # Ограничиваем значение от 0 до 100
-    
-    class Meta:
-        verbose_name = _('user investment')
-        verbose_name_plural = _('user investments')
 
 
 class SystemWalletAddress(models.Model):
@@ -300,7 +181,7 @@ class SystemWalletAddress(models.Model):
     """
     currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, related_name='system_addresses')
     network = models.CharField(max_length=50, verbose_name=_('Network'))
-    address = models.CharField(max_length=255, unique=True, verbose_name=_('Address'))
+    address = models.CharField(max_length=255, verbose_name=_('Address'))
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -346,9 +227,40 @@ class BlockchainState(models.Model):
     last_processed_block = models.BigIntegerField(default=0, verbose_name=_('Last Processed Block'))
     updated_at = models.DateTimeField(auto_now=True)
 
-    def __str__(self):
-        return f"{self.blockchain} - Last Block: {self.last_processed_block}"
+
+class ExchangeOrder(models.Model):
+    """Ордер на обмен одной криптовалюты на другую внутри платформы."""
+
+    STATUS_CHOICES = (
+        ('pending', _('Pending')),
+        ('executed', _('Executed')),
+        ('canceled', _('Canceled')),
+        ('failed', _('Failed')),
+    )
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='exchange_orders')
+
+    from_currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, related_name='exchange_orders_from')
+    to_currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, related_name='exchange_orders_to')
+
+    from_amount = models.DecimalField(max_digits=28, decimal_places=8)
+    to_amount = models.DecimalField(max_digits=28, decimal_places=8)
+
+    rate = models.DecimalField(max_digits=28, decimal_places=12, help_text=_('Exchange rate applied'))
+
+    fee_percent = models.DecimalField(max_digits=6, decimal_places=4, default=Decimal('0'), help_text=_('Fee percent taken'))
+    fee_amount = models.DecimalField(max_digits=28, decimal_places=8, default=Decimal('0'))
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    executed_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
-        verbose_name = _('Blockchain Scanner State')
-        verbose_name_plural = _('Blockchain Scanner States')
+        ordering = ['-created_at']
+        verbose_name = _('exchange order')
+        verbose_name_plural = _('exchange orders')
+
+    def __str__(self):
+        return f"{self.from_amount} {self.from_currency.symbol} -> {self.to_currency.symbol} ({self.status})"
+

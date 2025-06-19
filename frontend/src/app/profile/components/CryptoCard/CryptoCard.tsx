@@ -6,7 +6,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import styles from "./CryptoCard.module.css";
 import { TimePeriodSelector } from "../TimePeriodSelector/TimePeriodSelector";
 import { StatsRow } from "../StatsRow/StatsRow";
-import { InvestmentInfo } from "../InvestmentInfo/InvestmentInfo";
+
 
 interface CryptoCardProps {
   id: string;
@@ -74,13 +74,8 @@ export const CryptoCard: React.FC<CryptoCardProps> = ({ id, name, fullName, imag
           </ResponsiveContainer>
         </div>
 
-        <StatsRow />
-        <InvestmentInfo />
-
-        <div className={styles.actionButtons}>
-          <Button className={styles.investButton}>
-            Инвестировать
-          </Button>
+        <StatsRow />     
+        <div className={styles.actionButtons}>          
           <Button className={styles.withdrawButton}>
             Вывести
           </Button>

@@ -38,24 +38,17 @@ class JWTCookieMiddleware:
             # '/api/auth/logout/', # Убираем logout из явных исключений здесь, чтобы _set_jwt_auth_header не выполнялся для него ДО LogoutView
         ]
         
-        # Пропускаем проверку для путей авторизации, КРОМЕ logout, если он не в exempt_paths явно
         is_exempt_for_set_auth_header = False
-        # Проверяем, нужно ли пропускать _set_jwt_auth_header
-        # LogoutView сама обработает выход, нам не нужно пытаться аутентифицировать пользователя по JWT перед этим.
-        if request.path == '/api/auth/logout/':
-            logger.info(f"JWTCookieMiddleware: Path {request.path} is logout, skipping _set_jwt_auth_header initially.")
-            is_exempt_for_set_auth_header = True
-        else:
-            for path_prefix in exempt_paths:
-                if request.path.startswith(path_prefix):
-                    logger.info(f"JWTCookieMiddleware: Path {request.path} is exempt from _set_jwt_auth_header by prefix {path_prefix}.")
-                    is_exempt_for_set_auth_header = True
-                    break
+        for path_prefix in exempt_paths:
+            if request.path.startswith(path_prefix):
+                is_exempt_for_set_auth_header = True
+                logger.info(f"JWTCookieMiddleware: Path {request.path} is exempt from _set_jwt_auth_header by prefix {path_prefix}.")
+                break
         
+        logger.info(f"JWTCookieMiddleware: After checking exempt_paths for {request.path}, is_exempt_for_set_auth_header is {is_exempt_for_set_auth_header}.")
+
         if not is_exempt_for_set_auth_header:
             logger.info(f"JWTCookieMiddleware: Path {request.path} is NOT exempt. Calling _set_jwt_auth_header.")
-            # Для всех неисключенных путей (включая /api/auth/logout/, если его нет в exempt_paths)
-            # сначала проверяем JWT и устанавливаем request.user, если токен валиден
             self._set_jwt_auth_header(request)
         
         response = self.get_response(request)

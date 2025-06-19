@@ -58,11 +58,6 @@
   font-weight: 500;
 }
 
-.investButton {
-  background-color: var(--color-primary);
-  color: var(--color-text);
-}
-
 .withdrawButton {
   background-color: transparent;
   color: var(--color-text);

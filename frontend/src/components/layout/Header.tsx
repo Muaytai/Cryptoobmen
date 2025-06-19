@@ -151,8 +151,7 @@ export function Header() {
       </div>
       {/* Навигация посередине */}
       <nav className={styles.navigation}>
-        <NavLink href="/" isDefault>Главная</NavLink>
-        <NavLink href="/profile/investments">Инвестиции</NavLink>
+        <NavLink href="/" isDefault>Главная</NavLink>        
         <NavLink href="/wallet">Кошелек</NavLink>
         <NavLink href="/funds/deposit">Пополнение</NavLink>
         <NavLink href="/about">О нас</NavLink>

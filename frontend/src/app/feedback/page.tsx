@@ -176,6 +176,8 @@ export default function FeedbackPage() {
           type="button"
           onClick={() => handleRatingChange(i)}
           className="focus:outline-none"
+          aria-label={`Оценка ${i} из 5`}
+          title={`Оценка ${i} из 5`}
         >
           <svg
             className={`w-8 h-8 ${

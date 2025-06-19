@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { api } from '@/lib/api/fetch';
@@ -57,7 +57,7 @@ interface ExchangeCalculation {
   fee_usd: string;
 }
 
-export default function ExchangePageClient() {
+function ExchangePageClientInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
@@ -410,7 +410,7 @@ export default function ExchangePageClient() {
                   placeholder="0.00000000"
                   className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <select
+                <select aria-label="Криптовалюта для отправки" 
                   value={fromCryptoId || ''}
                   onChange={handleFromCryptoChange}
                   className="bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -451,7 +451,7 @@ export default function ExchangePageClient() {
             
             {/* Кнопка обмена местами */}
             <div className="flex justify-center">
-              <button
+              <button aria-label="Обмен местами"
                 onClick={swapCryptos}
                 className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition"
               >
@@ -465,13 +465,13 @@ export default function ExchangePageClient() {
             <div>
               <label className="block text-gray-300 mb-2">Получаю</label>
               <div className="flex space-x-2">
-                <input
+                <input aria-label="Количество получаемой криптовалюты"
                   type="text"
                   value={calculation ? calculation.to_amount : '0'}
                   disabled
                   className="flex-1 bg-gray-600 border border-gray-600 rounded-lg px-4 py-3 focus:outline-none"
                 />
-                <select
+                <select aria-label="Криптовалюта для получения"
                   value={toCryptoId || ''}
                   onChange={handleToCryptoChange}
                   className="bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -570,5 +570,14 @@ export default function ExchangePageClient() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Обёртка для requirements Suspense
+export default function ExchangePage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-white">Загрузка...</div>}>
+      <ExchangePageClientInner />
+    </Suspense>
   );
 }
