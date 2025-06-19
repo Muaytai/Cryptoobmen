@@ -5,7 +5,7 @@ from decimal import Decimal, getcontext
 import logging
 from .models import (
     Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, 
-    InvestmentPlan, UserInvestment, SystemWalletAddress, UserDepositMemo,
+    SystemWalletAddress, UserDepositMemo,
     BlockchainState
 )
 
@@ -52,20 +52,7 @@ class UserWalletAdmin(admin.ModelAdmin):
     user_display.short_description = 'Пользователь / Система'
 
 
-@admin.register(InvestmentPlan)
-class InvestmentPlanAdmin(admin.ModelAdmin):
-    list_display = ('name', 'crypto', 'interest_rate', 'duration_value', 'duration_unit', 'min_investment', 'max_investment', 'is_active')
-    list_filter = ('is_active', 'crypto__symbol', 'duration_unit')
-    search_fields = ('name', 'description', 'crypto__name', 'crypto__symbol')
-    readonly_fields = ('created_at', 'updated_at')
 
-
-@admin.register(UserInvestment)
-class UserInvestmentAdmin(admin.ModelAdmin):
-    list_display = ('user', 'plan', 'amount', 'status', 'start_date', 'end_date')
-    list_filter = ('status', 'plan__crypto__symbol', 'plan')
-    search_fields = ('user__email', 'user__username', 'plan__name')
-    readonly_fields = ('created_at', 'updated_at', 'start_date', 'end_date', 'expected_return', 'actual_return')
 
 
 @admin.register(SystemWalletAddress)

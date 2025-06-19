@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import axios from 'axios';
+import { http } from '@/lib/http';
 import { useAuthStore } from '@/store/useAuthStore';
 import ReCaptcha from './ReCaptcha';
 
@@ -38,12 +38,12 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
       
       // Используем axios для первоначального входа, чтобы получить токены
       console.log('Пытаемся авторизоваться по URL:', `${process.env.NEXT_PUBLIC_API_URL}/auth/login/`);
-      const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/auth/login/`, {
+      const response = await http.post(`${process.env.NEXT_PUBLIC_API_URL}/auth/login/`, {
         email,
         password,
         recaptcha_token: recaptchaToken
       }, {
-        withCredentials: true
+        credentials: 'include'
       });
       
       console.log('Ответ от сервера:', response.data);

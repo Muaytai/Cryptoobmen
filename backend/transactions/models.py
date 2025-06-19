@@ -134,6 +134,49 @@ class Withdrawal(models.Model):
         return f"Withdrawal {amount_display} {currency_symbol} to {self.destination_address}"
 
 
+class Transfer(models.Model):
+    """Модель перевода средств между кошельками / системными счетами.
+    Используется задачами `crypto.tasks` и тестами.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        SUCCESS = "success", _("Success")
+        FAILED = "failed", _("Failed")
+
+    TYPE_CHOICES = (
+        ("in", _("Inbound")),
+        ("out", _("Outbound")),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="transfers",
+        null=True,
+        blank=True,
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    type = models.CharField(max_length=3, choices=TYPE_CHOICES)
+    amount = models.DecimalField(max_digits=24, decimal_places=8, default=0)
+    fee = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    tx_hash = models.CharField(max_length=255, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Transfer {self.id} {self.get_type_display()} {self.amount} - {self.status}"
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = _("transfer")
+        verbose_name_plural = _("transfers")
+
+
 class Review(models.Model):
     """Модель для отзывов пользователей"""
     RATING_CHOICES = (

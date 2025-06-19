@@ -9,7 +9,6 @@ import { useRouter } from 'next/navigation';
 import { useIsomorphicLayoutEffect } from 'usehooks-ts'
 import { useSWRConfig } from 'swr'
 
-
 // ---- CONFIG ----
 const REFETCH_INTERVAL = 30000; // 30 секунд
 
@@ -21,6 +20,7 @@ interface Wallet {
     name: string;
     symbol: string;
     icon: string;
+    network?: string;
   };
   balance: string;
   available_balance: string;
@@ -43,6 +43,7 @@ export const WalletPage: React.FC = () => {
   const [totalUsdBalance, setTotalUsdBalance] = useState<number>(0);
   const [selectedAction, setSelectedAction] = useState<'deposit' | 'withdraw' | 'exchange' | 'invest' | null>(null);
   const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null);
+  const [showInfoTips, setShowInfoTips] = useState<boolean>(true);
   
   const router = useRouter();
   const { isAuthenticated, user, isLoading: authLoading } = useAuthStore();
@@ -129,12 +130,63 @@ export const WalletPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4 md:p-8 bg-gray-900 text-white min-h-screen">
-      <h1 className="text-3xl font-bold mb-6 text-center text-gray-100">Мои кошельки</h1>
+      {/* Заголовок и подсказки */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-gray-100">Мой криптокошелёк</h1>
+        <button 
+          onClick={() => setShowInfoTips(!showInfoTips)}
+          className="text-sm text-purple-400 hover:text-purple-300 flex items-center"
+        >
+          {showInfoTips ? 'Скрыть подсказки' : 'Показать подсказки'}
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Обучающая панель для новичков */}
+      {showInfoTips && (
+        <div className="bg-indigo-900 bg-opacity-50 rounded-xl p-6 mb-8 border border-indigo-700">
+          <h2 className="text-xl font-bold text-indigo-300 mb-3">👋 Добро пожаловать в ваш криптокошелёк!</h2>
+          <p className="mb-4 text-indigo-100">Здесь вы можете управлять своими криптовалютами и выполнять основные операции:</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="bg-indigo-800 bg-opacity-50 p-4 rounded-lg">
+              <h3 className="font-bold text-green-300 mb-2">💰 Пополнение</h3>
+              <p className="text-sm text-indigo-200">Добавляйте криптовалюту на свой счет с внешних кошельков или через покупку.</p>
+            </div>
+            <div className="bg-indigo-800 bg-opacity-50 p-4 rounded-lg">
+              <h3 className="font-bold text-blue-300 mb-2">🔄 Обмен</h3>
+              <p className="text-sm text-indigo-200">Меняйте одну криптовалюту на другую по выгодному курсу прямо на платформе.</p>
+            </div>
+            <div className="bg-indigo-800 bg-opacity-50 p-4 rounded-lg">
+              <h3 className="font-bold text-red-300 mb-2">📤 Вывод</h3>
+              <p className="text-sm text-indigo-200">Выводите криптовалюту на внешние кошельки, когда вам это необходимо.</p>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button 
+              onClick={() => setShowInfoTips(false)} 
+              className="text-sm text-indigo-300 hover:text-indigo-100"
+            >
+              Понятно, больше не показывать
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Общий баланс */}
       <div className="bg-gray-800 rounded-xl p-6 mb-8 shadow-lg">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Общий баланс</h2>
+          <button 
+            onClick={() => refetchData(false)}
+            className="text-purple-400 hover:text-purple-300 flex items-center text-sm"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Обновить
+          </button>
         </div>
         <div className="text-4xl font-bold text-green-500">
           {totalUsdBalance.toLocaleString('ru-RU', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -142,13 +194,38 @@ export const WalletPage: React.FC = () => {
         <p className="text-sm text-gray-400 mt-1">Примерный эквивалент в USD</p>
       </div>
 
+      {/* Быстрые действия */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        <Link href="/funds/deposit" className="bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl flex flex-col items-center justify-center transition-all transform hover:scale-105">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          <span className="font-medium">Пополнить</span>
+        </Link>
+        <Link href="/exchange" className="bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl flex flex-col items-center justify-center transition-all transform hover:scale-105">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+          <span className="font-medium">Обменять</span>
+        </Link>
+        <Link href="/funds/withdraw" className="bg-red-600 hover:bg-red-700 text-white py-4 rounded-xl flex flex-col items-center justify-center transition-all transform hover:scale-105">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20v-16m8 8H4" />
+          </svg>
+          <span className="font-medium">Вывести</span>
+        </Link>
+      </div>
+
+      {/* Заголовок списка кошельков */}
+      <h2 className="text-2xl font-semibold mb-4">Мои криптовалюты</h2>
+
       {/* Список кошельков */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {wallets.filter(wallet => wallet.currency.symbol !== 'USD' && wallet.currency.symbol !== 'RUB' && wallet.currency.symbol !== 'BYR').length > 0 ? wallets.filter(wallet => wallet.currency.symbol !== 'USD' && wallet.currency.symbol !== 'RUB' && wallet.currency.symbol !== 'BYR').map((wallet, index) => {
           const convertedValue = getConvertedValue(wallet.currency.id, wallet.balance);
           const itemClassName = index === 0 ? 'wallet-item-example' : '';
           return (
-            <div key={wallet.id} className={`bg-gray-800 rounded-xl p-6 shadow-lg flex flex-col justify-between ${itemClassName}`}>
+            <div key={wallet.id} className={`bg-gray-800 rounded-xl p-6 shadow-lg flex flex-col justify-between ${itemClassName} hover:bg-gray-750 transition-colors`}>
               <div>
                 <div className="flex items-center mb-4">
                   {wallet.currency.icon ? (
@@ -167,7 +244,7 @@ export const WalletPage: React.FC = () => {
                   )}
                   <div>
                     <h3 className="text-lg font-semibold">{wallet.currency.name}</h3>
-                    <p className="text-sm text-gray-400">{wallet.currency.symbol}</p>
+                    <p className="text-sm text-gray-400">{wallet.currency.symbol} {wallet.currency.network ? `(${wallet.currency.network})` : ''}</p>
                   </div>
                 </div>
 
@@ -178,6 +255,17 @@ export const WalletPage: React.FC = () => {
                     ≈ {convertedValue.toLocaleString('ru-RU', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
+
+                {parseFloat(wallet.locked_balance) > 0 && (
+                  <div className="mb-4 p-2 bg-yellow-900 bg-opacity-30 rounded-md">
+                    <p className="text-sm text-yellow-300">
+                      <span className="font-medium">Заблокировано:</span> {parseFloat(wallet.locked_balance).toFixed(8)} {wallet.currency.symbol}
+                    </p>
+                    <p className="text-xs text-yellow-400">
+                      Эти средства используются в активных операциях
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2 mt-auto">
@@ -189,10 +277,33 @@ export const WalletPage: React.FC = () => {
             </div>
           );
         }) : (
-          <div className="col-span-full bg-gray-800 rounded-xl p-6 text-center">
-            <p className="text-lg">У вас пока нет кошельков.</p>
+          <div className="col-span-full bg-gray-800 rounded-xl p-8 text-center">
+            <div className="flex flex-col items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-lg mb-4">У вас пока нет кошельков с криптовалютой</p>
+              <Link href="/funds/deposit" className="bg-green-600 hover:bg-green-700 text-white py-2 px-6 rounded-lg transition">
+                Пополнить кошелек
+              </Link>
+            </div>
           </div>
         )}
+      </div>
+
+      {/* Секция с обучающими материалами */}
+      <div className="mt-12 bg-gray-800 rounded-xl p-6">
+        <h2 className="text-xl font-semibold mb-4">Полезные материалы для новичков</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Link href="/faq" className="p-4 bg-gray-700 rounded-lg hover:bg-gray-650 transition">
+            <h3 className="font-medium text-blue-400 mb-2">FAQ по криптовалютам</h3>
+            <p className="text-sm text-gray-300">Ответы на часто задаваемые вопросы о криптовалютах и работе с ними.</p>
+          </Link>
+          <Link href="/security" className="p-4 bg-gray-700 rounded-lg hover:bg-gray-650 transition">
+            <h3 className="font-medium text-green-400 mb-2">Безопасность кошелька</h3>
+            <p className="text-sm text-gray-300">Рекомендации по безопасному хранению и использованию криптовалют.</p>
+          </Link>
+        </div>
       </div>
     </div>
   );

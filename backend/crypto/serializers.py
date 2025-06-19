@@ -1,6 +1,9 @@
 from rest_framework import serializers
-from .models import Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, InvestmentPlan, UserInvestment
-
+from decimal import Decimal
+from .models import (
+    Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, ExchangeOrder
+)
+from transactions.models import Transfer
 
 class CryptocurrencySerializer(serializers.ModelSerializer):
     """Сериализатор для криптовалют"""
@@ -105,38 +108,6 @@ class ExchangeCalculatorSerializer(serializers.Serializer):
             raise serializers.ValidationError("Одна из валют не найдена или неактивна")
 
 
-class InvestmentPlanSerializer(serializers.ModelSerializer):
-    """Сериализатор для инвестиционных планов"""
-    crypto_name = serializers.ReadOnlyField(source='crypto.name')
-    crypto_symbol = serializers.ReadOnlyField(source='crypto.symbol')
-    duration_unit_display = serializers.CharField(source='get_duration_unit_display', read_only=True)
-    duration_in_days = serializers.IntegerField(source='get_duration_in_days', read_only=True)
-    
-    class Meta:
-        model = InvestmentPlan
-        fields = ['id', 'name', 'description', 'crypto', 'crypto_name', 'crypto_symbol',
-                 'interest_rate', 'duration_value', 'duration_unit', 'duration_unit_display',
-                 'duration_in_days', 'min_investment', 'max_investment', 'is_active',
-                 'early_withdrawal_allowed', 'early_withdrawal_fee', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
-
-
-class UserInvestmentSerializer(serializers.ModelSerializer):
-    """Сериализатор для инвестиций пользователей"""
-    plan_name = serializers.ReadOnlyField(source='plan.name')
-    crypto_symbol = serializers.ReadOnlyField(source='wallet.crypto.symbol')
-    crypto_name = serializers.ReadOnlyField(source='wallet.crypto.name')
-    interest_rate = serializers.ReadOnlyField(source='plan.interest_rate')
-    progress = serializers.FloatField(source='get_progress_percentage', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
-    class Meta:
-        model = UserInvestment
-        fields = ['id', 'investment_id', 'user', 'user_email', 'wallet', 'plan',
-                  'amount', 'expected_return', 'start_date', 'end_date', 'status',
-                  'status_display', 'actual_return', 'completed_date', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'investment_id', 'expected_return', 'end_date',
-                           'actual_return', 'completed_date', 'created_at', 'updated_at']
 
 
 class DepositInfoRequestSerializer(serializers.Serializer):
@@ -156,6 +127,65 @@ class DepositInfoRequestSerializer(serializers.Serializer):
         """Проверяет, что такая сеть поддерживается (опционально, можно расширить)."""
         # Здесь можно добавить более сложную логику, например, сверку с доступными сетями для валюты
         return value
+
+
+class TransferSerializer(serializers.ModelSerializer):
+    """Сериализатор переводов (депозиты/выводы)."""
+
+    currency = CryptocurrencySimpleSerializer(read_only=True)
+    currency_id = serializers.PrimaryKeyRelatedField(
+        queryset=Cryptocurrency.objects.all(), source='currency', write_only=True
+    )
+
+    class Meta:
+        model = Transfer
+        fields = [
+            'id', 'type', 'status',
+            'currency', 'currency_id', 'amount', 'tx_hash',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'status', 'tx_hash', 'created_at', 'updated_at']
+
+
+class ExchangeOrderSerializer(serializers.ModelSerializer):
+    """Сериализатор ордеров обмена."""
+
+    from_currency = CryptocurrencySimpleSerializer(read_only=True)
+    to_currency = CryptocurrencySimpleSerializer(read_only=True)
+
+    from_currency_id = serializers.PrimaryKeyRelatedField(
+        queryset=Cryptocurrency.objects.all(), source='from_currency', write_only=True
+    )
+    to_currency_id = serializers.PrimaryKeyRelatedField(
+        queryset=Cryptocurrency.objects.all(), source='to_currency', write_only=True
+    )
+
+    class Meta:
+        model = ExchangeOrder
+        fields = [
+            'id', 'status', 'user',
+            'from_currency', 'from_currency_id', 'from_amount',
+            'to_currency', 'to_currency_id', 'to_amount',
+            'rate', 'fee_percent', 'fee_amount',
+            'created_at', 'executed_at'
+        ]
+        read_only_fields = ['id', 'status', 'user', 'to_amount', 'rate', 'fee_amount', 'created_at', 'executed_at']
+
+    def create(self, validated_data):
+        """Простая реализация расчёта курса для тестирования.
+        В боевом коде должен использоваться сервис обмена, здесь достаточно фиксированного курса 1:1."""
+        from_amount = validated_data.get('from_amount')
+        from_currency = validated_data.get('from_currency')
+        to_currency = validated_data.get('to_currency')
+
+        # Заглушка: курс 1:1
+        rate = Decimal('1')
+        to_amount = from_amount * rate
+
+        validated_data['rate'] = rate
+        validated_data['to_amount'] = to_amount
+
+        return super().create(validated_data)
 
 
 class PerformExchangeSerializer(serializers.Serializer):

@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -29,6 +29,10 @@ RUN pip install --upgrade pip && \
 # Копирование .env файла для продакшена
 COPY docker/backend/.env.prod /app/.env.prod
 
+# Копирование entrypoint
+COPY docker/backend/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Копирование исходного кода
 COPY backend/ .
 
@@ -41,6 +45,10 @@ RUN mkdir -p /app/static /app/media && \
 # Выполнение сбора статических файлов для продакшена
 ENV DEBUG=False
 RUN python manage.py collectstatic --noinput
+
+# Переключение на непривилегированного пользователя
+
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Переключение на непривилегированного пользователя
 USER app

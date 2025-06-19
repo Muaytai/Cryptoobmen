@@ -11,8 +11,11 @@ class DepositService:
         Возвращает адрес системного кошелька и уникальный Memo для пополнения.
         """
         try:
-            # 1. Найти криптовалюту по символу
-            currency = Cryptocurrency.objects.get(symbol__iexact=currency_symbol, is_active=True)
+            # 1. Найти криптовалюту по символу (берём первую активную запись, если их несколько)
+            currencies_qs = Cryptocurrency.objects.filter(symbol__iexact=currency_symbol, is_active=True)
+            if not currencies_qs.exists():
+                raise ValueError(f"Криптовалюта {currency_symbol} не найдена или неактивна.")
+            currency = currencies_qs.first()
 
             # 2. Найти системный адрес для этой валюты и сети
             system_wallet = SystemWalletAddress.objects.get(currency=currency, network__iexact=network)

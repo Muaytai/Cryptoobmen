@@ -11,13 +11,15 @@ from django.conf import settings
 from django.utils import timezone
 from rest_framework.views import APIView
 from django.db import transaction
-from .models import (Cryptocurrency, CryptoPrice, ExchangePair, UserWallet,
-                    InvestmentPlan, UserInvestment)
+from .models import (
+    Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, ExchangeOrder
+)
+from transactions.models import Transfer
 from transactions.models import Transaction as TX, Exchange as TransactionExchange, Deposit, Withdrawal, Review
 from .serializers import (
     CryptocurrencySerializer, CryptoPriceSerializer, ExchangePairSerializer,
-    UserWalletSerializer, ExchangeCalculatorSerializer, InvestmentPlanSerializer,
-    UserInvestmentSerializer, PerformExchangeSerializer
+    UserWalletSerializer, ExchangeCalculatorSerializer, PerformExchangeSerializer,
+    TransferSerializer, ExchangeOrderSerializer
 )
 from .services import get_exchange_rates
 
@@ -252,186 +254,27 @@ class ExchangeCalculatorAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class InvestmentPlanViewSet(viewsets.ReadOnlyModelViewSet):
-    """API для работы с инвестиционными планами"""
-    queryset = InvestmentPlan.objects.filter(is_active=True)
-    serializer_class = InvestmentPlanSerializer
+class TransferViewSet(viewsets.ReadOnlyModelViewSet):
+    """Просмотр переводов пользователя (депозиты/выводы)."""
+    serializer_class = TransferSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['name', 'description', 'crypto__name', 'crypto__symbol']
-    
-    def get_permissions(self):
-        """Определяем права доступа в зависимости от действия"""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminUser()]
-        return [AllowAny()]
-    
-    @action(detail=False, methods=['get'])
-    def by_crypto(self, request):
-        """Возвращает инвестиционные планы для конкретной криптовалюты"""
-        crypto_id = request.query_params.get('crypto_id')
-        if not crypto_id:
-            return Response({"error": "Необходимо указать crypto_id"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        plans = InvestmentPlan.objects.filter(crypto_id=crypto_id, is_active=True)
-        serializer = self.get_serializer(plans, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['get'])
-    def calculate_return(self, request, pk=None):
-        """Рассчитывает ожидаемый доход для заданной суммы инвестиции"""
-        plan = self.get_object()
-        amount = request.query_params.get('amount')
-        
-        if not amount:
-            return Response({"error": "Необходимо указать сумму инвестиции"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            amount = Decimal(amount)
-        except:
-            return Response({"error": "Некорректная сумма инвестиции"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Проверяем минимальную и максимальную сумму
-        if amount < plan.min_investment:
-            return Response({"error": f"Минимальная сумма инвестиции: {plan.min_investment} {plan.crypto.symbol}"}, 
-                           status=status.HTTP_400_BAD_REQUEST)
-        
-        if amount > plan.max_investment:
-            return Response({"error": f"Максимальная сумма инвестиции: {plan.max_investment} {plan.crypto.symbol}"},
-                           status=status.HTTP_400_BAD_REQUEST)
-        
-        # Рассчитываем ожидаемый доход
-        interest_decimal = plan.interest_rate / Decimal('100.0')
-        expected_return = amount * interest_decimal
-        total_return = amount + expected_return
-        
-        # Получаем текущий курс к USD
-        latest_price = CryptoPrice.objects.filter(crypto=plan.crypto).order_by('-timestamp').first()
-        usd_value = 0
-        if latest_price:
-            usd_value = amount * latest_price.price_usd
-        
-        return Response({
-            "plan": InvestmentPlanSerializer(plan).data,
-            "investment_amount": amount,
-            "interest_rate": plan.interest_rate,
-            "expected_return": expected_return,
-            "total_return": total_return,
-            "duration_days": plan.get_duration_in_days(),
-            "usd_value": round(usd_value, 2)
-        })
 
-
-class UserInvestmentViewSet(viewsets.ModelViewSet):
-    """АРI для работы с инвестициями пользователей"""
-    serializer_class = UserInvestmentSerializer
-    permission_classes = [IsAuthenticated]
-    
     def get_queryset(self):
-        """Пользователь может видеть только свои инвестиции"""
-        return UserInvestment.objects.filter(user=self.request.user)
-    
+        return Transfer.objects.filter(user=self.request.user).order_by('-created_at')
+
+
+class ExchangeOrderViewSet(viewsets.ModelViewSet):
+    """Создание и просмотр ордеров обмена пользователя."""
+    serializer_class = ExchangeOrderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return ExchangeOrder.objects.filter(user=self.request.user).order_by('-created_at')
+
     def perform_create(self, serializer):
-        """Здесь должна быть логика создания инвестиции:
-        - Проверка баланса пользователя
-        - Списание средств с кошелька UserWallet и блокировка (или создание locked_balance)
-        - Расчет expected_return, end_date
-        - Создание транзакции типа "investment_start"
-        Этот ViewSet требует доработки для реальной работы"""
-        plan = serializer.validated_data.get('plan')
-        amount = serializer.validated_data.get('amount')
-        # ... (пропущена сложная логика)
-        serializer.save(user=self.request.user)
-    
-    @action(detail=True, methods=['post'])
-    def withdraw_early(self, request, pk=None):
-        """Досрочное закрытие инвестиции"""
-        investment = self.get_object()
-        
-        # Проверяем, что инвестиция активна
-        if investment.status != 'active':
-            return Response(
-                {"error": "Эта инвестиция уже закрыта или отменена"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Проверяем, разрешен ли досрочный вывод
-        if not investment.plan.early_withdrawal_allowed:
-            return Response(
-                {"error": "Досрочный вывод не разрешен для этого плана"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Рассчитываем прогресс и фактический доход
-        progress = investment.get_progress_percentage() / 100.0
-        expected_return = investment.expected_return
-        
-        # Рассчитываем доход с учетом прогресса и комиссии за досрочный вывод
-        actual_return = expected_return * progress
-        
-        # Применяем комиссию за досрочный вывод
-        fee_percentage = investment.plan.early_withdrawal_fee
-        fee_amount = (actual_return * fee_percentage) / 100
-        actual_return -= fee_amount
-        
-        # Обновляем инвестицию
-        investment.status = 'withdrawn'
-        investment.actual_return = actual_return
-        investment.completed_date = timezone.now()
-        investment.save()
-        
-        # Возвращаем средства на баланс кошелька
-        wallet = investment.wallet
-        return_amount = investment.amount + actual_return
-        
-        wallet.locked_balance -= investment.amount
-        wallet.available_balance += return_amount
-        wallet.save()
-        
-        return Response({
-            "message": "Инвестиция успешно закрыта",
-            "investment": UserInvestmentSerializer(investment).data,
-            "withdrawn_amount": return_amount,
-            "fee_amount": fee_amount
-        })
-    
-    @action(detail=False, methods=['get'])
-    def stats(self, request):
-        """Статистика по инвестициям пользователя"""
-        # Получаем все инвестиции пользователя
-        investments = UserInvestment.objects.filter(user=request.user)
-        
-        # Статистика по активным инвестициям
-        active_investments = investments.filter(status='active')
-        active_count = active_investments.count()
-        active_amount = active_investments.aggregate(total=Sum('amount'))['total'] or 0
-        
-        # Статистика по завершенным инвестициям
-        completed_investments = investments.filter(status__in=['completed', 'withdrawn'])
-        completed_count = completed_investments.count()
-        completed_amount = completed_investments.aggregate(total=Sum('amount'))['total'] or 0
-        total_return = completed_investments.aggregate(total=Sum('actual_return'))['total'] or 0
-        
-        # Общая статистика
-        total_count = investments.count()
-        total_amount = investments.aggregate(total=Sum('amount'))['total'] or 0
-        
-        return Response({
-            "active_investments": {
-                "count": active_count,
-                "total_amount": active_amount,
-                "expected_return": active_investments.aggregate(total=Sum('expected_return'))['total'] or 0
-            },
-            "completed_investments": {
-                "count": completed_count,
-                "total_amount": completed_amount,
-                "total_return": total_return
-            },
-            "total_investments": {
-                "count": total_count,
-                "total_amount": total_amount
-            }
-        })
+        serializer.save(user=self.request.user, status='pending')
+
+
 
 
 class UserBalancesView(generics.ListAPIView):
