@@ -1,8 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    CryptocurrencyViewSet, UserWalletViewSet, ExchangeCalculatorAPIView, 
-    ExchangeRatesView, ExchangeRateView, LatestCryptoPricesView, ExchangePairViewSet,
+     CryptocurrencyViewSet, UserWalletViewSet, SystemWalletViewSet, CommissionWalletViewSet,
+    ExchangeCalculatorAPIView, ExchangeRatesView, ExchangeRateView, LatestCryptoPricesView, ExchangePairViewSet,
     perform_exchange_view, ExchangeOrderViewSet
 )
 from .views_deposit import DepositInfoView, DepositStatusView
@@ -10,6 +10,8 @@ from .views_deposit import DepositInfoView, DepositStatusView
 router = DefaultRouter()
 router.register(r'cryptocurrencies', CryptocurrencyViewSet, basename='cryptocurrency')
 router.register(r'wallets', UserWalletViewSet, basename='user-wallet')
+router.register(r'system-wallets', SystemWalletViewSet, basename='system-wallet')
+router.register(r'commission-wallets', CommissionWalletViewSet, basename='commission-wallet')
 router.register(r'exchange-pairs', ExchangePairViewSet, basename='exchange-pair')
 router.register(r'exchange-orders', ExchangeOrderViewSet, basename='exchange-order')
 

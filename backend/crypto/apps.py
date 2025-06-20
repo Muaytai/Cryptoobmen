@@ -9,6 +9,12 @@ class CryptoConfig(AppConfig):
     
     def ready(self):
         import crypto.signals  # noqa
+        from .models import create_default_cryptocurrencies
+        try:
+            create_default_cryptocurrencies()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f'Не удалось автосоздать валюты: {e}')
 
         # --- Автоматическая регистрация задачи Celery Beat при первом запуске ---
         # Это необходимо, когда используется DatabaseScheduler из django_celery_beat,

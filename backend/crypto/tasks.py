@@ -22,7 +22,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
 from transactions.models import Transaction, Transfer  # noqa: E402  pylint: disable=wrong-import-position
-from .models import SystemWalletAddress, UserDepositMemo, UserWallet
+from .models import SystemWalletAddress, UserDepositMemo, UserWallet, CommissionTransaction
 from .blockchain.tron import get_trc20_transfers, extract_deposit_events
 from tronpy import Tron
 
@@ -93,6 +93,19 @@ def check_blockchain_deposits():
                         user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
                         user_wallet.balance += amount
                         user_wallet.save()
+
+                        # Обновляем системный (on-chain) кошелёк, чтобы админ видел общий баланс
+                        system_wallet, _ = UserWallet.objects.get_or_create(
+                            user=None,
+                            currency=wallet.currency,
+                            defaults={
+                                'balance': Decimal('0'),
+                                'is_system_wallet': True,
+                                'is_active': True,
+                            }
+                        )
+                        system_wallet.balance += amount
+                        system_wallet.save()
 
                         Transaction.objects.create(
                             user=deposit_memo.user,

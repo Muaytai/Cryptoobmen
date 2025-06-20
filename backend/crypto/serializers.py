@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from decimal import Decimal
 from .models import (
-    Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, ExchangeOrder
+    Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, ExchangeOrder, CommissionWallet
 )
 from transactions.models import Transfer
 
@@ -198,3 +198,16 @@ class PerformExchangeSerializer(serializers.Serializer):
         if value <= 0:
             raise serializers.ValidationError("Сумма должна быть положительной.")
         return value
+
+
+# --- CommissionWalletSerializer
+
+
+class CommissionWalletSerializer(serializers.ModelSerializer):
+    """Сериализатор для внутренних комиссионных кошельков (виден только админам)."""
+
+    currency = CryptocurrencySimpleSerializer(read_only=True)
+
+    class Meta:
+        model = CommissionWallet
+        fields = ['id', 'currency', 'balance', 'is_active']
