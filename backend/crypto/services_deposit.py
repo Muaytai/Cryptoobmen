@@ -11,20 +11,19 @@ class DepositService:
         Возвращает адрес системного кошелька и уникальный Memo для пополнения.
         """
         try:
-            # 1. Найти криптовалюту по символу (берём первую активную запись, если их несколько)
-            currencies_qs = Cryptocurrency.objects.filter(symbol__iexact=currency_symbol, is_active=True)
-            if not currencies_qs.exists():
-                raise ValueError(f"Криптовалюта {currency_symbol} не найдена или неактивна.")
-            currency = currencies_qs.first()
-
-            # 2. Найти системный адрес для этой валюты и сети
-            system_wallet = SystemWalletAddress.objects.get(currency=currency, network__iexact=network)
+            # 1. Найти системный адрес для валюты и сети
+            system_wallet = SystemWalletAddress.objects.select_related('currency').get(
+                currency__symbol__iexact=currency_symbol,
+                currency__is_active=True,
+                network__iexact=network
+            )
+            currency = system_wallet.currency
             address = system_wallet.address
 
-            # 3. Сгенерировать уникальный Memo
+            # 2. Сгенерировать уникальный Memo
             memo = DepositService._generate_unique_memo()
 
-            # 4. Сохранить Memo в базу
+            # 3. Сохранить Memo в базу
             expires_at = timezone.now() + timedelta(hours=24)  # Memo действителен 24 часа
             UserDepositMemo.objects.create(
                 user=user,
@@ -36,11 +35,8 @@ class DepositService:
 
             return address, memo
 
-        except Cryptocurrency.DoesNotExist:
-            raise ValueError(f"Криптовалюта {currency_symbol} не найдена или неактивна.")
         except SystemWalletAddress.DoesNotExist:
-            # Возвращаем None, если системный кошелек еще не настроен
-            return None, None
+            raise ValueError(f"Системный кошелек для {currency_symbol} в сети {network} не найден или неактивен.")
         except Exception as e:
             # В реальном проекте здесь будет логирование
             raise e

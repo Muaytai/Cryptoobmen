@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api/fetch';
+import api from '@/lib/api/fetch';
 
 export interface CardDeposit {
   id: number;
@@ -64,8 +64,9 @@ export const useCardDepositStore = create<CardDepositState>((set, get) => ({
   fetchDeposits: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/crypto/card-deposits/');
-      set({ deposits: response.data, isLoading: false });
+      const resp = await api.get('/crypto/card-deposits/');
+      const data = Array.isArray(resp) ? resp : (resp as any).data;
+      set({ deposits: data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке пополнений:', error);
       set({ 
@@ -78,8 +79,9 @@ export const useCardDepositStore = create<CardDepositState>((set, get) => ({
   fetchDepositStats: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/crypto/card-deposits/stats/');
-      set({ stats: response.data, isLoading: false });
+      const respS = await api.get('/crypto/card-deposits/stats/');
+      const dataS = (respS as any).data ?? respS;
+      set({ stats: dataS, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке статистики пополнений:', error);
       set({ 
@@ -103,7 +105,8 @@ export const useCardDepositStore = create<CardDepositState>((set, get) => ({
       await get().fetchDepositStats();
       
       set({ isLoading: false });
-      return response.data;
+      const newDep = (response as any).data ?? response;
+      return newDep;
     } catch (error: any) {
       console.error('Ошибка при создании пополнения:', error);
       const errorMessage = error.response?.data?.error || 'Не удалось создать пополнение';

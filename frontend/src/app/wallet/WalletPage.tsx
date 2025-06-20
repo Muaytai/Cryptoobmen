@@ -54,17 +54,21 @@ export const WalletPage: React.FC = () => {
     if (!isBackground) setComponentLoading(true);
 
     try {
-      const [walletsResponse, pricesResponse, balanceResponse] = await Promise.all([
+      const [walletsResp, pricesResp, balanceResp] = await Promise.all([
         api.get('/crypto/wallets/'),
         api.get(`/crypto/prices/latest/?vs_currencies=usd`),
         api.get('/crypto/wallets/balance/')
       ]);
 
-      setWallets(walletsResponse.data);
-      console.log('[WalletPage Debug] walletsResponse.data:', walletsResponse.data);
-      setPrices(pricesResponse.data);
-      console.log('[WalletPage Debug] balanceResponse.data:', balanceResponse.data);
-      setTotalUsdBalance(balanceResponse.data.total_usd_balance);
+      const walletsData = Array.isArray(walletsResp) ? walletsResp : (walletsResp as any).data;
+      const pricesData = Array.isArray(pricesResp) ? pricesResp : (pricesResp as any).data;
+      const balanceData = (balanceResp as any).data ?? balanceResp;
+
+      setWallets(walletsData);
+      console.log('[WalletPage Debug] wallets:', walletsData);
+      setPrices(pricesData);
+      console.log('[WalletPage Debug] balanceData:', balanceData);
+      setTotalUsdBalance(parseFloat(balanceData.total_usd_balance || balanceData.total_balance || 0));
       setError(null);
     } catch (err) {
       console.error('Ошибка при получении данных кошелька:', err);

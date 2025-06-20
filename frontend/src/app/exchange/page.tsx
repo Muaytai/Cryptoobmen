@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import { api } from '@/lib/api/fetch';
+import api from '@/lib/api/fetch';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -105,23 +105,27 @@ function ExchangePageClientInner() {
       console.log('ExchangePage: Пользователь аутентифицирован. Загрузка данных страницы...');
       setLoading(true);
       try {
-        const [cryptoResponse, pairsResponse, walletsResponse] = await Promise.all([
+        const [cryptoResp, pairsResp, walletsResp] = await Promise.all([
             api.get('/crypto/cryptocurrencies/'),
             api.get('/crypto/exchange-pairs/'),
             api.get('/crypto/wallets/')
         ]);
         
-        setCryptocurrencies(cryptoResponse.data);
-        setExchangePairs(pairsResponse.data);
-        setWallets(walletsResponse.data);
+        const cryptoData = Array.isArray(cryptoResp) ? cryptoResp : (cryptoResp as any).data;
+        const pairsData = Array.isArray(pairsResp) ? pairsResp : (pairsResp as any).data;
+        const walletsData = Array.isArray(walletsResp) ? walletsResp : (walletsResp as any).data;
+        
+        setCryptocurrencies(cryptoData);
+        setExchangePairs(pairsData);
+        setWallets(walletsData);
         
         // Если в URL есть параметр from_crypto, выбираем эту криптовалюту
         const fromCryptoParam = searchParams.get('from_crypto');
-        if (fromCryptoParam && cryptoResponse.data.some((c: Cryptocurrency) => c.id === parseInt(fromCryptoParam))) {
+        if (fromCryptoParam && cryptoData.some((c: Cryptocurrency) => c.id === parseInt(fromCryptoParam))) {
           setFromCryptoId(parseInt(fromCryptoParam));
           
           // Находим подходящую пару для обмена
-          const suitablePairs = pairsResponse.data.filter(
+          const suitablePairs = pairsData.filter(
             (p: ExchangePair) => p.from_crypto.id === parseInt(fromCryptoParam)
           );
           
@@ -141,9 +145,9 @@ function ExchangePageClientInner() {
               setSelectedPair(suitablePairs[0]);
             }
           }
-        } else if (cryptoResponse.data.length > 0) {
+        } else if (cryptoData.length > 0) {
           // По умолчанию выбираем первую криптовалюту с наибольшим балансом
-          const userWallets = walletsResponse.data;
+          const userWallets = walletsData;
           if (userWallets.length > 0) {
             // Сортируем кошельки по балансу (от большего к меньшему)
             const sortedWallets = [...userWallets].sort(
@@ -156,7 +160,7 @@ function ExchangePageClientInner() {
               setFromCryptoId(walletWithBalance.currency.id);
               
               // Находим подходящую пару для обмена
-              const suitablePairs = pairsResponse.data.filter(
+              const suitablePairs = pairsData.filter(
                 (p: ExchangePair) => p.from_crypto.id === walletWithBalance.currency.id
               );
               
@@ -166,11 +170,11 @@ function ExchangePageClientInner() {
               }
             } else {
               // Если нет кошельков с балансом, выбираем первую криптовалюту
-              setFromCryptoId(cryptoResponse.data[0].id);
+              setFromCryptoId(cryptoData[0].id);
               
               // И первую доступную пару обмена
-              const firstPair = pairsResponse.data.find(
-                (p: ExchangePair) => p.from_crypto.id === cryptoResponse.data[0].id
+              const firstPair = pairsData.find(
+                (p: ExchangePair) => p.from_crypto.id === cryptoData[0].id
               );
               
               if (firstPair) {

@@ -6,6 +6,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError, AuthenticationFailed
 from django.contrib.auth import logout as django_logout
+from django.contrib.auth.models import AnonymousUser
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ class JWTCookieMiddleware:
             '/api/accounts/social/',
             '/admin/',
             '/api/auth/login/',
-            '/api/auth/register/',
+            '/api/auth/registration/',
             '/api/auth/verify-email/',
             '/api/auth/resend-email/',
             '/api/auth/password/reset/',
@@ -39,8 +40,10 @@ class JWTCookieMiddleware:
         ]
         
         is_exempt_for_set_auth_header = False
+        normalized_path = request.path.rstrip('/')
+
         for path_prefix in exempt_paths:
-            if request.path.startswith(path_prefix):
+            if request.path.startswith(path_prefix) or normalized_path.startswith(path_prefix.rstrip('/')):
                 is_exempt_for_set_auth_header = True
                 logger.info(f"JWTCookieMiddleware: Path {request.path} is exempt from _set_jwt_auth_header by prefix {path_prefix}.")
                 break
@@ -87,12 +90,12 @@ class JWTCookieMiddleware:
                     request.META['HTTP_AUTHORIZATION'] = f"{settings.SIMPLE_JWT['AUTH_HEADER_TYPES'][0]} {access_token}"
             except (InvalidToken, TokenError, AuthenticationFailed) as e:
                 logger.warning(f"JWTCookieMiddleware: Invalid JWT cookie '{access_token_cookie_name}': {e}")
-                request.user = None
+                request.user = AnonymousUser()
                 if 'HTTP_AUTHORIZATION' in request.META:
                     del request.META['HTTP_AUTHORIZATION']
             except Exception as e:
                 logger.error(f"JWTCookieMiddleware: Unexpected error during JWT authentication: {e}")
-                request.user = None
+                request.user = AnonymousUser()
                 if 'HTTP_AUTHORIZATION' in request.META:
                     del request.META['HTTP_AUTHORIZATION']
 

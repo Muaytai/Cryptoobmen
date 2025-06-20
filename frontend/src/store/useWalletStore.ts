@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api/fetch';
+import api from '@/lib/api/fetch';
 
 export interface Wallet {
   id: number;
@@ -51,8 +51,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   fetchWallets: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/crypto/wallets/');
-      set({ wallets: response.data, isLoading: false });
+      const resp = await api.get('/crypto/wallets/');
+      const data = Array.isArray(resp) ? resp : (resp as any).data;
+      set({ wallets: data, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке кошельков:', error);
       set({ 
@@ -65,8 +66,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   fetchPrices: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/crypto/prices/latest/');
-      set({ prices: response.data, isLoading: false });
+      const respP = await api.get('/crypto/prices/latest/');
+      const dataP = Array.isArray(respP) ? respP : (respP as any).data;
+      set({ prices: dataP, isLoading: false });
     } catch (error) {
       console.error('Ошибка при загрузке цен:', error);
       set({ 
@@ -79,9 +81,10 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   fetchTotalBalance: async () => {
     try {
       set({ isLoading: true, error: null });
-      const response = await api.get('/crypto/wallets/balance/');
+      const respB = await api.get('/crypto/wallets/balance/');
+      const balData = (respB as any).data ?? respB;
       set({ 
-        totalUsdBalance: response.data.total_usd_balance, 
+        totalUsdBalance: balData.total_usd_balance, 
         isLoading: false 
       });
     } catch (error) {
