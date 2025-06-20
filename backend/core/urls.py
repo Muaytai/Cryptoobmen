@@ -23,21 +23,12 @@ def auth_callback(request):
     """Перенаправляет на эндпоинт обработки социальной авторизации"""
     return HttpResponseRedirect(f"/api/accounts/social/callback/?next={settings.FRONTEND_URL}/profile")
 
-# Функция для верификации email и перенаправления на фронтенд
-from allauth.account.models import EmailConfirmation, EmailAddress, EmailConfirmationHMAC
-from allauth.account.adapter import get_adapter
-
-def simple_email_redirect(request, key=None, *args, **kwargs):
-    """Мгновенно перенаправляет на фронтенд с параметром verified=true"""
-    # Мгновенно перенаправляем на фронтенд без какой-либо обработки
-    return HttpResponseRedirect(f"{settings.FRONTEND_URL}/verify-email?verified=true")
-
-# Кастомные URL-адреса для регистрации dj_rest_auth, чтобы исправить обработку account-confirm-email
+# Кастомные URL-адреса для регистрации dj_rest_auth
 dj_rest_auth_custom_registration_urls = [
     path('', RegisterView.as_view(permission_classes=(permissions.AllowAny,)), name='rest_register'),
     path('verify-email/', VerifyEmailView.as_view(), name='rest_verify_email'),
     path('resend-email/', ResendEmailVerificationView.as_view(), name="rest_resend_email"),
-    # Не используем здесь ConfirmEmailView, так как мы хотим перенаправить на фронтенд
+    # Путь для страницы "письмо отправлено"
     path('account-email-verification-sent/', 
          TemplateView.as_view(template_name="account/email_verification_sent.html"),
          name='account_email_verification_sent'),
@@ -59,14 +50,9 @@ schema_view = get_schema_view(
 urlpatterns = [
     path('admin/', admin.site.urls),
     
-    # Добавляем URL-адреса allauth. Это должно решить проблему NoReverseMatch для 'account_email'
+    # URL-адреса allauth, включая /accounts/confirm-email/<key>/
     path('accounts/', include('allauth.urls')),
     
-    # Перенаправление после подтверждения email
-    re_path(r'^accounts/confirm-email/(?P<key>[-:\w]+)/$', simple_email_redirect, name='account_confirm_email'),
-    # Добавляем также перенаправление для account-confirm-email (используется в dj_rest_auth)
-    re_path(r'^api/auth/registration/account-confirm-email/(?P<key>[-:\w]+)/$', simple_email_redirect, name='account_confirm_email_dj_rest_auth'),
-
     # Путь для перенаправления после авторизации через соцсеть
     path('auth/callback/', auth_callback, name='auth_callback'),
 

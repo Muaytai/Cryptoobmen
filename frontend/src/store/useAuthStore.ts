@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { api } from '@/lib/api/fetch';
+import api from '@/lib/api/fetch';
 
 interface User {
   id: string | number;
@@ -126,7 +126,7 @@ export const useAuthStore = create<AuthState>()(
         console.log('[AuthStore] login: Начало входа');
         set({ isLoading: true, error: null });
         try {
-          await api.auth.login(credentials.email, credentials.password); 
+          await api.post('/auth/login/', credentials); 
           console.log('[AuthStore] login: api.auth.login успешно выполнен. Вызов checkAuthStatus(true)...');
           await get().checkAuthStatus(true);
           console.log(
@@ -156,7 +156,7 @@ export const useAuthStore = create<AuthState>()(
       register: async (data: RegistrationData) => {
         set({ isLoading: true, error: null });
         try {
-          await api.post('/auth/registration/', data);
+          await api.post('/auth/login/', { email: data.email, password: data.password1 });
           set({ isLoading: false });
         } catch (error) {
           console.error('Ошибка регистрации:', error);
@@ -172,7 +172,7 @@ export const useAuthStore = create<AuthState>()(
         console.log('[AuthStore] logout: Начало выхода.');
         set({ isLoading: true, error: null });
         try {
-          await api.auth.logout();
+          await api.post('/auth/logout/', {});
           console.log('[AuthStore] logout: api.auth.logout успешно выполнен.');
         } catch (error: any) {
           console.error("[AuthStore] logout: Ошибка при выходе на бэкенде:", error.message);
@@ -200,24 +200,37 @@ export const useAuthStore = create<AuthState>()(
 
         try {
           console.log('[AuthStore] checkAuthStatus: Попытка загрузить профиль пользователя (api.auth.getUser).');
-          const response = await api.auth.getUser(); 
-          const userData = response?.data;
+          const response = await api.get('/auth/user/'); 
+          const userData = (response as any)?.data ?? response;
 
           if (userData) {
             console.log('[AuthStore] checkAuthStatus: Профиль пользователя успешно загружен:', userData);
-            set({
-              user: userData,
-              isAuthenticated: true,
-              isLoading: false,
-              error: null,
-              disableAutoLogin: false, 
-              tokens: store.tokens, 
-            });
-            if (localStorage.getItem('disableAutoLogin') === 'true') {
-              localStorage.removeItem('disableAutoLogin');
-              console.log('[AuthStore] checkAuthStatus: Флаг disableAutoLogin удален из localStorage.');
+            const normalizedUser = {
+              ...userData,
+              id: userData.id || userData.pk || null,
+              username: userData.username || userData.email || `user_${userData.pk || userData.id}`,
+            };
+            
+            // Проверяем, что все обязательные поля присутствуют
+            if (normalizedUser.id !== null && normalizedUser.email && normalizedUser.username) {
+              console.log('[AuthStore] checkAuthStatus: Нормализованный пользователь:', normalizedUser);
+              set({
+                user: normalizedUser,
+                isAuthenticated: true,
+                isLoading: false,
+                error: null,
+                disableAutoLogin: false,
+                tokens: store.tokens,
+              });
+              if (localStorage.getItem('disableAutoLogin') === 'true') {
+                localStorage.removeItem('disableAutoLogin');
+                console.log('[AuthStore] checkAuthStatus: Флаг disableAutoLogin удален из localStorage.');
+              }
+              return;
+            } else {
+              console.error('[AuthStore] checkAuthStatus: Отсутствуют обязательные поля в данных пользователя:', 
+                { id: normalizedUser.id, email: normalizedUser.email, username: normalizedUser.username });
             }
-            return; 
           } else {
             console.warn('[AuthStore] checkAuthStatus: Профиль пользователя загружен, но данные отсутствуют (userData is null/undefined). Это неожиданно.');
             // Если userData пустой, но запрос прошел успешно (что странно), считаем не аутентифицированным

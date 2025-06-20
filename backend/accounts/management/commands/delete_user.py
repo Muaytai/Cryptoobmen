@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import transaction, connections, ProgrammingError
 from django.contrib.auth import get_user_model
 from django.db.models import Count
 from accounts.models import UserProfile, UserDocument
@@ -72,15 +72,13 @@ class Command(BaseCommand):
         # Если это не тестовый запуск, удаляем пользователя и все связанные данные
         try:
             with transaction.atomic():
+                user_email = user.email
+                user_id_val = user.id
+                
                 deleted_data = self._delete_user_data(user)
                 
-                # Удаляем самого пользователя
-                user_email = user.email
-                user_id = user.id
-                user.delete()
-                
                 self.stdout.write(self.style.SUCCESS(
-                    f"Пользователь {user_email} (ID: {user_id}) и все связанные данные успешно удалены."
+                    f"Пользователь {user_email} (ID: {user_id_val}) и все связанные данные успешно удалены."
                 ))
                 
                 # Выводим статистику удаленных данных
@@ -94,45 +92,30 @@ class Command(BaseCommand):
         """Показывает связанные с пользователем данные без удаления"""
         self.stdout.write(self.style.WARNING("Следующие данные будут удалены:"))
         
-        # Профиль пользователя
-        profile_count = UserProfile.objects.filter(user=user).count()
-        if profile_count > 0:
-            self.stdout.write(f"  - Профиль пользователя: {profile_count}")
+        tables_to_check = [
+            ('accounts_userprofile', 'Профиль пользователя'),
+            ('accounts_userdocument', 'Документы пользователя'),
+            ('crypto_userwallet', 'Кошельки пользователя'),
+            ('transactions_transaction', 'Транзакции'),
+            ('transactions_exchange', 'Обмены валют'),
+            ('transactions_deposit', 'Депозиты'),
+            ('transactions_withdrawal', 'Выводы средств'),
+            ('transactions_review', 'Отзывы'),
+            ('transactions_transfer', 'Переводы'),
+            ('account_emailaddress', 'Email адреса (allauth)'),
+            ('socialaccount_socialaccount', 'Социальные аккаунты (allauth)')
+        ]
         
-        # Документы пользователя
-        documents_count = UserDocument.objects.filter(user=user).count()
-        if documents_count > 0:
-            self.stdout.write(f"  - Документы пользователя: {documents_count}")
-        
-        # Кошельки пользователя
-        wallets_count = UserWallet.objects.filter(user=user).count()
-        if wallets_count > 0:
-            self.stdout.write(f"  - Кошельки пользователя: {wallets_count}")
-        
-        # Транзакции
-        transactions_count = Transaction.objects.filter(user=user).count()
-        if transactions_count > 0:
-            self.stdout.write(f"  - Транзакции: {transactions_count}")
-        
-        # Обмены
-        exchanges_count = Exchange.objects.filter(user=user).count()
-        if exchanges_count > 0:
-            self.stdout.write(f"  - Обмены валют: {exchanges_count}")
-        
-        # Депозиты
-        deposits_count = Deposit.objects.filter(user=user).count()
-        if deposits_count > 0:
-            self.stdout.write(f"  - Депозиты: {deposits_count}")
-        
-        # Выводы средств
-        withdrawals_count = Withdrawal.objects.filter(user=user).count()
-        if withdrawals_count > 0:
-            self.stdout.write(f"  - Выводы средств: {withdrawals_count}")
-        
-        # Отзывы
-        reviews_count = Review.objects.filter(user=user).count()
-        if reviews_count > 0:
-            self.stdout.write(f"  - Отзывы: {reviews_count}")
+        for table_name, display_name in tables_to_check:
+            if self._table_exists(table_name):
+                try:
+                    with connections['default'].cursor() as cursor:
+                        cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE user_id = %s", [user.id])
+                        count = cursor.fetchone()[0]
+                        if count > 0:
+                            self.stdout.write(f"  - {display_name}: {count}")
+                except Exception as e:
+                    self.stdout.write(self.style.WARNING(f"Ошибка при подсчете записей в {table_name}: {e}"))
     
     def _list_users(self):
         """Выводит список пользователей с количеством связанных данных"""
@@ -206,48 +189,79 @@ class Command(BaseCommand):
             self.stdout.write("\nОперация отменена.")
             return None
     
+    def _table_exists(self, table_name):
+        """Проверяет, существует ли таблица в базе данных"""
+        try:
+            with connections['default'].cursor() as cursor:
+                cursor.execute(f"SELECT 1 FROM information_schema.tables WHERE table_name = %s", [table_name])
+                return cursor.fetchone() is not None
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"Ошибка при проверке таблицы {table_name}: {e}"))
+            return False
+
+    def _safe_delete_sql(self, table_name, condition_column, condition_value):
+        """Выполняет SQL DELETE только если таблица существует"""
+        if not self._table_exists(table_name):
+            self.stdout.write(self.style.WARNING(f"Таблица {table_name} не найдена, пропускаем."))
+            return 0
+        
+        try:
+            with connections['default'].cursor() as cursor:
+                # Сначала подсчитаем количество строк для удаления
+                cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE {condition_column} = %s", [condition_value])
+                count = cursor.fetchone()[0]
+                
+                # Затем удаляем
+                if count > 0:
+                    cursor.execute(f"DELETE FROM {table_name} WHERE {condition_column} = %s", [condition_value])
+                    self.stdout.write(f"  - Удалено {count} записей из {table_name}")
+                
+                return count
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"Ошибка при удалении из {table_name}: {e}"))
+            return 0
+
     def _delete_user_data(self, user):
-        """Удаляет все данные, связанные с пользователем"""
+        """Удаляет все данные, связанные с пользователем, с проверкой существования таблиц"""
         deleted_data = {}
         
-        # Удаляем отзывы пользователя
-        reviews_count = Review.objects.filter(user=user).count()
-        Review.objects.filter(user=user).delete()
-        deleted_data['Review'] = reviews_count
+        # Строго определенный порядок удаления для соблюдения ограничений внешних ключей
         
-        # Удаляем выводы средств
-        withdrawals_count = Withdrawal.objects.filter(user=user).count()
-        Withdrawal.objects.filter(user=user).delete()
-        deleted_data['Withdrawal'] = withdrawals_count
+        # 1. Отзывы пользователя
+        deleted_data['Review'] = self._safe_delete_sql('transactions_review', 'user_id', user.id)
         
-        # Удаляем депозиты
-        deposits_count = Deposit.objects.filter(user=user).count()
-        Deposit.objects.filter(user=user).delete()
-        deleted_data['Deposit'] = deposits_count
+        # 2. Выводы средств
+        deleted_data['Withdrawal'] = self._safe_delete_sql('transactions_withdrawal', 'user_id', user.id)
         
-        # Удаляем обмены
-        exchanges_count = Exchange.objects.filter(user=user).count()
-        Exchange.objects.filter(user=user).delete()
-        deleted_data['Exchange'] = exchanges_count
+        # 3. Депозиты
+        deleted_data['Deposit'] = self._safe_delete_sql('transactions_deposit', 'user_id', user.id)
         
-        # Удаляем транзакции
-        transactions_count = Transaction.objects.filter(user=user).count()
-        Transaction.objects.filter(user=user).delete()
-        deleted_data['Transaction'] = transactions_count
+        # 4. Обмены
+        deleted_data['Exchange'] = self._safe_delete_sql('transactions_exchange', 'user_id', user.id)
         
-        # Удаляем кошельки
-        wallets_count = UserWallet.objects.filter(user=user).count()
-        UserWallet.objects.filter(user=user).delete()
-        deleted_data['UserWallet'] = wallets_count
+        # 5. Переводы (если есть)
+        deleted_data['Transfer'] = self._safe_delete_sql('transactions_transfer', 'user_id', user.id)
         
-        # Удаляем документы пользователя
-        documents_count = UserDocument.objects.filter(user=user).count()
-        UserDocument.objects.filter(user=user).delete()
-        deleted_data['UserDocument'] = documents_count
+        # 6. Транзакции
+        deleted_data['Transaction'] = self._safe_delete_sql('transactions_transaction', 'user_id', user.id)
         
-        # Удаляем профиль пользователя
-        profile_count = UserProfile.objects.filter(user=user).count()
-        UserProfile.objects.filter(user=user).delete()
-        deleted_data['UserProfile'] = profile_count
+        # 7. Кошельки
+        deleted_data['UserWallet'] = self._safe_delete_sql('crypto_userwallet', 'user_id', user.id)
+        
+        # 8. Документы
+        deleted_data['UserDocument'] = self._safe_delete_sql('accounts_userdocument', 'user_id', user.id)
+        
+        # 9. Профиль
+        deleted_data['UserProfile'] = self._safe_delete_sql('accounts_userprofile', 'user_id', user.id)
+        
+        # 10. Email адреса (allauth)
+        deleted_data['EmailAddress'] = self._safe_delete_sql('account_emailaddress', 'user_id', user.id)
+
+        # 11. Социальные аккаунты (allauth)
+        deleted_data['SocialAccount'] = self._safe_delete_sql('socialaccount_socialaccount', 'user_id', user.id)
+        
+        # 12. Наконец, удаляем самого пользователя
+        user_table = User._meta.db_table
+        deleted_data['User'] = self._safe_delete_sql(user_table, 'id', user.id)
         
         return deleted_data

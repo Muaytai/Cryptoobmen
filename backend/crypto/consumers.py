@@ -2,8 +2,6 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 
-from crypto.models import UserDepositMemo
-
 class DepositConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.memo_id = self.scope['url_route']['kwargs']['memo_id']
@@ -15,7 +13,17 @@ class DepositConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
+        # Принимаем WebSocket
         await self.accept()
+
+        # Сразу отправляем текущее состояние депозита, чтобы клиент не зависал в ожидании,
+        # если статус уже изменился до подключения
+        current_status = await self.get_deposit_memo_status(self.memo_id)
+        if current_status:
+            await self.send(text_data=json.dumps({
+                'memo': self.memo_id,
+                'status': current_status,
+            }))
 
     async def disconnect(self, close_code):
         # Leave group
@@ -25,30 +33,17 @@ class DepositConsumer(AsyncWebsocketConsumer):
         )
 
     # Receive message from WebSocket
-    async def receive(self, text_data):
-        text_data_json = json.loads(text_data)
-        message = text_data_json['message']
-
-        # Send message to group
-        await self.channel_layer.group_send(
-            self.group_name,
-            {
-                'type': 'deposit_status',
-                'message': message
-            }
-        )
+    # async def receive(self, text_data):
+    #     pass
 
     # Receive message from group
-    async def deposit_status(self, event):
-        status = event['status']
-
+    async def deposit_status_update(self, event):
         # Send message to WebSocket
-        await self.send(text_data=json.dumps({
-            'status': status
-        }))
+        await self.send(text_data=json.dumps(event['data']))
 
     @database_sync_to_async
     def get_deposit_memo_status(self, memo_id):
+        from crypto.models import UserDepositMemo
         try:
             memo = UserDepositMemo.objects.get(memo=memo_id)
             return memo.status

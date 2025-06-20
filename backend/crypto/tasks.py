@@ -6,11 +6,15 @@
 """
 from __future__ import annotations
 
+import os
 import logging
+import traceback
 from decimal import Decimal
-from typing import Any
-
 from celery import shared_task
+from celery.utils.log import get_task_logger
+
+logger = get_task_logger(__name__)
+logger.setLevel(logging.DEBUG)
 from django.utils import timezone
 from django.db import transaction
 
@@ -20,86 +24,103 @@ from asgiref.sync import async_to_sync
 from transactions.models import Transaction, Transfer  # noqa: E402  pylint: disable=wrong-import-position
 from .models import SystemWalletAddress, UserDepositMemo, UserWallet
 from .blockchain.tron import get_trc20_transfers, extract_deposit_events
+from tronpy import Tron
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task
-def check_blockchain_deposits() -> str:
-    """Periodic task that scans blockchains for new incoming deposits.
-
-    Пока что просто пишет в лог и возвращает количество обработанных
-    транзакций. Реальная логика будет реализована после подключения
-    конкретных драйверов (Tron, EVM, BTC и т.д.).
+def check_blockchain_deposits():
     """
-    logger.info("[check_blockchain_deposits] started at %s", timezone.now())
-
+    Периодическая задача для проверки новых депозитов в блокчейне.
+    """
     processed = 0
+    logger.info("[check_blockchain_deposits] Starting deposit check...")
 
-    channel_layer = get_channel_layer()
-
-    # Обрабатываем TRC20-кошельки
     wallets = SystemWalletAddress.objects.filter(network__iexact="TRC20", currency__is_active=True)
-    for wallet in wallets:
-        # Определяем с какого времени искать (последний зафиксированный депозит)
-        last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
-        min_ts = 0
-        if last_tx:
-            min_ts = int(last_tx.timestamp.timestamp() * 1000)  # ms
-        logger.info(f"[check_blockchain_deposits] Fetching transfers for address {wallet.address} with min_timestamp: {min_ts}")
-        try:
-            raw = get_trc20_transfers(wallet.address, min_ts)
-            events = extract_deposit_events(raw)
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.error("[check_blockchain_deposits] error fetch %s: %s", wallet.address, exc)
-            continue
+    logger.info(f"[check_blockchain_deposits] Found {wallets.count()} TRC20 wallets to check")
 
-        for ev in events:
-            memo = ev.get("memo")
-            if not memo:
-                continue  # требуется Memo для связи с пользователем
-            try:
-                deposit_memo = UserDepositMemo.objects.select_related("user", "currency").get(memo=memo, currency=wallet.currency, status="waiting")
-            except UserDepositMemo.DoesNotExist:
-                continue  # чужое memo или уже подтверждено
-            # Проверяем дубликаты
-            if Transaction.objects.filter(tx_hash=ev["tx_hash"]).exists():
+    for wallet in wallets:
+        try:
+            logger.info(f"[check_blockchain_deposits] Checking wallet: {wallet.address} for currency {wallet.currency.symbol}")
+            
+            last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
+            min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
+            logger.info(f"Checking from timestamp: {min_ts}")
+
+            events = get_trc20_transfers(address=wallet.address, min_timestamp=min_ts)
+            logger.info(f"Found {len(events)} events for wallet {wallet.address}")
+
+            if not events:
                 continue
 
-            # Создаём запись о переводе и обновляем баланс пользователя
-            with transaction.atomic():
-                Transaction.objects.create(
-                    user=deposit_memo.user,
-                    crypto=wallet.currency,
-                    amount=Decimal(ev["amount"]),
-                    type="deposit",
-                    status="completed",
-                    tx_hash=ev["tx_hash"],
-                    timestamp=ev["timestamp"],
-                )
-                # Обновляем баланс пользователя
-                user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
-                user_wallet.balance = user_wallet.balance + Decimal(ev["amount"])
-                user_wallet.save(update_fields=["balance"])
+            for ev in events:
+                memo = ev.get("memo")
+                tx_hash = ev.get("transaction_id")
+                amount_str = ev.get("value")
 
-                deposit_memo.status = "used"
-                deposit_memo.save(update_fields=["status"])
-                processed += 1
+                logger.info(f"Processing Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount_str}'")
 
-                # Отправляем сообщение через WebSocket
-                async_to_sync(channel_layer.group_send)(
-                    f'deposit_memo_{deposit_memo.memo}',
-                    {
-                        'type': 'deposit_status',
-                        'status': deposit_memo.status
-                    }
-                )
+                if not memo:
+                    logger.warning("Skipping event due to empty memo.")
+                    continue
 
-    logger.info("[check_blockchain_deposits] finished, processed=%s", processed)
-    return str(processed)
+                try:
+                    # Используем filter() и first() на случай дубликатов, но ожидаем один
+                    deposit_memo = UserDepositMemo.objects.filter(memo=memo, status="waiting").first()
+                    if not deposit_memo:
+                        logger.warning(f"No waiting UserDepositMemo found for memo='{memo}'.")
+                        continue
+                    logger.info(f"Found UserDepositMemo: id={deposit_memo.id} for memo='{memo}'")
+
+                except Exception as e:
+                    logger.error(f"Error while fetching memo '{memo}': {e}", exc_info=True)
+                    continue
+                
+                if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                    logger.warning(f"Duplicate transaction found: tx_hash={tx_hash}. Skipping.")
+                    continue
+
+                try:
+                    amount = Decimal(amount_str) / Decimal(10**wallet.currency.decimals)
+                except (ValueError, TypeError):
+                    logger.error(f"Invalid amount format: {amount_str}. Skipping.")
+                    continue
+
+                try:
+                    with transaction.atomic():
+                        logger.info(f"Updating balance for user {deposit_memo.user.id} and wallet {wallet.currency.symbol}")
+                        user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
+                        user_wallet.balance += amount
+                        user_wallet.save()
+
+                        Transaction.objects.create(
+                            user=deposit_memo.user,
+                            crypto=wallet.currency,
+                            amount=amount,
+                            tx_hash=tx_hash,
+                            type="deposit",
+                            status="completed",
+                            timestamp=timezone.now()
+                        )
+
+                        deposit_memo.status = "used"
+                        deposit_memo.save()
+                        
+                        processed += 1
+                        logger.info(f"Successfully processed deposit for memo='{memo}', tx_hash={tx_hash}")
+
+                except Exception as e:
+                    logger.error(f"Error during database transaction for memo='{memo}': {e}", exc_info=True)
+
+        except Exception as e:
+            logger.error(f"Error processing wallet {wallet.address}: {e}", exc_info=True)
+
+    logger.info(f"Finished deposit check. Processed {processed} transactions.")
+    return f"Готово, обработано: {processed}"
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, name='crypto.tasks.process_withdrawal')
 def process_withdrawal(self, transfer_id: int) -> str:  # pylint: disable=unused-argument
     """Processes a *pending* withdrawal transfer.
 
