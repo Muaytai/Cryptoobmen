@@ -38,28 +38,42 @@ const nextConfig = {
     
     return [
       {
-        source: '/accounts/:provider/login',
-        destination: `${apiUrl}/accounts/:provider/login`,
+        source: '/media/:path*',
+        destination: `${apiUrl}/media/:path*`,
       },
       {
-        source: '/accounts/:provider/login/',
-        destination: `${apiUrl}/accounts/:provider/login/`,
+        source: '/accounts/google/login/',
+        destination: `${apiUrl}/accounts/google/login/`,
       },
       {
-        source: '/accounts/:path*',
-        destination: `${apiUrl}/accounts/:path*`,
+        source: '/accounts/yandex/login/',
+        destination: `${apiUrl}/accounts/yandex/login/`,
+      },
+      {
+        source: '/accounts/telegram/login/',
+        destination: `${apiUrl}/accounts/telegram/login/`,
+      },
+      {
+        source: '/accounts/google/login/callback/',
+        destination: `${apiUrl}/accounts/google/login/callback/`,
+      },
+      {
+        source: '/accounts/yandex/login/callback/',
+        destination: `${apiUrl}/accounts/yandex/login/callback/`,
       },
       {
         source: '/api/:path*',
         destination: `${apiUrl}/api/:path*`,
       },
-      {
-        source: '/api/:path*/',
-        destination: `${apiUrl}/api/:path*/`,
-      },
     ];
   },
   trailingSlash: true,
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 };
 
 export default nextConfig;

@@ -11,6 +11,15 @@ import { toast } from 'react-hot-toast';
 console.log('--- Файл DepositPage.tsx ЗАГРУЖЕН (v2) ---');
 
 // --- Interfaces ---
+interface Wallet {
+  id: string;
+  network?: string;
+  currency: {
+    symbol: string;
+    name: string;
+    icon?: string;
+  };
+}
 interface DepositInfo {
   system_wallet_address: string;
   memo: string;
@@ -56,6 +65,7 @@ export const DepositPage: React.FC = () => {
   // --- State ---
   const wsRef = useRef<WebSocket | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [userWallets, setUserWallets] = useState<Wallet[]>([]);
   const [depositInfo, setDepositInfo] = useState<DepositInfo | null>(null);
   const [status, setStatus] = useState<DepositStatus>('loading');
   const [availableCurrencies, setAvailableCurrencies] = useState<Currency[]>([]);
@@ -120,8 +130,30 @@ export const DepositPage: React.FC = () => {
         return;
       }
       
-      const cryptos = cryptoData.filter((c: any) => c.currency_type === 'crypto');
-      setAvailableCurrencies(cryptos);
+      const cryptoMap = new Map<string, Currency>();
+
+      cryptoData
+        .filter((c: any) => c.currency_type === 'crypto' && c.is_active)
+        .forEach((c: any) => {
+          if (cryptoMap.has(c.symbol)) {
+            const existing = cryptoMap.get(c.symbol)!;
+            if (c.network && !existing.networks.includes(c.network)) {
+              existing.networks.push(c.network);
+            }
+          } else {
+            cryptoMap.set(c.symbol, {
+              id: c.id, 
+              name: c.name,
+              symbol: c.symbol,
+              icon: c.icon,
+              networks: c.network ? [c.network] : [],
+            });
+          }
+        });
+      
+      const aggregatedCurrencies = Array.from(cryptoMap.values());
+      console.log('DepositPage: Агрегированные валюты:', aggregatedCurrencies);
+      setAvailableCurrencies(aggregatedCurrencies);
       
       const walletIdParam = searchParams.get('wallet_id');
       const cryptoParam = searchParams.get('crypto');
@@ -129,14 +161,24 @@ export const DepositPage: React.FC = () => {
       console.log('DepositPage: параметры URL:', { walletIdParam, cryptoParam });
       
       if (cryptoParam) {
-        const matchedCrypto = cryptos.find((c: Currency) => 
+        const matchedCrypto = aggregatedCurrencies.find((c: Currency) => 
           c.symbol.toLowerCase() === cryptoParam.toLowerCase()
         );
         
         if (matchedCrypto) {
           console.log('DepositPage: найдена криптовалюта из URL:', matchedCrypto);
           setSelectedCurrency(matchedCrypto.symbol);
-          setNetworkOptions(matchedCrypto.networks || []);
+          // Сети из кошельков пользователя
+          const walletNetworks = userWallets
+            .filter(w => w.currency.symbol === matchedCrypto.symbol)
+            .map(w => w.network)
+            .filter((n): n is string => !!n);
+          const netsArr = Array.from(new Set([...(matchedCrypto.networks || []), ...walletNetworks]));
+          setNetworkOptions(netsArr);
+          // Если доступна только одна сеть — выбираем её автоматически
+          if (netsArr.length === 1) {
+            setSelectedNetwork(netsArr[0]);
+          }
           setStatus('select_currency');
           return;
         } else {
@@ -156,16 +198,35 @@ export const DepositPage: React.FC = () => {
     }
   }, [searchParams]);
 
+  // --- Fetch user wallets ---
+  const fetchUserWallets = useCallback(async () => {
+    try {
+      const resp = await api.get('/crypto/wallets/');
+      const walletsData = Array.isArray(resp) ? resp : (resp as any).data;
+      setUserWallets(walletsData);
+    } catch (err) {
+      console.error('DepositPage: не удалось загрузить кошельки пользователя', err);
+    }
+  }, []);
+
   const handleCurrencySelection = useCallback((symbol: string) => {
     console.log('DepositPage: выбрана валюта:', symbol);
     setSelectedCurrency(symbol);
     setSelectedNetwork(null);
     
+    // Получаем сети из кошельков пользователя
+    const walletNetworks = userWallets
+      .filter(w => w.currency.symbol === symbol)
+      .map(w => w.network)
+      .filter((n): n is string => !!n);
+
+    // Если кошельков нет, используем справочные сети
     const currency = availableCurrencies.find(c => c.symbol === symbol);
-    if (currency) {
-      const netsArr = (currency as any).networks && (currency as any).networks.length > 0 ? (currency as any).networks : ((currency as any).network ? [(currency as any).network] : []);
-      console.log('DepositPage: доступные сети для валюты:', netsArr);
-      setNetworkOptions(netsArr);
+    const referenceNetworks = currency ? (currency.networks || []) : [];
+
+    const netsArr = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
+    console.log('DepositPage: доступные сети для валюты:', netsArr);
+    setNetworkOptions(netsArr);
       
       if (netsArr.length === 1) {
         console.log('DepositPage: автоматический выбор единственной сети:', netsArr[0]);
@@ -178,8 +239,7 @@ export const DepositPage: React.FC = () => {
         //   }
         // }, 500);
       }
-    }
-  }, [availableCurrencies]);
+    }, [availableCurrencies, userWallets]);
 
   const handleNetworkSelection = useCallback((network: string) => {
     console.log('DepositPage: выбрана сеть:', network);
@@ -190,7 +250,16 @@ export const DepositPage: React.FC = () => {
     e.preventDefault();
     console.log('DepositPage: запрос адреса для пополнения:', selectedCurrency, selectedNetwork);
     
-    const networkToUse = selectedNetwork || (networkOptions.length === 1 ? networkOptions[0] : null);
+    // Определяем актуальный список сетей для выбранной валюты
+const walletNetworks = userWallets
+      .filter(w => w.currency.symbol === selectedCurrency)
+      .map(w => w.network)
+      .filter((n): n is string => !!n);
+const currencyObj = availableCurrencies.find(c => c.symbol === selectedCurrency);
+const referenceNetworks = currencyObj ? currencyObj.networks || [] : [];
+const allNetworks = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
+
+const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[0] : null);
     if (!selectedCurrency || !networkToUse) {
       setError('Пожалуйста, выберите криптовалюту и сеть.');
       toast.error('Выберите криптовалюту и сеть', {
@@ -348,7 +417,7 @@ export const DepositPage: React.FC = () => {
         if (!authLoading && isAuthenticated) {
           console.log('DepositPage: Пользователь авторизован, загружаем данные');
           setIsLoading(true);
-          await fetchCurrencies();
+          await Promise.all([fetchCurrencies(), fetchUserWallets()]);
           setIsLoading(false);
         }
       } catch (error) {

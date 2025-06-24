@@ -1,5 +1,5 @@
-## Этап сборки
-FROM node:18-slim AS builder
+# Этап сборки
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY frontend/package*.json ./
 # Установка зависимостей
 RUN npm ci
 
-# Копирование исходного кода и .env.production
+# Копирование исходного кода
 COPY frontend/ .
 
 # Выбираем файл переменных окружения в зависимости от аргумента сборки
@@ -18,27 +18,32 @@ ARG BUILD_ENV=production  # допустимые значения: production | 
 # Копируем соответствующий env-файл в контейнер
 COPY frontend/.env.${BUILD_ENV} .env
 
-# Устанавливаем NODE_ENV для production-сборки
-ENV NODE_ENV=${BUILD_ENV}
+# Устанавливаем NODE_ENV для сборки
+# Для development сборки используем production режим Next.js
+ENV NODE_ENV=production
 
 # Сборка приложения
 RUN npm run build
 
 ## Этап запуска
-FROM node:18-slim
+FROM node:20-slim
 
 WORKDIR /app
 
 # Создание пользователя без прав администратора
 RUN addgroup --system app && adduser --system --group app
 
-# Копирование только необходимых файлов из этапа сборки с правильными правами
-COPY --from=builder --chown=app:app /app/next.config.ts ./
-COPY --from=builder --chown=app:app /app/public ./public
-COPY --from=builder --chown=app:app /app/.next ./.next
+# Копирование только необходимых файлов из этапа сборки
+COPY --from=builder /app/next.config.ts ./
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder --chown=app:app /app/package.json ./package.json
-COPY --from=builder --chown=app:app /app/.env ./
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/.env ./
+
+# Устанавливаем правильные права доступа на все файлы для пользователя app
+RUN chown -R app:app /app && \
+    chmod -R 755 /app/.next
 
 # Переключение на непривилегированного пользователя
 USER app
@@ -46,5 +51,5 @@ USER app
 # Открытие порта
 EXPOSE 3000
 
-# Запуск приложения в production-режиме
+# Запуск приложения в production режиме
 CMD ["npm", "start"] 

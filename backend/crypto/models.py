@@ -5,6 +5,8 @@ from decimal import Decimal
 from django.utils import timezone
 import uuid
 import logging
+from django.core.files.base import ContentFile
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +44,14 @@ class Cryptocurrency(models.Model):
     min_exchange_amount = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal('0.0001'), verbose_name=_('Min Exchange Amount'))
     max_exchange_amount = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal('10.0'), verbose_name=_('Max Exchange Amount'))
     
-    # Комиссия платформы (в процентах) - лучше иметь глобальную настройку или в ExchangePair
-    # platform_fee_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.5'), verbose_name=_('Platform Fee Percentage'))
+    # Комиссия платформы (в процентах) - теперь активна
+    fee_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.2'),  # 0.2 % – «невысокая» по сравнению с рынком
+        verbose_name=_('Platform Fee Percentage'),
+        help_text=_('Default platform commission in percent (0-100)')
+    )
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -263,4 +271,94 @@ class ExchangeOrder(models.Model):
 
     def __str__(self):
         return f"{self.from_amount} {self.from_currency.symbol} -> {self.to_currency.symbol} ({self.status})"
+
+
+# -------------------------------------------------------------
+#  CommissionWallet – внутренний кошелёк для накопления дохода
+# -------------------------------------------------------------
+# Отдельная таблица, чтобы не усложнять существующую модель UserWallet
+# дополнительными флагами. Для каждой активной валюты хранится
+# агрегированный баланс комиссии (profit) платформы. Видно только админам.
+
+
+class CommissionWallet(models.Model):
+    """Внутренний кошелёк для накопления комиссии платформы по каждой валюте."""
+
+    currency = models.ForeignKey(
+        Cryptocurrency,
+        on_delete=models.CASCADE,
+        related_name='commission_wallets',
+        verbose_name=_('Currency'),
+    )
+
+    balance = models.DecimalField(
+        max_digits=24,
+        decimal_places=8,
+        default=Decimal('0.0'),
+        verbose_name=_('Commission Balance'),
+    )
+
+    is_active = models.BooleanField(default=True, verbose_name=_('Active'))
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('currency',)
+        verbose_name = _('commission wallet')
+        verbose_name_plural = _('commission wallets')
+
+    def __str__(self):
+        return f"Commission Wallet – {self.currency.symbol}"  
+
+
+# -------------------------------------------------------------
+#  CommissionTransaction – история начисления комиссий
+# -------------------------------------------------------------
+class CommissionTransaction(models.Model):
+    """История начисления комиссий платформы (exchange, withdraw и др.)."""
+    COMMISSION_TYPE_CHOICES = [
+        ('exchange', 'Обмен'),
+        ('withdraw', 'Вывод'),
+    ]
+    created_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    currency = models.ForeignKey('Cryptocurrency', on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=24, decimal_places=8)
+    commission_type = models.CharField(max_length=16, choices=COMMISSION_TYPE_CHOICES)
+    related_object_id = models.CharField(max_length=64, blank=True, null=True, help_text='ID связанной операции (например, ExchangeOrder или Withdrawal)')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'commission transaction'
+        verbose_name_plural = 'commission transactions'
+
+    def __str__(self):
+        return f"{self.get_commission_type_display()} {self.amount} {self.currency.symbol} ({self.created_at:%Y-%m-%d %H:%M})"  
+
+
+# --- Фикстура для автозаполнения популярных валют и сетей ---
+def create_default_cryptocurrencies():
+    # Примеры: BTC, ETH, USDT-ERC20, USDT-TRC20, BNB, XRP, LTC, SOL, MATIC
+    default_cryptos = [
+        {"name": "Bitcoin", "symbol": "BTC", "network": "BTC", "icon_b64": None},
+        {"name": "Ethereum", "symbol": "ETH", "network": "ERC20", "icon_b64": None},
+        {"name": "Tether USD", "symbol": "USDT", "network": "ERC20", "icon_b64": None},
+        {"name": "Tether USD", "symbol": "USDT", "network": "TRC20", "icon_b64": None},
+        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "icon_b64": None},
+        {"name": "Ripple", "symbol": "XRP", "network": "XRP", "icon_b64": None},
+        {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "icon_b64": None},
+        {"name": "Solana", "symbol": "SOL", "network": "SOL", "icon_b64": None},
+        {"name": "Polygon", "symbol": "MATIC", "network": "Polygon", "icon_b64": None},
+    ]
+    for crypto in default_cryptos:
+        obj, created = Cryptocurrency.objects.get_or_create(
+            symbol=crypto["symbol"], network=crypto["network"], defaults={"name": crypto["name"]}
+        )
+        if created and crypto["icon_b64"]:
+            obj.icon.save(f"{crypto['symbol']}.png", ContentFile(base64.b64decode(crypto["icon_b64"])), save=True)
+        obj.is_active = True
+        obj.save()
+
+# Вызов при миграции или через shell
 

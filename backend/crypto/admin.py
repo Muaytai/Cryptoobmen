@@ -6,8 +6,10 @@ import logging
 from .models import (
     Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, 
     SystemWalletAddress, UserDepositMemo,
-    BlockchainState
+    BlockchainState, CommissionWallet, CommissionTransaction
 )
+import csv
+from django.http import HttpResponse
 
 
 @admin.register(Cryptocurrency)
@@ -50,9 +52,6 @@ class UserWalletAdmin(admin.ModelAdmin):
             return obj.user.email
         return "Системный кошелек"
     user_display.short_description = 'Пользователь / Система'
-
-
-
 
 
 @admin.register(SystemWalletAddress)
@@ -110,3 +109,31 @@ class UserDepositMemoAdmin(admin.ModelAdmin):
 class BlockchainStateAdmin(admin.ModelAdmin):
     list_display = ('blockchain', 'last_processed_block', 'updated_at')
     readonly_fields = ('updated_at',)
+
+
+@admin.register(CommissionWallet)
+class CommissionWalletAdmin(admin.ModelAdmin):
+    list_display = ('currency', 'balance', 'is_active', 'updated_at')
+    list_filter = ('is_active', 'currency__symbol')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(CommissionTransaction)
+class CommissionTransactionAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'commission_type', 'user', 'currency', 'amount', 'related_object_id')
+    list_filter = ('commission_type', 'currency')
+    search_fields = ('user__email', 'related_object_id')
+    date_hierarchy = 'created_at'
+    actions = ['export_as_csv']
+
+    def export_as_csv(self, request, queryset):
+        meta = self.model._meta
+        field_names = [field.name for field in meta.fields]
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename=commission_transactions.csv'
+        writer = csv.writer(response)
+        writer.writerow(field_names)
+        for obj in queryset:
+            writer.writerow([getattr(obj, field) for field in field_names])
+        return response
+    export_as_csv.short_description = "Экспортировать выбранные в CSV"

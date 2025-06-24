@@ -12,14 +12,14 @@ from django.utils import timezone
 from rest_framework.views import APIView
 from django.db import transaction
 from .models import (
-    Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, ExchangeOrder
+    Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, ExchangeOrder, CommissionWallet
 )
 from transactions.models import Transfer
 from transactions.models import Transaction as TX, Exchange as TransactionExchange, Deposit, Withdrawal, Review
 from .serializers import (
     CryptocurrencySerializer, CryptoPriceSerializer, ExchangePairSerializer,
     UserWalletSerializer, ExchangeCalculatorSerializer, PerformExchangeSerializer,
-    TransferSerializer, ExchangeOrderSerializer
+    TransferSerializer, ExchangeOrderSerializer, CommissionWalletSerializer
 )
 from .services import get_exchange_rates
 
@@ -275,8 +275,6 @@ class ExchangeOrderViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user, status='pending')
 
 
-
-
 class UserBalancesView(generics.ListAPIView):
     """
     Возвращает список кошельков и балансов для аутентифицированного пользователя.
@@ -369,14 +367,22 @@ class ExchangeCurrencyView(APIView):
         rate = Decimal(str(live_rates[from_wallet.currency.coingecko_id][to_wallet.currency.coingecko_id]))
         amount_to = amount_from * rate
 
-        # Списываем средства с одного кошелька и зачисляем на другой
+        # Комиссия платформы
+        fee_percentage = from_wallet.currency.fee_percentage
+        fee_amount = amount_from * (fee_percentage / Decimal('100'))
+        net_amount = amount_from - fee_amount
+        amount_to = net_amount * rate
+
+        # Списываем full amount, но в лицо кошелька переводим комиссию в CommissionWallet
         from_wallet.balance -= amount_from
         from_wallet.available_balance -= amount_from
-        to_wallet.balance += amount_to
-        to_wallet.available_balance += amount_to
 
         from_wallet.save()
-        to_wallet.save()
+
+        # Зачисляем комиссию
+        commission_wallet, _ = CommissionWallet.objects.get_or_create(currency=from_wallet.currency)
+        commission_wallet.balance += fee_amount
+        commission_wallet.save()
 
         # Создаем запись об обмене
         exchange = TransactionExchange.objects.create(
@@ -385,8 +391,13 @@ class ExchangeCurrencyView(APIView):
             to_currency=to_wallet.currency,
             amount_from=amount_from,
             amount_to=amount_to,
-            rate=rate
+            rate=rate,
+            status='completed'
         )
+
+        to_wallet.balance += amount_to
+        to_wallet.available_balance += amount_to
+        to_wallet.save()
 
         return Response({
             'success': 'Обмен успешно выполнен.',
@@ -399,7 +410,9 @@ class ExchangeCurrencyView(APIView):
                 'amount_from': exchange.amount_from,
                 'amount_to': exchange.amount_to,
                 'rate': exchange.rate,
-                'timestamp': exchange.timestamp
+                'timestamp': exchange.timestamp,
+                'fee_amount': fee_amount,
+                'fee_percentage': fee_percentage,
             }
         }, status=status.HTTP_200_OK)
 
@@ -540,3 +553,27 @@ def perform_exchange_view(request):
         "message": "Обмен успешно выполнен.",
         "exchange_id": exchange_tx.id
     }, status=status.HTTP_200_OK)
+
+
+# ------------------------------------------------------------------
+#   Админ: системные кошельки (on-chain адреса) + комиссионные
+# ------------------------------------------------------------------
+
+
+class SystemWalletViewSet(viewsets.ReadOnlyModelViewSet):
+    """Список системных кошельков платформы (виден только администратору)."""
+
+    serializer_class = UserWalletSerializer
+    permission_classes = [IsAdminUser]
+
+    def get_queryset(self):
+        return UserWallet.objects.filter(is_system_wallet=True).order_by('currency__name')
+
+
+class CommissionWalletViewSet(viewsets.ReadOnlyModelViewSet):
+    """Список комиссионных кошельков (накопленная прибыль)."""
+
+    serializer_class = CommissionWalletSerializer
+    permission_classes = [IsAdminUser]
+
+    queryset = CommissionWallet.objects.all().order_by('currency__name')
