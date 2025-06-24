@@ -36,9 +36,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" suppressHydrationWarning className="dark">
-      <head>
-        <style dangerouslySetInnerHTML={{ __html: hydrationFadeInStyle }} />
-      </head>
       <body suppressHydrationWarning className={`${inter.className} antialiased bg-black text-white dark`}>
         <ThemeProvider>
           <AuthProvider>

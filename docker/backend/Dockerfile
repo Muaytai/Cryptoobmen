@@ -1,8 +1,8 @@
-FROM python:3.12-slim
+FROM python:3.10-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV ENV_FILE=.env.prod
+ENV ENV_FILE=.env.backend
 
 # Установка зависимостей
 RUN apt-get update && apt-get install -y \
@@ -26,8 +26,8 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install gunicorn
 
-# Копирование .env файла для продакшена
-COPY docker/backend/.env.prod /app/.env.prod
+# Копирование .env файла для разработки
+COPY backend/.env.backend /app/.env.backend
 
 # Копирование entrypoint
 COPY docker/backend/entrypoint.sh /app/entrypoint.sh
@@ -45,8 +45,6 @@ RUN mkdir -p /app/static /app/media && \
 # Выполнение сбора статических файлов для продакшена
 ENV DEBUG=False
 RUN python manage.py collectstatic --noinput
-
-# Переключение на непривилегированного пользователя
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 

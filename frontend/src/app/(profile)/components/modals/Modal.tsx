@@ -47,9 +47,14 @@ export const Modal = ({isOpen, onClose, title, children}: ModalProps) => {
       <div className={clsx(styles.modal, "bg-card")} ref={modalRef}>
         <div className={styles.header}>
           <div className={styles.closeWrap}>
-            <button onClick={onClose} className={styles.close}>
-              <Image src="/images/profile/close.svg" alt="close" width={40} height={40}/>
-            </button>
+          <button
+            onClick={onClose}
+            className={styles.close}
+            aria-label="Закрыть модальное окно"
+            title="Закрыть"
+          >
+            <Image src="/images/profile/close.svg" alt="close" width={40} height={40}/>
+          </button>
           </div>
           {title && <h2>{title}</h2>}
         </div>

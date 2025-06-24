@@ -59,7 +59,7 @@ INSTALLED_APPS = [
     
     # Приложения для безопасности
     'django_recaptcha',  # django-recaptcha
-    'axes',  # django-axes для защиты от перебора паролей
+    # 'axes',  # django-axes для защиты от перебора паролей - временно отключено
 
     # Наши приложения
     'accounts',
@@ -86,7 +86,7 @@ MIDDLEWARE = [
     'core.middleware.CsrfCookieMiddleware',
     'django.middleware.cache.UpdateCacheMiddleware',
     'django.middleware.cache.FetchFromCacheMiddleware',
-    'axes.middleware.AxesMiddleware',  # Должен быть последним
+    # 'axes.middleware.AxesMiddleware',  # Должен быть последним - временно отключено
 ]
 
 # Настройки безопасности
@@ -109,11 +109,11 @@ RECAPTCHA_DEFAULT_ACTION = 'generic'
 RECAPTCHA_DOMAIN = 'www.recaptcha.net'  # Для работы в России
 
 # Настройки Axes (защита от перебора паролей)
-AXES_FAILURE_LIMIT = int(os.getenv('AXES_FAILURE_LIMIT', '5'))
-AXES_COOLOFF_TIME = int(os.getenv('AXES_COOLOFF_TIME', '1'))  # в часах
-AXES_LOCKOUT_TEMPLATE = 'account_locked.html'
-AXES_LOCK_OUT_BY_COMBINATION_USER_AND_IP = True  # Блокировка по комбинации пользователь+IP
-AXES_RESET_ON_SUCCESS = True  # Сброс счетчика при успешном входе
+# AXES_FAILURE_LIMIT = int(os.getenv('AXES_FAILURE_LIMIT', '5'))
+# AXES_COOLOFF_TIME = int(os.getenv('AXES_COOLOFF_TIME', '1'))  # в часах
+# AXES_LOCKOUT_TEMPLATE = 'account_locked.html'
+# AXES_LOCK_OUT_BY_COMBINATION_USER_AND_IP = True  # Блокировка по комбинации пользователь+IP
+# AXES_RESET_ON_SUCCESS = True  # Сброс счетчика при успешном входе
 
 # Настройки кэширования
 CACHES = {
@@ -261,8 +261,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Настройки аутентификации
 AUTHENTICATION_BACKENDS = (
-    # AxesStandaloneBackend должен быть первым
-    'axes.backends.AxesStandaloneBackend',
+    # 'axes.backends.AxesStandaloneBackend', # временно отключено
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
 )
