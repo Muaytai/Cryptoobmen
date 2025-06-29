@@ -178,26 +178,6 @@ export const WalletPage: React.FC = () => {
         </div>
       )}
 
-      {/* Общий баланс */}
-      <div className="bg-gray-800 rounded-xl p-6 mb-8 shadow-lg">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Общий баланс</h2>
-          <button 
-            onClick={() => refetchData(false)}
-            className="text-purple-400 hover:text-purple-300 flex items-center text-sm"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Обновить
-          </button>
-        </div>
-        <div className="text-4xl font-bold text-green-500">
-          {totalUsdBalance.toLocaleString('ru-RU', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </div>
-        <p className="text-sm text-gray-400 mt-1">Примерный эквивалент в USD</p>
-      </div>
-
       {/* Быстрые действия */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         <Link href="/funds/deposit" className="bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl flex flex-col items-center justify-center transition-all transform hover:scale-105">

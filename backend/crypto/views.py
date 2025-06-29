@@ -384,15 +384,26 @@ class ExchangeCurrencyView(APIView):
         commission_wallet.balance += fee_amount
         commission_wallet.save()
 
-        # Создаем запись об обмене
-        exchange = TransactionExchange.objects.create(
+        # Создаём основную транзакцию
+        tx = TX.objects.create(
             user=user,
-            from_currency=from_wallet.currency,
-            to_currency=to_wallet.currency,
-            amount_from=amount_from,
-            amount_to=amount_to,
+            type='exchange',
+            status='completed',
+            amount=amount_from,
+            fee=fee_amount,
+            crypto=from_wallet.currency
+        )
+        # Создаём запись об обмене
+        exchange_tx = TransactionExchange.objects.create(
+            user=user,
+            transaction=tx,
+            from_crypto=from_wallet.currency,
+            to_crypto=to_wallet.currency,
+            from_amount=amount_from,
+            to_amount=amount_to,
             rate=rate,
-            status='completed'
+            fee_percentage=fee_percentage,
+            fee_amount=fee_amount
         )
 
         to_wallet.balance += amount_to
@@ -404,15 +415,15 @@ class ExchangeCurrencyView(APIView):
             'from_wallet': UserWalletSerializer(from_wallet).data,
             'to_wallet': UserWalletSerializer(to_wallet).data,
             'exchange_details': {
-                'id': exchange.id,
-                'from': exchange.from_currency.symbol,
-                'to': exchange.to_currency.symbol,
-                'amount_from': exchange.amount_from,
-                'amount_to': exchange.amount_to,
-                'rate': exchange.rate,
-                'timestamp': exchange.timestamp,
-                'fee_amount': fee_amount,
-                'fee_percentage': fee_percentage,
+                'id': exchange_tx.id,
+                'from': exchange_tx.from_crypto.symbol,
+                'to': exchange_tx.to_crypto.symbol,
+                'amount_from': exchange_tx.from_amount,
+                'amount_to': exchange_tx.to_amount,
+                'rate': exchange_tx.rate,
+                'timestamp': exchange_tx.timestamp,
+                'fee_amount': exchange_tx.fee_amount,
+                'fee_percentage': exchange_tx.fee_percentage,
             }
         }, status=status.HTTP_200_OK)
 
@@ -538,14 +549,24 @@ def perform_exchange_view(request):
     to_wallet.save()
 
     # Создание записи о транзакции обмена
+    tx = TX.objects.create(
+        user=user,
+        type='exchange',
+        status='completed',
+        amount=amount,
+        fee=0,
+        crypto=from_crypto
+    )
     exchange_tx = TransactionExchange.objects.create(
         user=user,
-        from_currency=from_crypto,
-        to_currency=to_crypto,
-        amount_from=amount,
-        amount_to=to_amount,
+        transaction=tx,
+        from_crypto=from_crypto,
+        to_crypto=to_crypto,
+        from_amount=amount,
+        to_amount=to_amount,
         rate=rate,
-        status='completed'
+        fee_percentage=0,
+        fee_amount=0
     )
 
     return Response({

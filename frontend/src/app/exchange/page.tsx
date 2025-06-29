@@ -20,22 +20,29 @@ interface Cryptocurrency {
 
 interface ExchangePair {
   id: number;
-  from_crypto: Cryptocurrency;
-  to_crypto: Cryptocurrency;
+  from_crypto: number | Cryptocurrency;
+  to_crypto: number | Cryptocurrency;
   is_active: boolean;
   custom_fee_percentage: string | null;
   min_from_amount: string | null;
   max_from_amount: string | null;
 }
 
+// Расширенный тип для поддержки обеих структур
 interface CryptoPrice {
-  id: number;
-  crypto: {
+  id?: number;
+  crypto?: {
     id: number;
     name: string;
     symbol: string;
   };
-  price_usd: string;
+  price_usd?: string;
+  crypto_id?: number;
+  name?: string;
+  symbol?: string;
+  prices?: {
+    usd: number;
+  };
 }
 
 interface Wallet {
@@ -47,14 +54,14 @@ interface Wallet {
 }
 
 interface ExchangeCalculation {
-  from_amount: string;
+  from_amount: number;
   from_crypto: Cryptocurrency;
-  to_amount: string;
+  to_amount: number;
   to_crypto: Cryptocurrency;
-  rate: string;
-  fee_percentage: string;
-  fee_amount: string;
-  fee_usd: string;
+  rate: number;
+  fee_percentage: number;
+  fee_amount: number;
+  fee_usd?: number;
 }
 
 function ExchangePageClientInner() {
@@ -126,22 +133,28 @@ function ExchangePageClientInner() {
           
           // Находим подходящую пару для обмена
           const suitablePairs = pairsData.filter(
-            (p: ExchangePair) => p.from_crypto.id === parseInt(fromCryptoParam)
+            (p: ExchangePair) => (typeof p.from_crypto === 'object' && p.from_crypto !== null ? p.from_crypto.id : p.from_crypto) === parseInt(fromCryptoParam)
           );
           
           if (suitablePairs.length > 0) {
             // Предпочитаем USDT или стейблкоины для обмена
             const usdtPair = suitablePairs.find(
-              (p: ExchangePair) => p.to_crypto.symbol === 'USDT' || 
-                                  p.to_crypto.symbol === 'USDC' || 
-                                  p.to_crypto.symbol === 'DAI'
+              (p: ExchangePair) => (typeof p.to_crypto === 'object' && p.to_crypto !== null ? p.to_crypto.id : p.to_crypto) === 1 // Assuming USDT is represented by id 1
             );
             
             if (usdtPair) {
-              setToCryptoId(usdtPair.to_crypto.id);
+              setToCryptoId(
+                typeof usdtPair.to_crypto === 'object' && usdtPair.to_crypto !== null
+                  ? usdtPair.to_crypto.id
+                  : usdtPair.to_crypto
+              );
               setSelectedPair(usdtPair);
             } else {
-              setToCryptoId(suitablePairs[0].to_crypto.id);
+              setToCryptoId(
+                typeof suitablePairs[0].to_crypto === 'object' && suitablePairs[0].to_crypto !== null
+                  ? suitablePairs[0].to_crypto.id
+                  : suitablePairs[0].to_crypto
+              );
               setSelectedPair(suitablePairs[0]);
             }
           }
@@ -161,11 +174,15 @@ function ExchangePageClientInner() {
               
               // Находим подходящую пару для обмена
               const suitablePairs = pairsData.filter(
-                (p: ExchangePair) => p.from_crypto.id === walletWithBalance.currency.id
+                (p: ExchangePair) => (typeof p.from_crypto === 'object' && p.from_crypto !== null ? p.from_crypto.id : p.from_crypto) === walletWithBalance.currency.id
               );
               
               if (suitablePairs.length > 0) {
-                setToCryptoId(suitablePairs[0].to_crypto.id);
+                setToCryptoId(
+                  typeof suitablePairs[0].to_crypto === 'object' && suitablePairs[0].to_crypto !== null
+                    ? suitablePairs[0].to_crypto.id
+                    : suitablePairs[0].to_crypto
+                );
                 setSelectedPair(suitablePairs[0]);
               }
             } else {
@@ -174,11 +191,15 @@ function ExchangePageClientInner() {
               
               // И первую доступную пару обмена
               const firstPair = pairsData.find(
-                (p: ExchangePair) => p.from_crypto.id === cryptoData[0].id
+                (p: ExchangePair) => (typeof p.from_crypto === 'object' && p.from_crypto !== null ? p.from_crypto.id : p.from_crypto) === cryptoData[0].id
               );
               
               if (firstPair) {
-                setToCryptoId(firstPair.to_crypto.id);
+                setToCryptoId(
+                  typeof firstPair.to_crypto === 'object' && firstPair.to_crypto !== null
+                    ? firstPair.to_crypto.id
+                    : firstPair.to_crypto
+                );
                 setSelectedPair(firstPair);
               }
             }
@@ -200,7 +221,7 @@ function ExchangePageClientInner() {
   useEffect(() => {
     if (fromCryptoId && toCryptoId) {
       const pair = exchangePairs.find(
-        p => p.from_crypto.id === fromCryptoId && p.to_crypto.id === toCryptoId
+        p => (typeof p.from_crypto === 'object' && p.from_crypto !== null ? p.from_crypto.id : p.from_crypto) === fromCryptoId && (typeof p.to_crypto === 'object' && p.to_crypto !== null ? p.to_crypto.id : p.to_crypto) === toCryptoId
       );
       
       setSelectedPair(pair || null);
@@ -215,38 +236,73 @@ function ExchangePageClientInner() {
     }
   }, [fromCryptoId, toCryptoId, exchangePairs]);
 
-  // Расчет обмена при изменении суммы или пары
+  // 1. Загрузка курсов при монтировании
   useEffect(() => {
-    const calculateExchange = async () => {
-      if (selectedPair && amount && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0) {
-        try {
-          setCalculating(true);
-          
-          const calculationData = {
-            from_crypto_id: selectedPair.from_crypto.id,
-            to_crypto_id: selectedPair.to_crypto.id,
-            amount: parseFloat(amount)
-          };
-          
-          const response = await api.post('/crypto/exchange/calculator/', calculationData);
-          
-          setCalculation(response.data);
-          setCalculating(false);
-        } catch (err) {
-          console.error('Ошибка при расчете обмена:', err);
-          setCalculation(null);
-          setCalculating(false);
-        }
-      } else {
-        setCalculation(null);
+    const fetchPrices = async () => {
+      try {
+        const resp = await api.get('/crypto/prices/latest/');
+        const data = Array.isArray(resp) ? resp : (resp as any).data;
+        setPrices(data);
+      } catch (error) {
+        console.error('Ошибка при загрузке курсов:', error);
+        setPrices([]);
       }
     };
-    
-    // Используем debounce для предотвращения слишком частых запросов
-    const debounceTimeout = setTimeout(calculateExchange, 500);
-    
-    return () => clearTimeout(debounceTimeout);
-  }, [selectedPair, amount]);
+    fetchPrices();
+  }, []);
+
+  // 2. Калькулятор на фронте
+  useEffect(() => {
+    const calculate = () => {
+      if (
+        !fromCryptoId ||
+        !toCryptoId ||
+        !amount ||
+        isNaN(+amount) ||
+        +amount <= 0 ||
+        !selectedPair ||
+        cryptocurrencies.length === 0 ||
+        prices.length === 0
+      ) {
+        setCalculation(null);
+        return;
+      }
+      // Для отладки
+      console.log('prices', prices);
+      // Для вашей структуры: crypto_id и prices.usd
+      const fromPriceObj = prices.find((p: any) => p.crypto_id === fromCryptoId);
+      const toPriceObj = prices.find((p: any) => p.crypto_id === toCryptoId);
+      const fromPrice = fromPriceObj?.prices?.usd;
+      const toPrice = toPriceObj?.prices?.usd;
+      if (!fromPrice || !toPrice) {
+        setCalculation(null);
+        return;
+      }
+      const rate = parseFloat(String(fromPrice)) / parseFloat(String(toPrice));
+      const rawToAmount = parseFloat(amount) * rate;
+      let commission = 0;
+      if (selectedPair?.custom_fee_percentage) {
+        commission = parseFloat(selectedPair.custom_fee_percentage);
+      } else if (
+        typeof selectedPair?.from_crypto === 'object' &&
+        selectedPair.from_crypto?.fee_percentage
+      ) {
+        commission = parseFloat(selectedPair.from_crypto.fee_percentage);
+      }
+      const fee = rawToAmount * (commission / 100);
+      const toAmount = rawToAmount - fee;
+      setCalculation({
+        from_amount: parseFloat(amount),
+        from_crypto: cryptocurrencies.find(c => c.id === fromCryptoId)!,
+        to_amount: toAmount,
+        to_crypto: cryptocurrencies.find(c => c.id === toCryptoId)!,
+        rate,
+        fee_percentage: commission,
+        fee_amount: fee,
+      });
+    };
+    calculate();
+  }, [fromCryptoId, toCryptoId, amount, prices, selectedPair, cryptocurrencies]);
 
   // Обработчики изменения полей формы
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -260,25 +316,26 @@ function ExchangePageClientInner() {
   const handleFromCryptoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const cryptoId = parseInt(e.target.value);
     setFromCryptoId(cryptoId);
-    
-    // Сбрасываем выбранную криптовалюту для получения, если она совпадает с выбранной для отправки
-    if (toCryptoId === cryptoId) {
-      setToCryptoId(null);
-    }
-    
-    // Находим подходящие пары для обмена
+
+    // Найти первую доступную пару для нового fromCryptoId
     const suitablePairs = exchangePairs.filter(
-      p => p.from_crypto.id === cryptoId
+      p => (typeof p.from_crypto === 'object' && p.from_crypto !== null ? p.from_crypto.id : p.from_crypto) === cryptoId
     );
-    
-    // Если есть подходящие пары и не выбрана криптовалюта для получения, выбираем первую доступную
-    if (suitablePairs.length > 0 && (!toCryptoId || toCryptoId === cryptoId)) {
-      setToCryptoId(suitablePairs[0].to_crypto.id);
+    if (suitablePairs.length > 0) {
+      setToCryptoId(
+        typeof suitablePairs[0].to_crypto === 'object' && suitablePairs[0].to_crypto !== null
+          ? suitablePairs[0].to_crypto.id
+          : suitablePairs[0].to_crypto
+      );
+      setSelectedPair(suitablePairs[0]);
+    } else {
+      setToCryptoId(null);
+      setSelectedPair(null);
     }
   };
 
   const handleToCryptoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setToCryptoId(parseInt(e.target.value));
+    setToCryptoId(Number(e.target.value));
   };
 
   // Получение максимально доступной суммы для обмена
@@ -307,6 +364,17 @@ function ExchangePageClientInner() {
     }
   };
 
+  // Функция для обновления кошельков пользователя
+  const refetchWallets = async () => {
+    try {
+      const walletsResp = await api.get('/crypto/wallets/');
+      const walletsData = Array.isArray(walletsResp) ? walletsResp : (walletsResp as any).data;
+      setWallets(walletsData);
+    } catch (e) {
+      // Можно обработать ошибку, если нужно
+    }
+  };
+
   // Отправка формы обмена
   const handleExchange = async () => {
     if (!selectedPair || !amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
@@ -320,23 +388,23 @@ function ExchangePageClientInner() {
 
     try {
       const exchangeData = {
-        from_crypto_id: selectedPair.from_crypto.id,
-        to_crypto_id: selectedPair.to_crypto.id,
+        from_crypto_id: (typeof selectedPair.from_crypto === 'object' && selectedPair.from_crypto !== null ? selectedPair.from_crypto.id : selectedPair.from_crypto),
+        to_crypto_id: (typeof selectedPair.to_crypto === 'object' && selectedPair.to_crypto !== null ? selectedPair.to_crypto.id : selectedPair.to_crypto),
         amount: parseFloat(amount),
       };
 
       const response = await api.post('/crypto/exchange/execute/', exchangeData);
 
-      if (response.data.success) {
+      // Если response — это уже JSON-объект:
+      if (response.success) {
+        setError(null);
         setSuccess(true);
-        setExchangeId(response.data.exchange_id);
-        // Опционально: обновить данные кошельков после успешного обмена
-        // refetchWallets(); 
+        setExchangeId(response.exchange_id);
+        await refetchWallets(); // обязательно обновить кошельки!
       } else {
-        setError(response.data.error || 'Произошла неизвестная ошибка при обмене.');
+        setError(response.error || 'Произошла неизвестная ошибка при обмене.');
       }
     } catch (err: any) {
-      console.error('Ошибка при выполнении обмена:', err);
       setError(err.response?.data?.error || 'Не удалось выполнить обмен. Проверьте баланс и попробуйте снова.');
     } finally {
       setSubmitting(false);
@@ -369,7 +437,10 @@ function ExchangePageClientInner() {
               Перейти к кошельку
             </Link>
             <button 
-              onClick={() => setSuccess(false)} 
+              onClick={() => {
+                setSuccess(false);
+                setError(null);
+              }} 
               className="text-purple-400 hover:text-purple-300 transition"
             >
               Новый обмен
@@ -380,12 +451,14 @@ function ExchangePageClientInner() {
     );
   }
 
+  console.log('calculation', calculation);
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold mb-8 text-center">Обмен криптовалют</h1>
         
-        {error && (
+        {!success && error && (
           <div className="bg-red-500 bg-opacity-20 p-4 rounded-lg mb-6">
             <p className="text-red-500">{error}</p>
           </div>
@@ -422,7 +495,7 @@ function ExchangePageClientInner() {
                   <option value="" disabled>Выберите</option>
                   {cryptocurrencies.map(crypto => (
                     <option key={crypto.id} value={crypto.id}>
-                      {crypto.symbol}
+                      {crypto.symbol} (id={crypto.id})
                     </option>
                   ))}
                 </select>
@@ -469,25 +542,35 @@ function ExchangePageClientInner() {
             <div>
               <label className="block text-gray-300 mb-2">Получаю</label>
               <div className="flex space-x-2">
-                <input aria-label="Количество получаемой криптовалюты"
-                  type="text"
-                  value={calculation ? calculation.to_amount : '0'}
-                  disabled
-                  className="flex-1 bg-gray-600 border border-gray-600 rounded-lg px-4 py-3 focus:outline-none"
-                />
-                <select aria-label="Криптовалюта для получения"
+                <div className="flex-1 bg-gray-600 border border-gray-600 rounded-lg px-4 py-3 text-white flex items-center" style={{ minHeight: 48 }}>
+                  {(calculation &&
+                    calculation.to_crypto.id === toCryptoId &&
+                    typeof calculation.to_amount === 'number' &&
+                    !isNaN(calculation.to_amount))
+                    ? calculation.to_amount.toFixed(8)
+                    : ''}
+                </div>
+                <select
+                  aria-label="Криптовалюта для получения"
                   value={toCryptoId || ''}
                   onChange={handleToCryptoChange}
                   className="bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
                   <option value="" disabled>Выберите</option>
-                  {fromCryptoId && exchangePairs
-                    .filter(pair => pair.from_crypto.id === fromCryptoId)
-                    .map(pair => (
-                      <option key={pair.to_crypto.id} value={pair.to_crypto.id}>
-                        {pair.to_crypto.symbol}
-                      </option>
-                    ))}
+                  {exchangePairs
+                    .filter(pair => (typeof pair.from_crypto === 'object' && pair.from_crypto !== null ? pair.from_crypto.id : pair.from_crypto) === fromCryptoId)
+                    .map(pair => {
+                      const toCryptoIdLocal = typeof pair.to_crypto === 'object' && pair.to_crypto !== null ? pair.to_crypto.id : pair.to_crypto;
+                      const crypto = cryptocurrencies.find(c => c.id === toCryptoIdLocal);
+                      return (
+                        <option
+                          key={toCryptoIdLocal}
+                          value={toCryptoIdLocal}
+                        >
+                          {crypto ? `${crypto.symbol} (${crypto.name}) (id=${crypto.id})` : `id=${toCryptoIdLocal}`}
+                        </option>
+                      );
+                    })}
                 </select>
               </div>
               {toCryptoId && (
@@ -523,7 +606,9 @@ function ExchangePageClientInner() {
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-gray-400">Курс обмена:</span>
-                    <span>1 {calculation.from_crypto.symbol} = {parseFloat(calculation.rate).toFixed(8)} {calculation.to_crypto.symbol}</span>
+                    <span>
+                      1 {calculation.from_crypto.symbol} = {calculation.rate.toFixed(8)} {calculation.to_crypto.symbol}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Комиссия:</span>
@@ -572,6 +657,11 @@ function ExchangePageClientInner() {
             </p>
           </div>
         </div>
+
+        {/* Отладочная информация */}
+        <pre style={{ color: 'white', background: '#222', fontSize: 12, marginTop: 16 }}>
+          {JSON.stringify({ prices, fromCryptoId, toCryptoId, selectedPair, amount, calculation }, null, 2)}
+        </pre>
       </div>
     </div>
   );
