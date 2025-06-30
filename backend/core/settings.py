@@ -83,9 +83,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
-    'core.middleware.CsrfCookieMiddleware',
-    'django.middleware.cache.UpdateCacheMiddleware',
-    'django.middleware.cache.FetchFromCacheMiddleware',
+    'core.middleware.CsrfCookieMiddleware',   
     # 'axes.middleware.AxesMiddleware',  # Должен быть последним - временно отключено
 ]
 
