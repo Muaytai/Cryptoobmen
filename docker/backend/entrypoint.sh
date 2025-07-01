@@ -11,11 +11,11 @@ import psycopg2
 import os
 
 # Получаем параметры подключения из переменных окружения
-dbname = os.environ.get('POSTGRES_DB', 'cryptoobmen')
-user = os.environ.get('POSTGRES_USER', 'postgres')
-password = os.environ.get('POSTGRES_PASSWORD', 'postgres')
-host = os.environ.get('POSTGRES_HOST', 'cryptoobmen-postgres')
-port = os.environ.get('POSTGRES_PORT', '5432')
+dbname = os.environ.get('POSTGRES_DB')
+user = os.environ.get('POSTGRES_USER')
+password = os.environ.get('POSTGRES_PASSWORD')
+host = os.environ.get('POSTGRES_HOST')
+port = os.environ.get('POSTGRES_PORT')
 
 print(f'Trying to connect to PostgreSQL at {host}:{port}...')
 
