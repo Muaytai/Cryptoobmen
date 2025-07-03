@@ -11,18 +11,20 @@ from django.core.mail import send_mail
 class Transaction(models.Model):
     """Основная модель для всех транзакций"""
     TYPE_CHOICES = (
-        ('deposit', _('Deposit')),
-        ('withdrawal', _('Withdrawal')),
-        ('exchange', _('Exchange')),
-        ('transfer', _('Transfer')),
-        ('fee', _('Fee')),
+        ('deposit', _('Депозит')),
+        ('withdrawal', _('Вывод')),
+        ('exchange', _('Обмен')),
+        ('transfer', _('Перевод')),
+        ('fee', _('Комиссия')),
     )
     
     STATUS_CHOICES = (
-        ('pending', _('Pending')),
-        ('completed', _('Completed')),
-        ('failed', _('Failed')),
-        ('cancelled', _('Cancelled')),
+        ('pending', _('В ожидании')),
+        ('processing', _('В обработке')),
+        ('completed', _('Завершено')),
+        ('failed', _('Ошибка')),
+        ('cancelled', _('Отменено')),
+        ('refunded', _('Возвращено')),
     )
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
@@ -128,10 +130,45 @@ class Withdrawal(models.Model):
     # Время подтверждения
     confirmation_date = models.DateTimeField(blank=True, null=True)
     
+    refunded = models.BooleanField(default=False)
+    
+    @property
+    def status(self):
+        return self.transaction.status
+
+    @status.setter
+    def status(self, value):
+        if self.transaction.status != value:
+            old_status = self.transaction.status
+            self.transaction.status = value
+            self.transaction.save()
+            
+            # Если статус изменился на 'cancelled' или 'failed', возвращаем средства
+            if value in ['cancelled', 'failed'] and old_status not in ['cancelled', 'failed'] and not self.refunded:
+                self._refund_amount()
+    
+    def _refund_amount(self):
+        """Возвращает средства на баланс пользователя"""
+        if not self.refunded and self.wallet:
+            self.wallet.balance += self.transaction.amount
+            self.wallet.save(update_fields=['balance'])
+            self.refunded = True
+            self.save(update_fields=['refunded'])
+    
     def __str__(self):
         currency_symbol = self.wallet.currency.symbol if self.wallet and self.wallet.currency else "N/A"
         amount_display = self.transaction.amount if self.transaction else "N/A"
         return f"Withdrawal {amount_display} {currency_symbol} to {self.destination_address}"
+
+    def save(self, *args, **kwargs):
+        # Проверяем, изменился ли статус транзакции на 'cancelled' или 'failed'
+        if self.pk:
+            old = Withdrawal.objects.get(pk=self.pk)
+            if old.transaction.status != self.transaction.status and self.transaction.status in ['cancelled', 'failed'] and not self.refunded:
+                # Возвращаем средства на баланс пользователя
+                self._refund_amount()
+        
+        super().save(*args, **kwargs)
 
 
 class Transfer(models.Model):
@@ -140,13 +177,13 @@ class Transfer(models.Model):
     """
 
     class Status(models.TextChoices):
-        PENDING = "pending", _("Pending")
-        SUCCESS = "success", _("Success")
-        FAILED = "failed", _("Failed")
+        PENDING = "pending", _("В ожидании")
+        SUCCESS = "success", _("Успешно")
+        FAILED = "failed", _("Ошибка")
 
     TYPE_CHOICES = (
-        ("in", _("Inbound")),
-        ("out", _("Outbound")),
+        ("in", _("Входящий")),
+        ("out", _("Исходящий")),
     )
 
     user = models.ForeignKey(

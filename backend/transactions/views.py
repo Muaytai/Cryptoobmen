@@ -104,18 +104,37 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
         withdrawal = self.get_object()
         
         # Проверяем, можно ли отменить
-        if withdrawal.transaction.status != 'pending':
-            return Response({"error": "Можно отменить только ожидающие подтверждения выводы"}, 
+        if withdrawal.transaction.status not in ['pending', 'processing']:
+            return Response({"error": "Можно отменить только ожидающие или обрабатываемые выводы"}, 
                           status=status.HTTP_400_BAD_REQUEST)
         
-        # Отменяем вывод и возвращаем средства
-        withdrawal.transaction.status = 'cancelled'
-        withdrawal.transaction.save()
+        # Отменяем вывод
+        withdrawal.status = 'cancelled'
         
-        # Возвращаем средства
-        wallet = withdrawal.wallet
-        wallet.balance += withdrawal.transaction.amount
-        wallet.save()
+        serializer = self.get_serializer(withdrawal)
+        return Response(serializer.data)
+        
+    @action(detail=True, methods=['post'])
+    def change_status(self, request, pk=None):
+        """Изменяет статус вывода (только для администраторов)"""
+        if not request.user.is_staff:
+            return Response({"error": "Только администраторы могут изменять статус вывода"}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        
+        withdrawal = self.get_object()
+        new_status = request.data.get('status')
+        
+        if not new_status:
+            return Response({"error": "Необходимо указать новый статус"}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        valid_statuses = [status[0] for status in Transaction.STATUS_CHOICES]
+        if new_status not in valid_statuses:
+            return Response({"error": f"Недопустимый статус. Доступные статусы: {valid_statuses}"}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # Изменяем статус
+        withdrawal.status = new_status
         
         serializer = self.get_serializer(withdrawal)
         return Response(serializer.data)
