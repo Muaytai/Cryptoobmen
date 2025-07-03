@@ -205,17 +205,9 @@ class WithdrawalAdmin(admin.ModelAdmin):
             if not new_status:
                 return JsonResponse({'error': 'Status not provided'}, status=400)
                 
-            # Получаем текущий статус для сравнения
-            old_status = withdrawal.transaction.status
-            
             # Устанавливаем новый статус
             withdrawal.transaction.status = new_status
             withdrawal.transaction.save()
-            
-            # Если статус изменился на 'cancelled' или 'failed', возвращаем средства
-            if new_status in ['cancelled', 'failed'] and old_status not in ['cancelled', 'failed'] and not withdrawal.refunded:
-                withdrawal._refund_amount()
-                withdrawal.save()
             
             # Получаем отображаемое имя статуса
             from transactions.models import Transaction
@@ -251,17 +243,9 @@ class WithdrawalAdmin(admin.ModelAdmin):
                 messages.error(request, f"Недопустимый статус: {new_status}")
                 return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/'))
             
-            # Получаем текущий статус для сравнения
-            old_status = withdrawal.transaction.status
-            
             # Устанавливаем новый статус
             withdrawal.transaction.status = new_status
             withdrawal.transaction.save()
-            
-            # Если статус изменился на 'cancelled' или 'failed', возвращаем средства
-            if new_status in ['cancelled', 'failed'] and old_status not in ['cancelled', 'failed'] and not withdrawal.refunded:
-                withdrawal._refund_amount()
-                withdrawal.save()
             
             # Словарь с русскими названиями статусов
             status_names = {

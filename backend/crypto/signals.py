@@ -1,15 +1,15 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
+from django.conf import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
-@receiver(post_save, sender=None)  # sender будет указан внутри функции
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_user_wallets(sender, instance, created, **kwargs):
-    from .models import Cryptocurrency, UserWallet
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    if sender is User and created:
+    """Создает кошельки для нового пользователя"""
+    if created:
+        from .models import Cryptocurrency, UserWallet
         active_currencies = Cryptocurrency.objects.filter(is_active=True)
         for currency_obj in active_currencies:
             UserWallet.objects.get_or_create(
@@ -18,12 +18,13 @@ def create_user_wallets(sender, instance, created, **kwargs):
                 defaults={'balance': 0, 'available_balance': 0, 'is_active': True}
             )
 
-@receiver(post_save, sender=None)
+@receiver(post_save, sender='crypto.Cryptocurrency')
 def create_wallets_for_new_cryptocurrency(sender, instance, created, **kwargs):
-    from .models import UserWallet, Cryptocurrency
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    if sender is Cryptocurrency and created and instance.is_active:
+    """Создает кошельки для всех пользователей при добавлении новой криптовалюты"""
+    if created and instance.is_active:
+        from .models import UserWallet
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
         users = User.objects.all()
         for user in users:
             UserWallet.objects.get_or_create(
@@ -32,73 +33,103 @@ def create_wallets_for_new_cryptocurrency(sender, instance, created, **kwargs):
                 defaults={'balance': 0, 'available_balance': 0, 'is_active': True}
             )
 
-@receiver(post_save, sender=None)
+@receiver(post_save, sender='crypto.UserDepositMemo')
 def send_deposit_status_update(sender, instance, **kwargs):
-    from .models import UserDepositMemo
-    if sender is UserDepositMemo:
-        from asgiref.sync import async_to_sync
-        from channels.layers import get_channel_layer
-        try:
-            if instance.status in ['used', 'expired']:
-                logger.info(f"Caught status change for memo {instance.memo} to '{instance.status}'. Sending WebSocket update.")
-                channel_layer = get_channel_layer()
-                group_name = f'deposit_memo_{instance.memo}'
-                if channel_layer:
-                    async_to_sync(channel_layer.group_send)(
-                        group_name,
-                        {
-                            "type": "deposit.status.update",
-                            "data": {
-                                'status': instance.status,
-                                'memo': instance.memo,
-                            }
+    """Отправляет WebSocket уведомления об изменении статуса депозита"""
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+    try:
+        if instance.status in ['used', 'expired']:
+            logger.info(f"Caught status change for memo {instance.memo} to '{instance.status}'. Sending WebSocket update.")
+            channel_layer = get_channel_layer()
+            group_name = f'deposit_memo_{instance.memo}'
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    group_name,
+                    {
+                        "type": "deposit.status.update",
+                        "data": {
+                            'status': instance.status,
+                            'memo': instance.memo,
                         }
-                    )
-                    logger.info(f"Successfully sent WebSocket update to group {group_name}")
-        except Exception as e:
-            logger.error(f"Error in send_deposit_status_update signal for memo {instance.memo}: {e}")
+                    }
+                )
+                logger.info(f"Successfully sent WebSocket update to group {group_name}")
+    except Exception as e:
+        logger.error(f"Error in send_deposit_status_update signal for memo {instance.memo}: {e}")
 
-def refund_on_cancel(sender, instance, created, **kwargs):
-    logger.warning(f"=== SIGNAL: refund_on_cancel called for sender={sender}, instance.id={getattr(instance, 'id', None)}, status={getattr(instance, 'status', None)}, refunded={getattr(instance, 'refunded', None)}")
-    if instance.status == 'cancelled' and not instance.refunded:
-        wallet = instance.wallet
-        amount = instance.transaction.amount
-        logger.warning(f"=== SIGNAL: refund_on_cancel: Попытка возврата {amount} в кошелек {getattr(wallet, 'id', None)}")
-        wallet.balance += amount
-        wallet.save(update_fields=["balance"])
-        instance.refunded = True
-        instance.save(update_fields=["refunded"])
-        logger.warning(f"=== SIGNAL: refund_on_cancel: Баланс кошелька {wallet.id} теперь {wallet.balance}, Withdrawal.refunded={instance.refunded}")
-    else:
-        logger.warning(f"=== SIGNAL: refund_on_cancel: Условия не выполнены для возврата (status={instance.status}, refunded={instance.refunded})")
+from transactions.models import Transaction as TransactionModel, Withdrawal as WithdrawalModel
 
-def refund_on_transaction_cancel(sender, instance, created, **kwargs):
-    logger.warning(f"=== SIGNAL: refund_on_transaction_cancel called for sender={sender}, instance.id={getattr(instance, 'id', None)}, type={getattr(instance, 'type', None)}, status={getattr(instance, 'status', None)}")
-    if instance.type == 'withdrawal' and instance.status == 'cancelled':
+
+@receiver(post_save, sender=TransactionModel)
+def handle_transaction_status_change(sender, instance, **kwargs):
+    """
+    Обрабатывает изменение статуса транзакции.
+    Возвращает средства пользователю при отмене или ошибке вывода.
+    """
+    logger.info(f"Signal handle_transaction_status_change called for transaction {instance.pk}")
+    
+    # Проверяем, изменился ли статус на 'cancelled' или 'failed'
+    if (instance.status in ['cancelled', 'failed'] and 
+        instance.type == 'withdrawal'):
+        
+        logger.info(f"Refunding transaction {instance.pk}")
+        # Ищем связанный объект Withdrawal
         try:
             from transactions.models import Withdrawal
-            withdrawal = Withdrawal.objects.filter(transaction=instance).first()
-            if not withdrawal:
-                logger.error(f"=== SIGNAL: Withdrawal not found for Transaction #{instance.id}")
-                return
-            if withdrawal.refunded:
-                logger.warning(f"=== SIGNAL: Withdrawal already refunded for Transaction #{instance.id}")
-                return
-            wallet = withdrawal.wallet
-            if not wallet:
-                logger.error(f"=== SIGNAL: Wallet not found for Withdrawal #{withdrawal.id}")
-                return
-            amount = instance.amount
-            logger.warning(f"=== SIGNAL: refund_on_transaction_cancel: Попытка возврата {amount} в кошелек {wallet.id}")
-            wallet.balance += amount
-            wallet.save(update_fields=["balance"])
-            withdrawal.refunded = True
-            withdrawal.save(update_fields=["refunded"])
-            logger.warning(f"=== SIGNAL: refund_on_transaction_cancel: Баланс кошелька {wallet.id} теперь {wallet.balance}, Withdrawal.refunded={withdrawal.refunded}")
+            withdrawal = Withdrawal.objects.get(transaction=instance)
+            
+            # Проверяем, что средства еще не были возвращены
+            if not withdrawal.refunded and withdrawal.wallet:
+                # Возвращаем средства на баланс пользователя
+                withdrawal.wallet.balance += instance.amount
+                withdrawal.wallet.available_balance += instance.amount
+                withdrawal.wallet.save(update_fields=['balance', 'available_balance'])
+                
+                # Отмечаем, что средства возвращены
+                withdrawal.refunded = True
+                withdrawal.save(update_fields=['refunded'])
+                
+                logger.info(
+                    f"Возвращены средства пользователю {instance.user.email}: "
+                    f"{instance.amount} {instance.crypto.symbol} "
+                    f"(транзакция {instance.transaction_id})"
+                )
+                
+        except Withdrawal.DoesNotExist:
+            logger.warning(
+                f"Не найден объект Withdrawal для транзакции {instance.transaction_id}"
+            )
         except Exception as e:
-            logger.error(f"=== SIGNAL: refund_on_transaction_cancel: Ошибка возврата: {e}")
-    else:
-        logger.warning(f"=== SIGNAL: refund_on_transaction_cancel: Условия не выполнены для возврата (type={instance.type}, status={instance.status})")
+            logger.error(
+                f"Ошибка при возврате средств для транзакции {instance.transaction_id}: {e}"
+            )
 
-# Регистрация сигнала будет происходить в apps.py в методе ready() 
-# Регистрация сигнала для Transaction будет происходить в apps.py в методе ready() 
+@receiver(post_save, sender=WithdrawalModel)
+def handle_withdrawal_status_change(sender, instance, **kwargs):
+    """
+    Дополнительный сигнал для обработки изменений в модели Withdrawal
+    """
+    if hasattr(instance, '_state') and instance._state.adding:
+        # Это новый объект, ничего не делаем
+        return
+        
+    # Проверяем статус связанной транзакции
+    if (instance.transaction.status in ['cancelled', 'failed'] and 
+        not instance.refunded and 
+        instance.wallet):
+        
+        # Возвращаем средства на баланс пользователя
+        instance.wallet.balance += instance.transaction.amount
+        instance.wallet.available_balance += instance.transaction.amount
+        instance.wallet.save(update_fields=['balance', 'available_balance'])
+        
+        # Отмечаем, что средства возвращены
+        instance.refunded = True
+        instance.save(update_fields=['refunded'])
+        
+        logger.info(
+            f"Возвращены средства пользователю {instance.user.email}: "
+            f"{instance.transaction.amount} {instance.transaction.crypto.symbol} "
+            f"(вывод {instance.id})"
+        )

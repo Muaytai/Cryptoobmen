@@ -1,20 +1,23 @@
 from django.apps import AppConfig
 import os
 import sys
-from asgiref.sync import sync_to_async
-
-import crypto.signals
 
 
 class CryptoConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'crypto'
     
-    async def ready(self):
-        import crypto.signals
+    def ready(self):
+        # Импортируем сигналы для их регистрации
+        from . import signals
+        
+        # Создаем валюты по умолчанию (только в основном процессе)
+        if os.environ.get('RUN_MAIN') != 'true':
+            return
+            
         from .models import create_default_cryptocurrencies
         try:
-            await sync_to_async(create_default_cryptocurrencies)()
+            create_default_cryptocurrencies()
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f'Не удалось автосоздать валюты: {e}')
@@ -23,9 +26,6 @@ class CryptoConfig(AppConfig):
         # Это необходимо, когда используется DatabaseScheduler из django_celery_beat,
         # иначе статический CELERY_BEAT_SCHEDULE в settings.py игнорируется.
         # Создаём запись PeriodicTask каждые 30 секунд, если она ещё не существует.
-
-        # Запускаем логику только для celery beat/worker, не для тестов и shell
-        # (оставляю остальной код без изменений)
 
         # Запускаем логику только в веб-процессе / manage.py runserver / gunicorn.
         if any(cmd in sys.argv[0] for cmd in ("gunicorn", "uvicorn", "runserver")) or (
