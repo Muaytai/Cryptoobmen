@@ -11,18 +11,20 @@ from django.core.mail import send_mail
 class Transaction(models.Model):
     """Основная модель для всех транзакций"""
     TYPE_CHOICES = (
-        ('deposit', _('Deposit')),
-        ('withdrawal', _('Withdrawal')),
-        ('exchange', _('Exchange')),
-        ('transfer', _('Transfer')),
-        ('fee', _('Fee')),
+        ('deposit', _('Депозит')),
+        ('withdrawal', _('Вывод')),
+        ('exchange', _('Обмен')),
+        ('transfer', _('Перевод')),
+        ('fee', _('Комиссия')),
     )
     
     STATUS_CHOICES = (
-        ('pending', _('Pending')),
-        ('completed', _('Completed')),
-        ('failed', _('Failed')),
-        ('cancelled', _('Cancelled')),
+        ('pending', _('В ожидании')),
+        ('processing', _('В обработке')),
+        ('completed', _('Завершено')),
+        ('failed', _('Ошибка')),
+        ('cancelled', _('Отменено')),
+        ('refunded', _('Возвращено')),
     )
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
@@ -128,6 +130,18 @@ class Withdrawal(models.Model):
     # Время подтверждения
     confirmation_date = models.DateTimeField(blank=True, null=True)
     
+    refunded = models.BooleanField(default=False)
+    
+    @property
+    def status(self):
+        return self.transaction.status
+
+    @status.setter
+    def status(self, value):
+        if self.transaction.status != value:
+            self.transaction.status = value
+            self.transaction.save()
+    
     def __str__(self):
         currency_symbol = self.wallet.currency.symbol if self.wallet and self.wallet.currency else "N/A"
         amount_display = self.transaction.amount if self.transaction else "N/A"
@@ -140,13 +154,13 @@ class Transfer(models.Model):
     """
 
     class Status(models.TextChoices):
-        PENDING = "pending", _("Pending")
-        SUCCESS = "success", _("Success")
-        FAILED = "failed", _("Failed")
+        PENDING = "pending", _("В ожидании")
+        SUCCESS = "success", _("Успешно")
+        FAILED = "failed", _("Ошибка")
 
     TYPE_CHOICES = (
-        ("in", _("Inbound")),
-        ("out", _("Outbound")),
+        ("in", _("Входящий")),
+        ("out", _("Исходящий")),
     )
 
     user = models.ForeignKey(

@@ -1,9 +1,3 @@
-"""Celery tasks for the *crypto* domain.
-
-На первом этапе задачи-"заглушки" фиксируют структуру и обеспечивают
-корректную регистрацию в Celery. Реальная работа с блокчейном будет
-добавлена по мере готовности интеграционных драйверов.
-"""
 from __future__ import annotations
 
 import os
@@ -21,10 +15,10 @@ from django.db import transaction
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-from transactions.models import Transaction, Transfer  # noqa: E402  pylint: disable=wrong-import-position
 from .models import SystemWalletAddress, UserDepositMemo, UserWallet, CommissionTransaction
-from .blockchain.tron import get_trc20_transfers, extract_deposit_events
+from .blockchain.tron import get_trc20_transfers, extract_deposit_events, send_usdt_trc20
 from tronpy import Tron
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +28,8 @@ def check_blockchain_deposits():
     """
     Периодическая задача для проверки новых депозитов в блокчейне.
     """
+    from transactions.models import Transaction
+    from .models import SystemWalletAddress, UserDepositMemo, UserWallet
     processed = 0
     logger.info("[check_blockchain_deposits] Starting deposit check...")
 
@@ -134,18 +130,11 @@ def check_blockchain_deposits():
 
 
 @shared_task(bind=True, name='crypto.tasks.process_withdrawal')
-def process_withdrawal(self, transfer_id: int) -> str:  # pylint: disable=unused-argument
-    """Processes a *pending* withdrawal transfer.
-
-    Args:
-        transfer_id: PK of the ``Transfer`` instance representing withdrawal.
-
-    Returns:
-        tx_hash (str): Blockchain transaction hash (placeholder for now).
-    """
+def process_withdrawal(self, transfer_id: int) -> str:
+    from transactions.models import Transfer, Withdrawal
     try:
-        transfer: Transfer = Transfer.objects.select_for_update().get(id=transfer_id)
-    except Transfer.DoesNotExist:  # pragma: no cover
+        transfer = Transfer.objects.select_for_update().get(id=transfer_id)
+    except Transfer.DoesNotExist:
         logger.error("[process_withdrawal] transfer %s not found", transfer_id)
         return "error:not_found"
 
@@ -153,16 +142,66 @@ def process_withdrawal(self, transfer_id: int) -> str:  # pylint: disable=unused
         logger.info("[process_withdrawal] transfer %s not pending, skip", transfer_id)
         return "skip:not_pending"
 
-    # Placeholder: mark as SUCCESS instantly and pretend fee calculation
-    tx_hash = f"stub-{transfer_id}-{timezone.now().timestamp()}"
-    fee = Decimal("0.0001")  # TODO: dynamic fee based on currency/network
+    # --- Поиск заявки на вывод (Withdrawal) ---
+    withdrawal = Withdrawal.objects.filter(
+        user=transfer.user,
+        transaction__amount=transfer.amount,
+        transaction__status='pending'
+    ).order_by('-id').first()
+    if not withdrawal:
+        logger.error(f"[process_withdrawal] No matching Withdrawal for transfer {transfer_id}")
+        return "error:no_withdrawal"
+
+    # --- Отправка USDT (TRC20) ---
+    try:
+        priv_key = getattr(settings, 'TRON_PLATFORM_PRIVATE_KEY', None)
+        if not priv_key:
+            logger.error("[process_withdrawal] TRON_PLATFORM_PRIVATE_KEY not set in settings!")
+            raise Exception("TRON_PLATFORM_PRIVATE_KEY not set")
+        to_address = withdrawal.destination_address
+        amount = float(transfer.amount)
+        memo = f"withdrawal_{withdrawal.id}_{transfer.id}"
+        tx_hash = send_usdt_trc20(priv_key, to_address, amount, memo)
+        fee = Decimal("0.0001")  # TODO: вычислять реальную комиссию
+        status = Transfer.Status.SUCCESS
+        withdrawal.transaction.status = 'completed'
+        withdrawal.transaction.tx_hash = tx_hash
+        withdrawal.transaction.save(update_fields=["status", "tx_hash"])
+        withdrawal.confirmation_date = timezone.now()
+        withdrawal.save(update_fields=["confirmation_date"])
+    except Exception as e:
+        logger.error(f"[process_withdrawal] Ошибка отправки USDT: {e}", exc_info=True)
+        tx_hash = None
+        fee = None
+        status = Transfer.Status.FAILED
+        withdrawal.transaction.status = 'failed'
+        withdrawal.transaction.save(update_fields=["status"])
 
     with transaction.atomic():
         transfer.tx_hash = tx_hash  # type: ignore[attr-defined]
         transfer.fee = fee  # type: ignore[attr-defined]
-        transfer.status = Transfer.Status.SUCCESS  # type: ignore[attr-defined]
+        transfer.status = status  # type: ignore[attr-defined]
         transfer.completed_at = timezone.now()  # type: ignore[attr-defined]
         transfer.save(update_fields=["tx_hash", "fee", "status", "completed_at"])
 
     logger.info("[process_withdrawal] transfer %s completed -> %s", transfer.id, tx_hash)
-    return tx_hash
+    return tx_hash or "error:tx_failed"
+
+
+@shared_task
+def process_pending_withdrawals():
+    """
+    Периодическая задача для обработки всех ожидающих заявок на вывод.
+    """
+    from transactions.models import Transfer
+    pending_transfers = Transfer.objects.filter(status=Transfer.Status.PENDING)
+    for transfer in pending_transfers:
+        process_withdrawal.delay(transfer.id)
+
+@shared_task
+def process_pending_deposits():
+    """
+    Периодическая задача для обработки всех ожидающих депозитов (если требуется).
+    """
+    # Здесь можно реализовать обработку зависших депозитов, если такая логика нужна
+    pass

@@ -24,18 +24,28 @@ interface Wallet {
 }
 
 interface CryptoPrice {
-  id: number;
-  crypto: {
-    id: number;
-    name: string;
-    symbol: string;
-  };
-  price_usd: string;
+  crypto_id: number;
+  name: string;
+  symbol: string;
+  prices: { usd: number };
 }
 
 interface WithdrawalData {
   wallet: number;
   amount: number;
+  destination_address: string;
+  crypto_id: number;
+}
+
+// Добавляем интерфейс для статуса транзакции
+interface WithdrawalStatus {
+  id: number;
+  transaction: {
+    id: number;
+    transaction_id: string;
+    status: string;
+    status_display: string;
+  };
   destination_address: string;
 }
 
@@ -62,6 +72,30 @@ export const WithdrawPage: React.FC = () => {
   const [feeUsd, setFeeUsd] = useState<string>('0');
   const [netAmount, setNetAmount] = useState<string>('0');
 
+  // В компоненте WithdrawPage добавим состояние для отслеживания статуса вывода
+  const [withdrawalStatus, setWithdrawalStatus] = useState<WithdrawalStatus | null>(null);
+  const [cancelling, setCancelling] = useState<boolean>(false);
+
+  // Функция загрузки кошельков
+  const fetchWallets = async () => {
+    try {
+      const walletsResponse = await api.get('/crypto/wallets/');
+      console.log('API wallets response:', walletsResponse);
+      // Если ответ содержит results (DRF pagination)
+      const walletsArr = Array.isArray(walletsResponse.results)
+        ? walletsResponse.results
+        : (Array.isArray(walletsResponse) ? walletsResponse : []);
+      setWallets(walletsArr);
+      console.log('walletsArr after set:', walletsArr);
+    } catch (err) {
+      setWallets([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchWallets();
+  }, []);
+
   // Получение данных кошельков пользователя
   useEffect(() => {
     if (authLoading) {
@@ -85,15 +119,13 @@ export const WithdrawPage: React.FC = () => {
       setLoading(true);
       try {
         // Используем api.get с правильными эндпоинтами
-        const walletsResponse = await api.get('/crypto/wallets/'); 
         const pricesResponse = await api.get('/crypto/prices/latest/');
-        
-        // Данные пользователя уже должны быть в response.data согласно реализации api.get
-        setWallets(walletsResponse.data);
-        setPrices(pricesResponse.data);
-        
+        setPrices(Array.isArray(pricesResponse) ? pricesResponse : []);
         const walletIdParam = searchParams.get('wallet_id');
-        if (walletIdParam && walletsResponse.data.some((w: Wallet) => w.id === parseInt(walletIdParam))) {
+        if (
+          walletIdParam &&
+          wallets.some((w: Wallet) => w.id === parseInt(walletIdParam))
+        ) {
           setSelectedWalletId(parseInt(walletIdParam));
         }
         setError(null);
@@ -109,12 +141,37 @@ export const WithdrawPage: React.FC = () => {
 
   }, [authLoading, isAuthenticated, user, router, searchParams]);
 
+  // Гарантируем, что wallets — массив
+  const walletsArr = Array.isArray(wallets) ? wallets : [];
+
+  // useEffect для авто-выбора кошелька после загрузки
+  useEffect(() => {
+    if (walletsArr.length > 0 && !selectedWalletId) {
+      const walletIdParam = searchParams.get('wallet_id');
+      if (walletIdParam && walletsArr.some(w => w.id === Number(walletIdParam))) {
+        setSelectedWalletId(Number(walletIdParam));
+      } else {
+        setSelectedWalletId(walletsArr[0].id);
+      }
+    }
+  }, [walletsArr, selectedWalletId, searchParams]);
+
+  const selectedWallet = walletsArr.find(w => w.id === Number(selectedWalletId));
+
+  // Безопасный поиск цены для выбранного кошелька
+  let cryptoPrice = null;
+  if (selectedWallet && selectedWallet.currency && Array.isArray(prices)) {
+    cryptoPrice = prices.find(
+      (p) => p.crypto_id === selectedWallet.currency.id
+    );
+  }
+
   // Обновление расчета комиссии при изменении суммы или кошелька
   useEffect(() => {
     if (selectedWalletId && amount && !isNaN(parseFloat(amount))) {
       const selectedWallet = wallets.find(w => w.id === selectedWalletId);
       if (selectedWallet) {
-        const cryptoPrice = prices.find(p => p.crypto.id === selectedWallet.currency.id);
+        const cryptoPrice = prices.find(p => p.crypto_id === selectedWallet.currency.id);
         if (cryptoPrice) {
           // Расчет комиссии (примерно 0.1% от суммы вывода)
           const feePercentage = 0.1;
@@ -123,7 +180,7 @@ export const WithdrawPage: React.FC = () => {
           const netAmountValue = amountValue - feeValue;
           
           setFee(feeValue.toFixed(8));
-          setFeeUsd((feeValue * parseFloat(cryptoPrice.price_usd)).toFixed(2));
+          setFeeUsd((feeValue * cryptoPrice.prices.usd).toFixed(2));
           setNetAmount(netAmountValue.toFixed(8));
         }
       }
@@ -191,28 +248,54 @@ export const WithdrawPage: React.FC = () => {
       setSubmitting(true);
       setError(null);
       
-      const withdrawalData: WithdrawalData = {
+      const withdrawalData = {
         wallet: selectedWalletId,
         amount: amountValue,
-        destination_address: destinationAddress
+        destination_address: destinationAddress,
+        crypto_id: wallet.currency.id
       };
       
-      const response = await api.post('/crypto/withdrawals/', withdrawalData);
+      const response = await api.post('/transactions/withdrawals/', withdrawalData);
       
       setSuccess(true);
-      setWithdrawalId(response.data.transaction_id);
+      if (response && response.data) {
+        setWithdrawalId(response.data.transaction.transaction_id);
+        setWithdrawalStatus(response.data);
+      }
       
       // Очищаем форму
       setAmount('');
       setDestinationAddress('');
       
-      setSubmitting(false);
     } catch (err: any) {
-      console.error('Ошибка при отправке запроса:', err);
-      setError(err.response?.data?.error || 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.');
+      console.error('Ошибка при отправке запроса на вывод:', err);
+      setError(err.message || 'Не удалось создать запрос на вывод средств');
+    } finally {
       setSubmitting(false);
     }
   };
+
+  // Добавим функцию для отмены вывода средств
+  const cancelWithdrawal = async (withdrawalId: number) => {
+    if (!withdrawalId) return;
+    
+    try {
+      setCancelling(true);
+      await api.post(`/transactions/withdrawals/${withdrawalId}/cancel/`, {});
+      // Обновляем статус вывода после отмены
+      const updatedWithdrawal = await api.get(`/transactions/withdrawals/${withdrawalId}/`);
+      setWithdrawalStatus(updatedWithdrawal.data);
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message || 'Не удалось отменить вывод средств');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  console.log('wallets:', walletsArr);
+  console.log('selectedWalletId:', selectedWalletId, typeof selectedWalletId);
+  console.log('selectedWallet:', selectedWallet);
 
   if (authLoading || loading) {
     return (
@@ -247,6 +330,13 @@ export const WithdrawPage: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  if (!selectedWallet) {
+    return <div className="text-red-500">Выберите кошелек для вывода</div>;
+  }
+  if (!cryptoPrice) {
+    return <div className="text-red-500">Нет данных о цене для выбранной монеты</div>;
   }
 
   return (
@@ -295,7 +385,7 @@ export const WithdrawPage: React.FC = () => {
               Выберите кошелек для вывода:
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {wallets
+              {(Array.isArray(wallets) ? wallets : [])
                 .filter(wallet => wallet.currency.symbol !== 'USD' && wallet.currency.symbol !== 'RUB')
                 .map(wallet => (
                   <button
@@ -339,6 +429,33 @@ export const WithdrawPage: React.FC = () => {
                 ))}
             </div>
           </div>
+
+          {/* Отображение информации о выбранном кошельке */}
+          {selectedWallet && (
+            <div className="mb-4 p-4 bg-gray-700 rounded-lg flex items-center">
+              <div className="mr-4">
+                {selectedWallet.currency.icon && (
+                  <img
+                    src={selectedWallet.currency.icon}
+                    alt={selectedWallet.currency.symbol}
+                    width={32}
+                    height={32}
+                  />
+                )}
+              </div>
+              <div>
+                <div>
+                  <b>{selectedWallet.currency.symbol} ({selectedWallet.currency.network})</b>
+                </div>
+                <div className="text-xs text-gray-300 break-all">
+                  Адрес: {selectedWallet.address}
+                </div>
+                <div className="text-xs text-gray-300">
+                  Баланс: {selectedWallet.balance}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Сумма вывода */}
           <div className="mb-6">
@@ -452,6 +569,72 @@ export const WithdrawPage: React.FC = () => {
             </Link>
           </div>
         </form>
+
+        {/* После компонента формы добавим компонент успешного вывода */}
+        {success && (
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 shadow-lg mb-6">
+            <div className="flex items-center mb-4">
+              <div className="bg-green-900 rounded-full p-2 mr-3">
+                <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-white">Запрос на вывод средств отправлен</h3>
+            </div>
+            
+            <p className="text-gray-300 mb-4">
+              Ваш запрос на вывод средств был успешно создан и находится в обработке.
+            </p>
+            
+            {withdrawalId && (
+              <p className="text-sm text-gray-400 mb-2">
+                ID транзакции: <span className="font-mono">{withdrawalId}</span>
+              </p>
+            )}
+            
+            {withdrawalStatus && (
+              <div className="mt-4 p-4 bg-gray-700 rounded-lg border border-gray-600">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-400">Статус:</span>
+                  <span className={`font-medium px-2 py-1 rounded-full text-sm ${
+                    withdrawalStatus.transaction.status === 'completed' ? 'bg-green-900 text-green-300' :
+                    withdrawalStatus.transaction.status === 'pending' ? 'bg-yellow-900 text-yellow-300' :
+                    withdrawalStatus.transaction.status === 'processing' ? 'bg-blue-900 text-blue-300' :
+                    withdrawalStatus.transaction.status === 'cancelled' ? 'bg-gray-900 text-gray-300' :
+                    withdrawalStatus.transaction.status === 'failed' ? 'bg-red-900 text-red-300' :
+                    'bg-gray-900 text-gray-300'
+                  }`}>
+                    {withdrawalStatus.transaction.status_display || withdrawalStatus.transaction.status}
+                  </span>
+                </div>
+                
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-400">Адрес получателя:</span>
+                  <span className="font-mono text-sm truncate max-w-[200px] text-gray-300">{withdrawalStatus.destination_address}</span>
+                </div>
+                
+                {(withdrawalStatus.transaction.status === 'pending' || withdrawalStatus.transaction.status === 'processing') && (
+                  <button
+                    onClick={() => cancelWithdrawal(withdrawalStatus.id)}
+                    disabled={cancelling}
+                    className="mt-3 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md transition-colors disabled:opacity-50"
+                  >
+                    {cancelling ? 'Отмена...' : 'Отменить вывод'}
+                  </button>
+                )}
+              </div>
+            )}
+            
+            <div className="mt-4">
+              <button
+                onClick={() => setSuccess(false)}
+                className="text-purple-400 hover:text-purple-300 underline"
+              >
+                Создать новый запрос на вывод
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -5,6 +5,9 @@ from crypto.serializers import CryptocurrencySerializer
 from django.db import transaction as db_transaction
 from decimal import Decimal
 from django.utils import timezone
+from django.conf import settings
+from crypto.tasks import process_withdrawal
+from transactions.models import Transfer
 
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -181,16 +184,16 @@ class WithdrawalCreateSerializer(serializers.Serializer):
         try:
             crypto = Cryptocurrency.objects.get(id=data['crypto_id'], is_active=True)
             
-            # Проверяем наличие кошелька
-            wallet = UserWallet.objects.get(user=user, crypto=crypto, is_active=True)
+            # Исправлено: ищем по currency, а не по crypto
+            wallet = UserWallet.objects.get(user=user, currency=crypto, is_active=True)
             
             # Проверяем баланс
             if wallet.balance < data['amount']:
                 raise serializers.ValidationError(f"Недостаточно средств. Баланс: {wallet.balance} {crypto.symbol}")
             
             # Проверяем минимальную сумму вывода
-            if data['amount'] < crypto.min_amount:
-                raise serializers.ValidationError(f"Минимальная сумма вывода: {crypto.min_amount} {crypto.symbol}")
+            if data['amount'] < crypto.min_exchange_amount:
+                raise serializers.ValidationError(f"Минимальная сумма вывода: {crypto.min_exchange_amount} {crypto.symbol}")
             
             # Рассчитываем комиссию
             fee_percentage = crypto.fee_percentage
@@ -212,15 +215,14 @@ class WithdrawalCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Кошелек не найден")
     
     def create(self, validated_data):
-        """Создает запрос на вывод средств"""
+        """Создает запрос на вывод средств и инициирует асинхронный вывод через Transfer"""
         user = self.context['request'].user
-        
         crypto = validated_data['crypto']
         wallet = validated_data['wallet']
         amount = validated_data['amount']
         fee_amount = validated_data['fee_amount']
         destination_address = validated_data['destination_address']
-        
+
         with db_transaction.atomic():
             # Создаем транзакцию
             transaction = Transaction.objects.create(
@@ -233,7 +235,7 @@ class WithdrawalCreateSerializer(serializers.Serializer):
                 ip_address=self.context['request'].META.get('REMOTE_ADDR'),
                 notes=f"Withdrawal {amount} {crypto.symbol} to {destination_address}"
             )
-            
+
             # Создаем вывод
             withdrawal = Withdrawal.objects.create(
                 user=user,
@@ -241,11 +243,22 @@ class WithdrawalCreateSerializer(serializers.Serializer):
                 wallet=wallet,
                 destination_address=destination_address
             )
-            
+
             # Блокируем средства на кошельке
             wallet.balance -= amount
             wallet.save()
-            
+
+            # Создаём Transfer для асинхронного вывода
+            transfer = Transfer.objects.create(
+                user=user,
+                type='out',
+                amount=amount,
+                status=Transfer.Status.PENDING,
+            )
+
+            # Запускаем Celery-задачу на вывод
+            process_withdrawal.delay(transfer.id)
+
             return withdrawal
 
 

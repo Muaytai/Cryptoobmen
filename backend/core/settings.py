@@ -474,9 +474,17 @@ CELERY_TIMEZONE = TIME_ZONE
 from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {
-    "scan_deposits_every_30s": {
-        "task": "crypto.tasks.check_blockchain_deposits",
-        "schedule": 30.0,  # каждые 30 секунд
+    'scan_deposits_every_30s': {
+        'task': 'crypto.tasks.check_blockchain_deposits',
+        'schedule': 30.0,
+    },
+    'process-pending-withdrawals-every-minute': {
+        'task': 'crypto.tasks.process_pending_withdrawals',
+        'schedule': 60.0,
+    },
+    'process-pending-deposits-every-minute': {
+        'task': 'crypto.tasks.process_pending_deposits',
+        'schedule': 60.0,
     },
 }
 
@@ -494,3 +502,5 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+TRON_PLATFORM_PRIVATE_KEY = os.getenv('TRON_PLATFORM_PRIVATE_KEY')

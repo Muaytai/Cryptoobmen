@@ -2,6 +2,7 @@ from __future__ import absolute_import, unicode_literals
 import os
 from celery import Celery
 
+
 # Имя настроечного модуля Django берём из переменной окружения
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 

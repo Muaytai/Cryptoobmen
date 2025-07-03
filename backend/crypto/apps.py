@@ -8,7 +8,13 @@ class CryptoConfig(AppConfig):
     name = 'crypto'
     
     def ready(self):
-        import crypto.signals  # noqa
+        # Импортируем сигналы для их регистрации
+        from . import signals
+        
+        # Создаем валюты по умолчанию (только в основном процессе)
+        if os.environ.get('RUN_MAIN') != 'true':
+            return
+            
         from .models import create_default_cryptocurrencies
         try:
             create_default_cryptocurrencies()

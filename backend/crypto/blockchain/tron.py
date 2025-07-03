@@ -8,6 +8,8 @@ from typing import List, Dict, Any
 import json
 
 import requests
+from tronpy import Tron
+from tronpy.keys import PrivateKey
 
 logger = logging.getLogger(__name__)
 
@@ -155,3 +157,29 @@ def extract_deposit_events(transfers: List[Dict[str, Any]]) -> List[Dict[str, An
         })
     logger.info(f"[extract_deposit_events] Extracted events: {json.dumps(events, indent=2)}")
     return events
+
+
+def send_usdt_trc20(from_priv_key: str, to_address: str, amount: float, memo: str = "") -> str:
+    """
+    Отправляет USDT (TRC20) с платформенного кошелька на внешний адрес через tronpy.
+    :param from_priv_key: приватный ключ отправителя (hex-строка)
+    :param to_address: TRON адрес получателя (base58)
+    :param amount: сумма в USDT (десятичное число)
+    :param memo: опционально, memo для транзакции
+    :return: tx_hash (str)
+    """
+    client = Tron(network='nile')  # или mainnet
+    priv_key = PrivateKey(bytes.fromhex(from_priv_key))
+    contract = client.get_contract(USDT_CONTRACT)
+    # USDT имеет 6 знаков после запятой
+    amount_int = int(amount * 1_000_000)
+    txn = (
+        contract.functions.transfer(to_address, amount_int)
+        .with_owner(priv_key.public_key.to_base58check_address())
+        .fee_limit(5_000_000)
+    )
+    if memo:
+        txn = txn.memo(memo)
+    txn = txn.build().sign(priv_key)
+    result = txn.broadcast().wait()
+    return result['id']
