@@ -40,6 +40,13 @@ class Cryptocurrency(models.Model):
     contract_address = models.CharField(max_length=255, blank=True, null=True, verbose_name=_('Contract Address'))
     decimals = models.PositiveSmallIntegerField(blank=True, null=True, verbose_name=_('Decimals'))
     
+    # Требуется ли Memo/Destination Tag для пополнения
+    requires_memo = models.BooleanField(
+        default=False,
+        verbose_name=_('Requires Memo'),
+        help_text=_('Check if this currency requires a Memo/Destination Tag for deposits.')
+    )
+
     # Минимальная и максимальная сумма для обмена (можно перенести в ExchangePair, если нужна гранулярность)
     min_exchange_amount = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal('0.0001'), verbose_name=_('Min Exchange Amount'))
     max_exchange_amount = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal('10.0'), verbose_name=_('Max Exchange Amount'))
@@ -361,4 +368,3 @@ def create_default_cryptocurrencies():
         obj.save()
 
 # Вызов при миграции или через shell
-
