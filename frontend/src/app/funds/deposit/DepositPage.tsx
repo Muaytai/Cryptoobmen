@@ -21,8 +21,9 @@ interface Wallet {
   };
 }
 interface DepositInfo {
-  system_wallet_address: string;
-  memo: string;
+  address: string;
+  memo?: string;
+  requires_memo?: boolean;
 }
 
 interface SavedDepositInfo {
@@ -334,8 +335,9 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
       }
       
       setDepositInfo({
-        system_wallet_address: data.address,
+        address: data.address,
         memo: data.memo,
+        requires_memo: data.requires_memo,
       });
       
       // Важно: устанавливаем статус waiting только после успешного получения всех данных
@@ -498,7 +500,7 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
 
   // WebSocket Connection
   useEffect(() => {
-    if (!depositInfo || !depositInfo.memo) {
+    if (!depositInfo || (!depositInfo.memo && !depositInfo.address)) {
       return; // Нет данных для WebSocket
     }
     
@@ -509,26 +511,27 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
     }
 
     const connect = () => {
-      if (!depositInfo?.memo) return;
+      let wsUrl = '';
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = process.env.NEXT_PUBLIC_WS_BASE_URL 
+        ? process.env.NEXT_PUBLIC_WS_BASE_URL 
+        : `${protocol}//${window.location.hostname}:8000`;
+      if (depositInfo.memo) {
+        wsUrl = `${host}/ws/deposit_status/${depositInfo.memo}/`;
+        console.log(`DepositPage: подключение к WebSocket по memo: ${wsUrl}`);
+      } else if (depositInfo.address) {
+        wsUrl = `${host}/ws/deposit_status/address/${depositInfo.address}/`;
+        console.log(`DepositPage: подключение к WebSocket по адресу: ${wsUrl}`);
+      } else {
+        return;
+      }
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
-
       try {
-        console.log('DepositPage: Начинаем подключение WebSocket для memo:', depositInfo.memo);
-        
-        // Определяем протокол и хост для WebSocket
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = process.env.NEXT_PUBLIC_WS_BASE_URL 
-          ? process.env.NEXT_PUBLIC_WS_BASE_URL 
-          : `${protocol}//${window.location.hostname}:8000`;
-        
-        const wsUrl = `${host}/ws/deposit_status/${depositInfo.memo}/`;
-        console.log(`DepositPage: подключение к WebSocket по адресу ${wsUrl}`);
-        
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
-          console.log(`WebSocket подключен для memo: ${depositInfo.memo}`);
+          console.log(`WebSocket подключен: ${wsUrl}`);
           toast.success('Подключение к системе мониторинга установлено', {
             duration: 5000,
             position: 'top-center',
@@ -539,11 +542,8 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
           try {
             console.log('Получено WebSocket сообщение:', event.data);
             const data = JSON.parse(event.data);
-            
-            // Сервер отправляет только {memo, status}, без data.type
-            if (data.memo === depositInfo.memo && data.status) {
-              console.log('Обновление статуса депозита:', data);
-              
+            // Для memo
+            if (depositInfo.memo && data.memo === depositInfo.memo && data.status) {
               if (data.status === 'used') {
                 setStatus('completed');
                 localStorage.removeItem(DEPOSIT_INFO_KEY);
@@ -551,7 +551,21 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
                   duration: 5000,
                   position: 'top-center',
                 });
-                
+                if (wsRef.current) {
+                  wsRef.current.close();
+                  wsRef.current = null;
+                }
+              }
+            }
+            // Для адреса
+            if (depositInfo.address && data.address === depositInfo.address && data.status) {
+              if (data.status === 'used') {
+                setStatus('completed');
+                localStorage.removeItem(DEPOSIT_INFO_KEY);
+                toast.success('Пополнение успешно зачислено!', {
+                  duration: 5000,
+                  position: 'top-center',
+                });
                 if (wsRef.current) {
                   wsRef.current.close();
                   wsRef.current = null;
@@ -569,15 +583,12 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
 
         ws.onclose = (event) => {
           console.log('WebSocket отключен.', event.reason || 'причина не указана');
-          
-          // Очистка ссылки при закрытии
           wsRef.current = null;
-          
           if (status === 'waiting') {
             // Попытка переподключения через 5 секунд
             console.log('Переподключение WebSocket через 5 сек...');
             setTimeout(() => {
-              if (status === 'waiting') { // только если все еще ждем
+              if (status === 'waiting') {
                 connect();
               }
             }, 5000);
@@ -589,20 +600,16 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
       }
     };
 
-    // Запускаем подключение с небольшой задержкой для уверенности в стабильности соединения
     const timer = setTimeout(() => {
       connect();
     }, 500);
 
     return () => {
       clearTimeout(timer);
-      
       if (wsRef.current) {
         console.log('Закрытие WebSocket соединения при размонтировании компонента');
         const ws = wsRef.current;
         wsRef.current = null;
-        
-        // Отключаем логику переподключения и безопасно закрываем
         ws.onclose = null;
         ws.close();
       }
@@ -826,11 +833,11 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
                   id="deposit-address"
                   type="text"
                   readOnly
-                  value={depositInfo.system_wallet_address}
+                  value={depositInfo.address}
                   className="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2 pr-10"
                 />
                 <button 
-                  onClick={() => copyToClipboard(depositInfo.system_wallet_address, 'address')}
+                  onClick={() => copyToClipboard(depositInfo.address, 'address')}
                   className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
                   title="Копировать адрес"
                 >
@@ -846,65 +853,66 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
                 </button>
               </div>
             </div>
-            
-            <div className="mb-6">
-              <label htmlFor="deposit-memo" className="block text-sm font-medium text-gray-400">MEMO (обязательно для зачисления):</label>
-              <div className="mt-1 relative">
-                <input
-                  id="deposit-memo"
-                  type="text"
-                  readOnly
-                  value={depositInfo.memo}
-                  className="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2 pr-10"
-                />
-                <button 
-                  onClick={() => copyToClipboard(depositInfo.memo, 'memo')}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
-                  title="Копировать MEMO"
-                >
-                  {copiedMemo ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            {depositInfo.requires_memo && (
+              <>
+                <div className="mb-6">
+                  <label htmlFor="deposit-memo" className="block text-sm font-medium text-gray-400">MEMO (обязательно для зачисления):</label>
+                  <div className="mt-1 relative">
+                    <input
+                      id="deposit-memo"
+                      type="text"
+                      readOnly
+                      value={depositInfo.memo}
+                      className="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2 pr-10"
+                    />
+                    <button 
+                      onClick={() => copyToClipboard(depositInfo.memo || '', 'memo')}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                      title="Копировать MEMO"
+                    >
+                      {copiedMemo ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-yellow-900 border-l-4 border-yellow-500 text-yellow-200 p-4 rounded-md mb-6">
+                  <h4 className="font-bold flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                     </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    ВАЖНО!
+                  </h4>
+                  <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
+                    <li>Отправляйте только {selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol} в сети {selectedNetwork}.</li>
+                    <li>Обязательно укажите MEMO в комментарии к транзакции.</li>
+                    <li>Средства, отправленные без MEMO, могут быть утеряны.</li>
+                    <li>Минимальная сумма пополнения: 10 {selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol}.</li>
+                  </ul>
+                </div>
+                <div className="bg-blue-900 border-l-4 border-blue-500 text-blue-200 p-4 rounded-md mb-6">
+                  <h4 className="font-bold flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                     </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-            
-            <div className="bg-yellow-900 border-l-4 border-yellow-500 text-yellow-200 p-4 rounded-md mb-6">
-              <h4 className="font-bold flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                ВАЖНО!
-              </h4>
-              <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
-                <li>Отправляйте только {selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol} в сети {selectedNetwork}.</li>
-                <li>Обязательно укажите MEMO в комментарии к транзакции.</li>
-                <li>Средства, отправленные без MEMO, могут быть утеряны.</li>
-                <li>Минимальная сумма пополнения: 10 {selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol}.</li>
-              </ul>
-            </div>
-            
-            <div className="bg-blue-900 border-l-4 border-blue-500 text-blue-200 p-4 rounded-md mb-6">
-              <h4 className="font-bold flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                </svg>
-                Как пополнить кошелек:
-              </h4>
-              <ol className="list-decimal pl-5 mt-2 space-y-1 text-sm">
-                <li>Скопируйте адрес и MEMO, нажав на соответствующие кнопки.</li>
-                <li>Откройте ваш внешний кошелек или биржу.</li>
-                <li>Создайте новый перевод на указанный адрес.</li>
-                <li>Обязательно укажите MEMO в поле комментария/примечания.</li>
-                <li>После отправки средств дождитесь подтверждения сети.</li>
-              </ol>
-            </div>
+                    Как пополнить кошелек:
+                  </h4>
+                  <ol className="list-decimal pl-5 mt-2 space-y-1 text-sm">
+                    <li>Скопируйте адрес и MEMO, нажав на соответствующие кнопки.</li>
+                    <li>Откройте ваш внешний кошелек или биржу.</li>
+                    <li>Создайте новый перевод на указанный адрес.</li>
+                    <li>Обязательно укажите MEMO в поле комментария/примечания.</li>
+                    <li>После отправки средств дождитесь подтверждения сети.</li>
+                  </ol>
+                </div>
+              </>
+            )}
             
             <div className="mt-4 text-center text-blue-400 animate-pulse flex items-center justify-center">
               <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
