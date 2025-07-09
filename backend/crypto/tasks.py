@@ -19,6 +19,7 @@ from .models import SystemWalletAddress, UserDepositMemo, UserWallet, Commission
 from .blockchain.tron import get_trc20_transfers, extract_deposit_events, send_usdt_trc20
 from tronpy import Tron
 from django.conf import settings
+from .blockchain.xrp import get_xrp_incoming_transactions
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ def check_blockchain_deposits():
     processed = 0
     logger.info("[check_blockchain_deposits] Starting deposit check...")
 
+    # --- TRC20 (TRON) ---
     wallets = SystemWalletAddress.objects.filter(network__iexact="TRC20", currency__is_active=True)
     logger.info(f"[check_blockchain_deposits] Found {wallets.count()} TRC20 wallets to check")
 
@@ -124,6 +126,65 @@ def check_blockchain_deposits():
 
         except Exception as e:
             logger.error(f"Error processing wallet {wallet.address}: {e}", exc_info=True)
+
+    # --- XRP Ledger ---
+    xrp_wallets = SystemWalletAddress.objects.filter(network__iexact="XRP", currency__is_active=True)
+    logger.info(f"[check_blockchain_deposits] Found {xrp_wallets.count()} XRP wallets to check")
+    for wallet in xrp_wallets:
+        try:
+            logger.info(f"[check_blockchain_deposits][XRP] Checking wallet: {wallet.address} for currency {wallet.currency.symbol}")
+            # Получаем последние обработанные транзакции (можно доработать для оптимизации)
+            last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
+            # XRP Ledger не использует timestamp, а ledger index. Для простоты пока не фильтруем по ledger.
+            incoming_txs = get_xrp_incoming_transactions(wallet.address)
+            logger.info(f"[check_blockchain_deposits][XRP] Found {len(incoming_txs)} incoming payments for {wallet.address}")
+            for tx in incoming_txs:
+                tx_hash = tx.get("hash")
+                amount_drops = int(tx.get("Amount", 0))
+                amount = Decimal(amount_drops) / Decimal(1_000_000)  # 1 XRP = 1_000_000 drops
+                destination_tag = str(tx.get("DestinationTag", ""))
+                logger.info(f"[check_blockchain_deposits][XRP] Processing tx_hash={tx_hash}, tag={destination_tag}, amount={amount}")
+                if not destination_tag:
+                    logger.warning("[XRP] Skipping tx without DestinationTag (memo)")
+                    continue
+                if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                    logger.warning(f"[XRP] Duplicate transaction found: tx_hash={tx_hash}. Skipping.")
+                    continue
+                deposit_memo = UserDepositMemo.objects.filter(memo=destination_tag, status="waiting").first()
+                if not deposit_memo:
+                    logger.warning(f"[XRP] No waiting UserDepositMemo found for tag='{destination_tag}'.")
+                    continue
+                with transaction.atomic():
+                    user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
+                    user_wallet.balance += amount
+                    user_wallet.save()
+                    # Обновляем системный кошелек
+                    system_wallet, _ = UserWallet.objects.get_or_create(
+                        user=None,
+                        currency=wallet.currency,
+                        defaults={
+                            'balance': Decimal('0'),
+                            'is_system_wallet': True,
+                            'is_active': True,
+                        }
+                    )
+                    system_wallet.balance += amount
+                    system_wallet.save()
+                    Transaction.objects.create(
+                        user=deposit_memo.user,
+                        crypto=wallet.currency,
+                        amount=amount,
+                        tx_hash=tx_hash,
+                        type="deposit",
+                        status="completed",
+                        timestamp=timezone.now()
+                    )
+                    deposit_memo.status = "used"
+                    deposit_memo.save()
+                    processed += 1
+                    logger.info(f"[XRP] Successfully processed deposit for tag='{destination_tag}', tx_hash={tx_hash}")
+        except Exception as e:
+            logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 
     logger.info(f"Finished deposit check. Processed {processed} transactions.")
     return f"Готово, обработано: {processed}"
