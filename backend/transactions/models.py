@@ -131,6 +131,7 @@ class Withdrawal(models.Model):
     confirmation_date = models.DateTimeField(blank=True, null=True)
     
     refunded = models.BooleanField(default=False)
+    memo = models.CharField(max_length=255, blank=True, null=True, verbose_name='MEMO/Tag')
     
     @property
     def status(self):

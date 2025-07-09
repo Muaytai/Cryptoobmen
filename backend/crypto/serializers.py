@@ -12,7 +12,7 @@ class CryptocurrencySerializer(serializers.ModelSerializer):
         model = Cryptocurrency
         fields = ['id', 'name', 'symbol', 'icon', 'is_active', 
                   'min_exchange_amount', 'max_exchange_amount',
-                  'currency_type', 'network', 'coingecko_id']
+                  'currency_type', 'network', 'coingecko_id', 'requires_memo']
         read_only_fields = ['id']
 
 

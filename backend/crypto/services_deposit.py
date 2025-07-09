@@ -1,14 +1,14 @@
 import random
 from django.utils import timezone
 from datetime import timedelta
-from .models import Cryptocurrency, SystemWalletAddress, UserDepositMemo
+from .models import Cryptocurrency, SystemWalletAddress, UserDepositMemo, UserWallet
 
 class DepositService:
 
     @staticmethod
     def get_deposit_info(user, currency_symbol, network):
         """
-        Возвращает адрес системного кошелька и уникальный Memo для пополнения.
+        Возвращает адрес для пополнения: если требуется MEMO — системный адрес + memo, иначе уникальный адрес пользователя.
         """
         try:
             # 1. Найти системный адрес для валюты и сети
@@ -20,20 +20,27 @@ class DepositService:
             currency = system_wallet.currency
             address = system_wallet.address
 
-            # 2. Сгенерировать уникальный Memo
-            memo = DepositService._generate_unique_memo()
-
-            # 3. Сохранить Memo в базу
-            expires_at = timezone.now() + timedelta(hours=24)  # Memo действителен 24 часа
-            UserDepositMemo.objects.create(
-                user=user,
-                currency=currency,
-                network=network,
-                memo=memo,
-                expires_at=expires_at
-            )
-
-            return address, memo
+            if currency.requires_memo:
+                # 2. Сгенерировать уникальный Memo
+                memo = DepositService._generate_unique_memo()
+                # 3. Сохранить Memo в базу
+                expires_at = timezone.now() + timedelta(hours=24)  # Memo действителен 24 часа
+                UserDepositMemo.objects.create(
+                    user=user,
+                    currency=currency,
+                    network=network,
+                    memo=memo,
+                    expires_at=expires_at
+                )
+                return address, memo
+            else:
+                # Для валют без MEMO — возвращаем уникальный адрес пользователя
+                user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=currency)
+                if not user_wallet.deposit_address:
+                    # Генерируем тестовый адрес (или интеграция с генератором адресов)
+                    user_wallet.deposit_address = f"TEST_{user.id}_{currency.symbol}_{network}"
+                    user_wallet.save()
+                return user_wallet.deposit_address, None
 
         except SystemWalletAddress.DoesNotExist:
             raise ValueError(f"Системный кошелек для {currency_symbol} в сети {network} не найден или неактивен.")
