@@ -35,6 +35,7 @@ interface WithdrawalData {
   amount: number;
   destination_address: string;
   crypto_id: number;
+  memo?: string;
 }
 
 // Добавляем интерфейс для статуса транзакции
@@ -216,6 +217,27 @@ export const WithdrawPage: React.FC = () => {
     setAmount(maxAmount);
   };
 
+  // Получение requires_memo для выбранного кошелька
+  useEffect(() => {
+    const fetchRequiresMemo = async () => {
+      if (!selectedWallet) {
+        setRequiresMemo(false);
+        return;
+      }
+      try {
+        // Запрашиваем у API адрес для пополнения, чтобы узнать requires_memo (используем тот же эндпоинт, что и для депозита)
+        const resp = await api.get(`/crypto/deposit-info/?currency=${selectedWallet.currency.symbol}&network=${selectedWallet.currency.network}`);
+        setRequiresMemo(!!resp.requires_memo);
+      } catch {
+        setRequiresMemo(false);
+      }
+    };
+    fetchRequiresMemo();
+  }, [selectedWallet]);
+
+  const [requiresMemo, setRequiresMemo] = useState<boolean>(false);
+  const [memo, setMemo] = useState<string>('');
+
   // Отправка формы
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,6 +249,11 @@ export const WithdrawPage: React.FC = () => {
     
     if (!destinationAddress) {
       setError('Пожалуйста, введите адрес кошелька для вывода');
+      return;
+    }
+
+    if (requiresMemo && !memo) {
+      setError('Для этой валюты требуется MEMO/Tag');
       return;
     }
     
@@ -248,12 +275,15 @@ export const WithdrawPage: React.FC = () => {
       setSubmitting(true);
       setError(null);
       
-      const withdrawalData = {
+      const withdrawalData: WithdrawalData = {
         wallet: selectedWalletId,
         amount: amountValue,
         destination_address: destinationAddress,
-        crypto_id: wallet.currency.id
+        crypto_id: wallet.currency.id,
       };
+      if (requiresMemo) {
+        withdrawalData.memo = memo;
+      }
       
       const response = await api.post('/transactions/withdrawals/', withdrawalData);
       
@@ -266,6 +296,7 @@ export const WithdrawPage: React.FC = () => {
       // Очищаем форму
       setAmount('');
       setDestinationAddress('');
+      setMemo(''); // Очищаем MEMO при успешном выводе
       
     } catch (err: any) {
       console.error('Ошибка при отправке запроса на вывод:', err);
@@ -503,6 +534,27 @@ export const WithdrawPage: React.FC = () => {
               ⚠️ Внимательно проверьте адрес! Транзакции в блокчейне необратимы.
             </p>
           </div>
+
+          {/* MEMO/tag, если требуется */}
+          {requiresMemo && (
+            <div className="mb-6">
+              <label htmlFor="memo" className="block text-sm font-medium text-gray-400 mb-2">
+                MEMO / Tag (обязательно для этой валюты):
+              </label>
+              <input
+                id="memo"
+                type="text"
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="Введите MEMO/Tag для вывода"
+                className="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-3"
+                required={requiresMemo}
+              />
+              <p className="mt-1 text-sm text-yellow-400">
+                ⚠️ Для этой валюты/сети обязательно указывать MEMO/Tag. Без него средства могут быть утеряны!
+              </p>
+            </div>
+          )}
 
           {/* Информация о комиссии */}
           {selectedWalletId && amount && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0 && (

@@ -16,6 +16,7 @@ from asgiref.sync import async_to_sync
 from .models import SystemWalletAddress, UserDepositMemo, UserWallet, CommissionTransaction
 from .blockchain.factory import get_blockchain_service
 from django.conf import settings
+from .models import Cryptocurrency
 
 logger = get_task_logger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -31,146 +32,210 @@ def check_blockchain_deposits():
     processed = 0
     logger.info("[check_blockchain_deposits] Starting deposit check...")
 
-    # Получаем все активные системные кошельки, а не только TRC20
-    wallets = SystemWalletAddress.objects.filter(currency__is_active=True)
-    logger.info(f"[check_blockchain_deposits] Found {wallets.count()} wallets to check across all networks")
+    # 1. Сначала обрабатываем валюты с MEMO (как раньше)
+    for wallet in SystemWalletAddress.objects.select_related('currency').all():
+        currency = wallet.currency
+        if not currency.is_active:
+            continue
+        if not getattr(currency, 'requires_memo', False):
+            logger.info(f"Skipping {currency.symbol} in {wallet.network}: MEMO not required (per official docs)")
+            continue
 
-    for wallet in wallets:
+        logger.info(f"[check_blockchain_deposits] Checking wallet: {wallet.address} for currency {wallet.currency.symbol} in network {wallet.network}")
+        
+        last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
+        min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
+        logger.info(f"Checking from timestamp: {min_ts}")
+
+        # Используем фабрику для получения нужного сервиса
         try:
-            logger.info(f"[check_blockchain_deposits] Checking wallet: {wallet.address} for currency {wallet.currency.symbol} in network {wallet.network}")
-            
-            last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
-            min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
-            logger.info(f"Checking from timestamp: {min_ts}")
+            service = get_blockchain_service(wallet.network)
+        except ValueError:
+            logger.warning(f"Unsupported network {wallet.network} for wallet {wallet.address}. Skipping.")
+            continue
+        
+        raw_transactions = service.get_transactions(address=wallet.address, min_timestamp=min_ts)
+        
+        logger.info(f"Found {len(raw_transactions)} raw transactions for wallet {wallet.address}")
 
-            # Используем фабрику для получения нужного сервиса
+        if not raw_transactions:
+            continue
+
+        for ev in raw_transactions:
+            memo = ev.get("memo")
+            tx_hash = ev.get("transaction_id")
+            amount_str = ev.get("value")
+
+            logger.info(f"Processing Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount_str}'")
+
+            user = None
+            deposit_memo = None
+
+            # Логика определения пользователя по транзакции
+            if memo:
+                # Если есть memo, всегда пытаемся найти пользователя по нему
+                try:
+                    deposit_memo = UserDepositMemo.objects.filter(memo=memo, status="waiting").first()
+                    if deposit_memo:
+                        user = deposit_memo.user
+                    else:
+                        logger.warning(f"No waiting UserDepositMemo found for memo='{memo}'. Skipping.")
+                        continue
+                except Exception as e:
+                    logger.error(f"Error while fetching memo '{memo}': {e}", exc_info=True)
+                    continue
+            
+            elif wallet.currency.requires_memo:
+                # Если memo обязательно, но его нет, пропускаем
+                logger.warning(f"Skipping event for {wallet.currency.symbol} because it requires a memo, but none was provided.")
+                continue
+            
+            else:
+                # Если memo не обязателен и его нет (например, BTC)
+                # TODO: Реализовать логику для валют без memo (поиск по уникальному адресу)
+                logger.info(f"Skipping deposit for {wallet.currency.symbol} as it does not require memo and no memo was provided (logic not implemented).")
+                continue
+            
+            if not user:
+                logger.warning(f"User not found for transaction {tx_hash}. Skipping.")
+                continue
+
+            # Проверяем на дубликат ДО основной логики
+            if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                logger.warning(f"Duplicate transaction found: tx_hash={tx_hash}. Re-sending signal just in case.")
+                # Отправляем сигнал повторно, на случай если фронтенд его пропустил
+                if deposit_memo:
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f"deposit_memo_{deposit_memo.memo}",
+                        {
+                            "type": "deposit_status_update",
+                            "data": {'memo': deposit_memo.memo, 'status': 'used', 'message': 'Deposit completed'}
+                        }
+                    )
+                continue
+
             try:
-                service = get_blockchain_service(wallet.network)
+                amount = Decimal(amount_str) / Decimal(10**wallet.currency.decimals)
+            except (ValueError, TypeError):
+                logger.error(f"Invalid amount format: {amount_str}. Skipping.")
+                continue
+
+            try:
+                with transaction.atomic():
+                    logger.info(f"Updating balance for user {user.id} and wallet {wallet.currency.symbol}")
+                    user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
+                    user_wallet.balance += amount
+                    user_wallet.save()
+
+                    system_wallet, _ = UserWallet.objects.get_or_create(
+                        user=None,
+                        currency=wallet.currency,
+                        defaults={'balance': Decimal('0'), 'is_system_wallet': True, 'is_active': True}
+                    )
+                    system_wallet.balance += amount
+                    system_wallet.save()
+
+                    Transaction.objects.create(
+                        user=user,
+                        crypto=wallet.currency,
+                        amount=amount,
+                        tx_hash=tx_hash,
+                        type="deposit",
+                        status="completed",
+                        timestamp=timezone.now()
+                    )
+
+                    if deposit_memo:
+                        deposit_memo.status = "used"
+                        deposit_memo.save()
+                    
+                    processed += 1
+                    logger.info(f"Successfully processed deposit for user {user.id}, tx_hash={tx_hash}")
+
+                # После успешной транзакции отправляем сигнал
+                if deposit_memo:
+                    logger.info(f"!!! SENDING WEBSOCKET SIGNAL for memo {deposit_memo.memo} !!!")
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f"deposit_memo_{deposit_memo.memo}",
+                        {
+                            "type": "deposit_status_update",
+                            "data": {
+                                'memo': deposit_memo.memo,
+                                'status': 'used',
+                                'message': 'Deposit completed'
+                            }
+                        }
+                    )
+                    logger.info(f"!!! WEBSOCKET SIGNAL SENT for memo {deposit_memo.memo} !!!")
+
+            except Exception as e:
+                logger.error(f"Error during database transaction for memo='{memo}': {e}", exc_info=True)
+
+    # 2. Теперь обрабатываем валюты без MEMO/tag по уникальным адресам пользователей
+    currencies_no_memo = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
+    for currency in currencies_no_memo:
+        user_wallets = UserWallet.objects.filter(currency=currency, is_system_wallet=False, deposit_address__isnull=False).exclude(deposit_address='')
+        for user_wallet in user_wallets:
+            address = user_wallet.deposit_address
+            logger.info(f"[no-memo][DEBUG] SCAN: currency={currency.symbol}, network={currency.network}, user={user_wallet.user_id}, address={address}")
+            try:
+                service = get_blockchain_service(currency.network or currency.symbol)
             except ValueError:
-                logger.warning(f"Unsupported network {wallet.network} for wallet {wallet.address}. Skipping.")
+                logger.warning(f"Unsupported network {currency.network} for {currency.symbol}. Skipping.")
                 continue
-            
-            raw_transactions = service.get_transactions(address=wallet.address, min_timestamp=min_ts)
-            
-            logger.info(f"Found {len(raw_transactions)} raw transactions for wallet {wallet.address}")
-
-            if not raw_transactions:
-                continue
-
+            # Получаем последние транзакции по адресу
+            last_tx = Transaction.objects.filter(crypto=currency, tx_hash__isnull=False, user=user_wallet.user).order_by("-timestamp").first()
+            min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
+            logger.info(f"[no-memo][DEBUG] CALL get_transactions: address={address}, min_ts={min_ts}, contract={currency.contract_address}")
+            raw_transactions = service.get_transactions(address=address, min_timestamp=min_ts)
+            logger.info(f"[no-memo] Found {len(raw_transactions)} tx for {currency.symbol} address {address}")
             for ev in raw_transactions:
-                memo = ev.get("memo")
                 tx_hash = ev.get("transaction_id")
                 amount_str = ev.get("value")
-
-                logger.info(f"Processing Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount_str}'")
-
-                user = None
-                deposit_memo = None
-
-                # Логика определения пользователя по транзакции
-                if memo:
-                    # Если есть memo, всегда пытаемся найти пользователя по нему
-                    try:
-                        deposit_memo = UserDepositMemo.objects.filter(memo=memo, status="waiting").first()
-                        if deposit_memo:
-                            user = deposit_memo.user
-                        else:
-                            logger.warning(f"No waiting UserDepositMemo found for memo='{memo}'. Skipping.")
-                            continue
-                    except Exception as e:
-                        logger.error(f"Error while fetching memo '{memo}': {e}", exc_info=True)
-                        continue
-                
-                elif wallet.currency.requires_memo:
-                    # Если memo обязательно, но его нет, пропускаем
-                    logger.warning(f"Skipping event for {wallet.currency.symbol} because it requires a memo, but none was provided.")
-                    continue
-                
-                else:
-                    # Если memo не обязателен и его нет (например, BTC)
-                    # TODO: Реализовать логику для валют без memo (поиск по уникальному адресу)
-                    logger.info(f"Skipping deposit for {wallet.currency.symbol} as it does not require memo and no memo was provided (logic not implemented).")
-                    continue
-                
-                if not user:
-                    logger.warning(f"User not found for transaction {tx_hash}. Skipping.")
-                    continue
-
-                # Проверяем на дубликат ДО основной логики
+                logger.info(f"[no-memo] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
                 if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                    logger.warning(f"Duplicate transaction found: tx_hash={tx_hash}. Re-sending signal just in case.")
-                    # Отправляем сигнал повторно, на случай если фронтенд его пропустил
-                    if deposit_memo:
-                        channel_layer = get_channel_layer()
-                        async_to_sync(channel_layer.group_send)(
-                            f"deposit_memo_{deposit_memo.memo}",
-                            {
-                                "type": "deposit_status_update",
-                                "data": {'memo': deposit_memo.memo, 'status': 'used', 'message': 'Deposit completed'}
-                            }
-                        )
+                    logger.info(f"[no-memo] Duplicate tx {tx_hash}, skipping.")
                     continue
-
                 try:
-                    amount = Decimal(amount_str) / Decimal(10**wallet.currency.decimals)
+                    amount = Decimal(amount_str) / Decimal(10**currency.decimals)
                 except (ValueError, TypeError):
-                    logger.error(f"Invalid amount format: {amount_str}. Skipping.")
+                    logger.error(f"[no-memo] Invalid amount: {amount_str}")
                     continue
+                with transaction.atomic():
+                    user_wallet.balance += amount
+                    user_wallet.save()
+                    Transaction.objects.create(
+                        user=user_wallet.user,
+                        crypto=currency,
+                        amount=amount,
+                        tx_hash=tx_hash,
+                        type="deposit",
+                        status="completed",
+                        timestamp=timezone.now()
+                    )
+                    logger.info(f"[no-memo] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
 
+                # Отправляем WebSocket сигнал по адресу
                 try:
-                    with transaction.atomic():
-                        logger.info(f"Updating balance for user {user.id} and wallet {wallet.currency.symbol}")
-                        user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
-                        user_wallet.balance += amount
-                        user_wallet.save()
-
-                        system_wallet, _ = UserWallet.objects.get_or_create(
-                            user=None,
-                            currency=wallet.currency,
-                            defaults={'balance': Decimal('0'), 'is_system_wallet': True, 'is_active': True}
-                        )
-                        system_wallet.balance += amount
-                        system_wallet.save()
-
-                        Transaction.objects.create(
-                            user=user,
-                            crypto=wallet.currency,
-                            amount=amount,
-                            tx_hash=tx_hash,
-                            type="deposit",
-                            status="completed",
-                            timestamp=timezone.now()
-                        )
-
-                        if deposit_memo:
-                            deposit_memo.status = "used"
-                            deposit_memo.save()
-                        
-                        processed += 1
-                        logger.info(f"Successfully processed deposit for user {user.id}, tx_hash={tx_hash}")
-
-                    # После успешной транзакции отправляем сигнал
-                    if deposit_memo:
-                        logger.info(f"!!! SENDING WEBSOCKET SIGNAL for memo {deposit_memo.memo} !!!")
-                        channel_layer = get_channel_layer()
-                        async_to_sync(channel_layer.group_send)(
-                            f"deposit_memo_{deposit_memo.memo}",
-                            {
-                                "type": "deposit_status_update",
-                                "data": {
-                                    'memo': deposit_memo.memo,
-                                    'status': 'used',
-                                    'message': 'Deposit completed'
-                                }
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f"deposit_address_{address}",
+                        {
+                            "type": "deposit_status_update",
+                            "data": {
+                                "address": address,
+                                "currency": currency.symbol,
+                                "network": currency.network,
+                                "status": "used",
+                                "amount": str(amount),
                             }
-                        )
-                        logger.info(f"!!! WEBSOCKET SIGNAL SENT for memo {deposit_memo.memo} !!!")
-
+                        }
+                    )
+                    logger.info(f"[no-memo] WebSocket signal sent for address {address}")
                 except Exception as e:
-                    logger.error(f"Error during database transaction for memo='{memo}': {e}", exc_info=True)
-
-        except Exception as e:
-            logger.error(f"Error processing wallet {wallet.address}: {e}", exc_info=True)
+                    logger.error(f"[no-memo] Failed to send WebSocket signal for address {address}: {e}")
 
     logger.info(f"Finished deposit check. Processed {processed} transactions.")
     return f"Готово, обработано: {processed}"

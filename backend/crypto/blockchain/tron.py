@@ -18,7 +18,7 @@ from .base import BaseBlockchainService
 logger = logging.getLogger(__name__)
 
 # Contract address for USDT on TRON (TRC20) - Nile Testnet
-USDT_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
+USDT_CONTRACT = settings.USDT_TRC20_CONTRACT_ADDRESS
 
 class TronGridError(RuntimeError):
     """Raised when TronGrid returns an error."""
@@ -65,6 +65,7 @@ class TronService(BaseBlockchainService):
         
         try:
             resp = requests.get(url, params=params, headers=self._headers(), timeout=20)
+            logger.info(f"[TRON][RAW_RESPONSE] {resp.text}")
             resp.raise_for_status()
             data = resp.json()
 

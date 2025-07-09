@@ -137,6 +137,8 @@ class UserWallet(models.Model):
     available_balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Available Balance'))
     locked_balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Locked Balance')) # Для ордеров, инвестиций и т.д.
     
+    deposit_address = models.CharField(max_length=255, blank=True, null=True, verbose_name=_('Deposit Address'))
+
     is_system_wallet = models.BooleanField(default=False, verbose_name=_('System Wallet'))
 
     # Храним приватный ключ для системного кошелька в зашифрованном виде (Fernet)

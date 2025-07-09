@@ -172,6 +172,8 @@ else: # mainnet
     TRON_API_URL = 'https://api.trongrid.io'
     USDT_CONTRACT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 
+USDT_TRC20_CONTRACT_ADDRESS = os.getenv("USDT_TRC20_CONTRACT_ADDRESS", "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj")
+
 ROOT_URLCONF = 'core.urls'
 
 TEMPLATES = [

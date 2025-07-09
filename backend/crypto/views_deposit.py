@@ -47,12 +47,15 @@ class DepositInfoView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            return Response({
+            response = {
                 'address': address,
-                'memo': memo,
                 'currency': currency_symbol,
-                'network': network
-            }, status=status.HTTP_200_OK)
+                'network': network,
+                'requires_memo': memo is not None,
+            }
+            if memo is not None:
+                response['memo'] = memo
+            return Response(response, status=status.HTTP_200_OK)
 
         except ValueError as e:
             # Ошибки валидации бизнес-логики (не найдено или недоступно)
