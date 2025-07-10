@@ -24,6 +24,7 @@ from asgiref.sync import async_to_sync
 from transactions.models import Transaction, Transfer  # noqa: E402  pylint: disable=wrong-import-position
 from .models import SystemWalletAddress, UserDepositMemo, UserWallet, CommissionTransaction
 from .blockchain.tron import get_trc20_transfers, extract_deposit_events
+from .blockchain.ethereum import get_erc20_transfers, extract_deposit_events as extract_eth_deposit_events
 from tronpy import Tron
 
 logger = logging.getLogger(__name__)
@@ -33,23 +34,25 @@ logger = logging.getLogger(__name__)
 def check_blockchain_deposits():
     """
     Периодическая задача для проверки новых депозитов в блокчейне.
+    Поддерживает TRC20 и ERC20 сети.
     """
     processed = 0
     logger.info("[check_blockchain_deposits] Starting deposit check...")
 
-    wallets = SystemWalletAddress.objects.filter(network__iexact="TRC20", currency__is_active=True)
-    logger.info(f"[check_blockchain_deposits] Found {wallets.count()} TRC20 wallets to check")
+    # Обрабатываем TRC20 кошельки
+    trc20_wallets = SystemWalletAddress.objects.filter(network__iexact="TRC20", currency__is_active=True)
+    logger.info(f"[check_blockchain_deposits] Found {trc20_wallets.count()} TRC20 wallets to check")
 
-    for wallet in wallets:
+    for wallet in trc20_wallets:
         try:
-            logger.info(f"[check_blockchain_deposits] Checking wallet: {wallet.address} for currency {wallet.currency.symbol}")
+            logger.info(f"[check_blockchain_deposits] Checking TRC20 wallet: {wallet.address} for currency {wallet.currency.symbol}")
             
             last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
             min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
             logger.info(f"Checking from timestamp: {min_ts}")
 
             events = get_trc20_transfers(address=wallet.address, min_timestamp=min_ts)
-            logger.info(f"Found {len(events)} events for wallet {wallet.address}")
+            logger.info(f"Found {len(events)} events for TRC20 wallet {wallet.address}")
 
             if not events:
                 continue
@@ -59,10 +62,10 @@ def check_blockchain_deposits():
                 tx_hash = ev.get("transaction_id")
                 amount_str = ev.get("value")
 
-                logger.info(f"Processing Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount_str}'")
+                logger.info(f"Processing TRC20 Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount_str}'")
 
                 if not memo:
-                    logger.warning("Skipping event due to empty memo.")
+                    logger.warning("Skipping TRC20 event due to empty memo.")
                     continue
 
                 try:
@@ -121,13 +124,106 @@ def check_blockchain_deposits():
                         deposit_memo.save()
                         
                         processed += 1
-                        logger.info(f"Successfully processed deposit for memo='{memo}', tx_hash={tx_hash}")
+                        logger.info(f"Successfully processed TRC20 deposit for memo='{memo}', tx_hash={tx_hash}")
 
                 except Exception as e:
                     logger.error(f"Error during database transaction for memo='{memo}': {e}", exc_info=True)
 
         except Exception as e:
-            logger.error(f"Error processing wallet {wallet.address}: {e}", exc_info=True)
+            logger.error(f"Error processing TRC20 wallet {wallet.address}: {e}", exc_info=True)
+
+    # Обрабатываем ERC20 кошельки
+    erc20_wallets = SystemWalletAddress.objects.filter(network__iexact="ERC20", currency__is_active=True)
+    logger.info(f"[check_blockchain_deposits] Found {erc20_wallets.count()} ERC20 wallets to check")
+
+    for wallet in erc20_wallets:
+        try:
+            logger.info(f"[check_blockchain_deposits] Checking ERC20 wallet: {wallet.address} for currency {wallet.currency.symbol}")
+            
+            last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
+            min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
+            logger.info(f"Checking from timestamp: {min_ts}")
+
+            transfers = get_erc20_transfers(address=wallet.address, min_timestamp=min_ts)
+            events = extract_eth_deposit_events(transfers)
+            logger.info(f"Found {len(events)} events for ERC20 wallet {wallet.address}")
+
+            if not events:
+                continue
+
+            for ev in events:
+                memo = ev.get("memo")
+                tx_hash = ev.get("tx_hash")
+                amount = ev.get("amount")
+
+                logger.info(f"Processing ERC20 Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount}'")
+
+                if not memo:
+                    logger.warning("Skipping ERC20 event due to empty memo.")
+                    continue
+
+                try:
+                    # Используем filter() и first() на случай дубликатов, но ожидаем один
+                    deposit_memo = UserDepositMemo.objects.filter(
+                        memo=memo, 
+                        status="waiting",
+                        currency=wallet.currency,
+                        network="ERC20"
+                    ).first()
+                    if not deposit_memo:
+                        logger.warning(f"No waiting UserDepositMemo found for memo='{memo}'.")
+                        continue
+                    logger.info(f"Found UserDepositMemo: id={deposit_memo.id} for memo='{memo}'")
+
+                except Exception as e:
+                    logger.error(f"Error while fetching memo '{memo}': {e}", exc_info=True)
+                    continue
+                
+                if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                    logger.warning(f"Duplicate transaction found: tx_hash={tx_hash}. Skipping.")
+                    continue
+
+                try:
+                    with transaction.atomic():
+                        logger.info(f"Updating balance for user {deposit_memo.user.id} and wallet {wallet.currency.symbol}")
+                        user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
+                        user_wallet.balance += Decimal(str(amount))
+                        user_wallet.save()
+
+                        # Обновляем системный (on-chain) кошелёк, чтобы админ видел общий баланс
+                        system_wallet, _ = UserWallet.objects.get_or_create(
+                            user=None,
+                            currency=wallet.currency,
+                            defaults={
+                                'balance': Decimal('0'),
+                                'is_system_wallet': True,
+                                'is_active': True,
+                            }
+                        )
+                        system_wallet.balance += Decimal(str(amount))
+                        system_wallet.save()
+
+                        Transaction.objects.create(
+                            user=deposit_memo.user,
+                            crypto=wallet.currency,
+                            amount=Decimal(str(amount)),
+                            tx_hash=tx_hash,
+                            type="deposit",
+                            status="completed",
+                            timestamp=timezone.now()
+                        )
+
+                        deposit_memo.status = "used"
+                        deposit_memo.save()
+                        
+                        processed += 1
+                        logger.info(f"Successfully processed ERC20 deposit for memo='{memo}', tx_hash={tx_hash}")
+
+                except Exception as e:
+                    logger.error(f"Error during database transaction for memo='{memo}': {e}", exc_info=True)
+
+        except Exception as e:
+            logger.error(f"Error processing ERC20 wallet {wallet.address}: {e}", exc_info=True)
 
     logger.info(f"Finished deposit check. Processed {processed} transactions.")
     return f"Готово, обработано: {processed}"
