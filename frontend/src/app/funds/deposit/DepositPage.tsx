@@ -24,6 +24,7 @@ interface DepositInfo {
   address: string;
   memo?: string;
   requires_memo?: boolean;
+  qr_code?: string; // добавлено поле для QR-кода
 }
 
 interface SavedDepositInfo {
@@ -252,15 +253,15 @@ export const DepositPage: React.FC = () => {
     console.log('DepositPage: запрос адреса для пополнения:', selectedCurrency, selectedNetwork);
     
     // Определяем актуальный список сетей для выбранной валюты
-const walletNetworks = userWallets
+    const walletNetworks = userWallets
       .filter(w => w.currency.symbol === selectedCurrency)
       .map(w => w.network)
       .filter((n): n is string => !!n);
-const currencyObj = availableCurrencies.find(c => c.symbol === selectedCurrency);
-const referenceNetworks = currencyObj ? currencyObj.networks || [] : [];
-const allNetworks = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
+    const currencyObj = availableCurrencies.find(c => c.symbol === selectedCurrency);
+    const referenceNetworks = currencyObj ? currencyObj.networks || [] : [];
+    const allNetworks = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
 
-const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[0] : null);
+    const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[0] : null);
     if (!selectedCurrency || !networkToUse) {
       setError('Пожалуйста, выберите криптовалюту и сеть.');
       toast.error('Выберите криптовалюту и сеть', {
@@ -275,37 +276,26 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
     setError(null);
     
     try {
-      const payload = {
-        currency_symbol: selectedCurrency,
-        network: networkToUse,
-      };
+      // Получение токена для авторизации
+      const cookies = document.cookie.split('; ');
+      const accessToken = cookies.find(row => row.startsWith('access_token='));
+      const token = accessToken ? accessToken.split('=')[1] : '';
+
+      // Формируем URL с query string
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+      const url = `${apiBaseUrl}/crypto/deposit/info/?currency_symbol=${encodeURIComponent(selectedCurrency)}&network=${encodeURIComponent(networkToUse)}`;
       
-      console.log('DepositPage: отправка запроса на адрес', payload);
+      console.log(`DepositPage: прямой GET-запрос на URL = ${url}`);
       toast.loading('Получение адреса для пополнения...', {
         duration: 5000,
         position: 'top-center',
       });
       
-      // Прямой вызов API с именно тем URL, который нужен
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-      const url = `${apiBaseUrl}/crypto/deposit/info/`;
-      
-      console.log(`DepositPage: прямой запрос на URL = ${url}`);
-      
-      // Получение токена для авторизации
-      const cookies = document.cookie.split('; ');
-      const accessToken = cookies.find(row => row.startsWith('access_token='));
-      const token = accessToken ? accessToken.split('=')[1] : '';
-      
-      console.log('DepositPage: доступен ли токен в cookies:', !!accessToken);
-      
       const response = await fetch(url, {
-        method: 'POST',
+        method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': token ? `Bearer ${token}` : '',
         },
-        body: JSON.stringify(payload),
         credentials: 'include',
       });
       
@@ -338,6 +328,7 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
         address: data.address,
         memo: data.memo,
         requires_memo: data.requires_memo,
+        qr_code: data.qr_code, // сохраняем qr_code, если есть
       });
       
       // Важно: устанавливаем статус waiting только после успешного получения всех данных
@@ -379,7 +370,7 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
       setError(errorMessage);
       setStatus('error');
     }
-  }, [selectedCurrency, selectedNetwork, router]);
+  }, [selectedCurrency, selectedNetwork, router, userWallets, availableCurrencies]);
 
   const copyToClipboard = (text: string, type: 'address' | 'memo') => {
     navigator.clipboard.writeText(text).then(
@@ -853,6 +844,18 @@ const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[
                 </button>
               </div>
             </div>
+            {/* QR-код для депозита */}
+            {depositInfo.qr_code && (
+              <div className="mb-6 flex flex-col items-center">
+                <label className="block text-sm font-medium text-gray-400 mb-2">QR-код для пополнения:</label>
+                <img
+                  src={depositInfo.qr_code}
+                  alt="QR-код для пополнения"
+                  className="w-40 h-40 bg-white p-2 rounded-lg shadow-md"
+                  style={{ objectFit: 'contain', background: '#fff' }}
+                />
+              </div>
+            )}
             {depositInfo.requires_memo && (
               <>
                 <div className="mb-6">

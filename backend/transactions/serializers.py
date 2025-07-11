@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.conf import settings
 from crypto.tasks import process_withdrawal
 from transactions.models import Transfer
+from .services import WithdrawalService
 
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -179,77 +180,33 @@ class ExchangeCreateSerializer(serializers.Serializer):
 
 
 class WithdrawalCreateSerializer(serializers.Serializer):
-    """Сериализатор для создания запроса на вывод средств"""
+    """
+    Сериализатор для создания запроса на вывод средств.
+    Использует WithdrawalService для основной логики.
+    """
     crypto_id = serializers.IntegerField()
     amount = serializers.DecimalField(max_digits=24, decimal_places=8)
     destination_address = serializers.CharField(max_length=255)
     memo = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
-    def validate(self, data):
-        """Валидация данных для вывода"""
-        user = self.context['request'].user
-        try:
-            crypto = Cryptocurrency.objects.get(id=data['crypto_id'], is_active=True)
-            wallet = UserWallet.objects.get(user=user, currency=crypto, is_active=True)
-            if wallet.balance < data['amount']:
-                raise serializers.ValidationError(f"Недостаточно средств. Баланс: {wallet.balance} {crypto.symbol}")
-            if data['amount'] < crypto.min_exchange_amount:
-                raise serializers.ValidationError(f"Минимальная сумма вывода: {crypto.min_exchange_amount} {crypto.symbol}")
-            fee_percentage = crypto.fee_percentage
-            fee_amount = (data['amount'] * fee_percentage) / 100
-            if data['amount'] - fee_amount <= 0:
-                raise serializers.ValidationError("Сумма к выводу после комиссии должна быть положительной")
-            # MEMO/tag обязателен, если требуется
-            if getattr(crypto, 'requires_memo', False):
-                if not data.get('memo'):
-                    raise serializers.ValidationError("Для этой валюты требуется MEMO/Tag")
-            data['crypto'] = crypto
-            data['wallet'] = wallet
-            data['fee_percentage'] = fee_percentage
-            data['fee_amount'] = fee_amount
-            return data
-        except Cryptocurrency.DoesNotExist:
-            raise serializers.ValidationError("Криптовалюта не найдена или неактивна")
-        except UserWallet.DoesNotExist:
-            raise serializers.ValidationError("Кошелек не найден")
-
     def create(self, validated_data):
-        """Создает запрос на вывод средств и инициирует асинхронный вывод через Transfer"""
+        """
+        Создает запрос на вывод средств через сервис.
+        """
         user = self.context['request'].user
-        crypto = validated_data['crypto']
-        wallet = validated_data['wallet']
-        amount = validated_data['amount']
-        fee_amount = validated_data['fee_amount']
-        destination_address = validated_data['destination_address']
-        memo = validated_data.get('memo')
-        with db_transaction.atomic():
-            transaction = Transaction.objects.create(
-                user=user,
-                type='withdrawal',
-                status='pending',
-                amount=amount,
-                fee=fee_amount,
-                crypto=crypto,
-                ip_address=self.context['request'].META.get('REMOTE_ADDR'),
-                notes=f"Withdrawal {amount} {crypto.symbol} to {destination_address}"
-            )
-            withdrawal = Withdrawal.objects.create(
-                user=user,
-                transaction=transaction,
-                wallet=wallet,
-                destination_address=destination_address,
-                memo=memo
-            )
-            wallet.balance -= amount
-            wallet.save()
-            transfer = Transfer.objects.create(
-                user=user,
-                type='out',
-                amount=amount,
-                status=Transfer.Status.PENDING,
-            )
-            process_withdrawal.delay(transfer.id)
-            return withdrawal
+        ip_address = self.context['request'].META.get('REMOTE_ADDR')
+
+        # Вся логика теперь в сервисе
+        withdrawal = WithdrawalService.create_withdrawal_request(
+            user=user,
+            crypto_id=validated_data['crypto_id'],
+            amount=validated_data['amount'],
+            destination_address=validated_data['destination_address'],
+            memo=validated_data.get('memo'),
+            ip_address=ip_address
+        )
+        
+        return withdrawal
 
 
 class ReviewSerializer(serializers.ModelSerializer):
@@ -316,4 +273,4 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
             return DepositDetailSerializer(obj.deposit_transaction).data
         if obj.type == 'withdrawal' and hasattr(obj, 'withdrawal_transaction'):
             return WithdrawalDetailSerializer(obj.withdrawal_transaction).data
-        return None 
+        return None

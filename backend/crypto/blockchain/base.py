@@ -46,6 +46,16 @@ class BaseBlockchainService(ABC):
         """
         pass
 
+    @abstractmethod
+    def create_new_address(self, **kwargs) -> str:
+        """
+        Создает новый адрес для пополнения.
+        Может использовать user_id или другие параметры для HD-генерации.
+
+        :return: Строка с новым адресом.
+        """
+        pass
+
     @staticmethod
     def to_atomic_unit(amount: Decimal, decimals: int) -> int:
         """

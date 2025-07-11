@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Подтверждение вывода средств</title>
+</head>
+<body>
+    <p>Здравствуйте, {{ user.username }}!</p>
+    <p>Вы запросили вывод средств на сумму <strong>{{ amount }} {{ currency }}</strong> на адрес <strong>{{ address }}</strong>.</p>
+    <p>Для подтверждения операции, пожалуйста, перейдите по ссылке ниже:</p>
+    <p><a href="{{ confirmation_url }}">Подтвердить вывод</a></p>
+    <p>Если вы не запрашивали вывод средств, просто проигнорируйте это письмо.</p>
+    <p>С уважением,<br>Команда Cryptoobmen</p>
+</body>
+</html>

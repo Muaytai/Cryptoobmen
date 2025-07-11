@@ -20,6 +20,7 @@ class Transaction(models.Model):
     
     STATUS_CHOICES = (
         ('pending', _('В ожидании')),
+        ('awaiting_confirmation', _('Ожидает подтверждения')),
         ('processing', _('В обработке')),
         ('completed', _('Завершено')),
         ('failed', _('Ошибка')),
@@ -31,7 +32,7 @@ class Transaction(models.Model):
     transaction_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     
     type = models.CharField(max_length=20, choices=TYPE_CHOICES)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='pending')
     
     amount = models.DecimalField(max_digits=24, decimal_places=8)
     fee = models.DecimalField(max_digits=24, decimal_places=8, default=0)
@@ -118,11 +119,15 @@ class Withdrawal(models.Model):
         null=True
     )
     destination_address = models.CharField(max_length=255)
-    
-    # Двухфакторная авторизация для вывода
-    is_2fa_confirmed = models.BooleanField(default=False)
-    is_email_confirmed = models.BooleanField(default=False)
-    
+    memo = models.CharField(max_length=255, blank=True, null=True, verbose_name='MEMO/Tag')
+
+    # Поля для подтверждения вывода
+    is_email_confirmed = models.BooleanField(default=False, verbose_name=_("Email Confirmed"))
+    email_confirmation_token = models.UUIDField(null=True, blank=True, verbose_name=_("Email Confirmation Token"))
+    email_confirmation_token_expires_at = models.DateTimeField(null=True, blank=True, verbose_name=_("Email Token Expires At"))
+
+    is_2fa_confirmed = models.BooleanField(default=False, verbose_name=_("2FA Confirmed"))
+
     # Статусы подтверждения
     confirmed_by_admin = models.BooleanField(default=False)
     rejected_reason = models.TextField(blank=True, null=True)
@@ -131,7 +136,6 @@ class Withdrawal(models.Model):
     confirmation_date = models.DateTimeField(blank=True, null=True)
     
     refunded = models.BooleanField(default=False)
-    memo = models.CharField(max_length=255, blank=True, null=True, verbose_name='MEMO/Tag')
     
     @property
     def status(self):
