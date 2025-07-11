@@ -11,7 +11,6 @@ from django.conf import settings
 from .base import BaseBlockchainService
 from bitcoinlib.keys import Key
 from bitcoinlib.transactions import Transaction
-
 logger = logging.getLogger(__name__)
 
 # Using a public API for blockchain data. For production, a dedicated node or paid service is recommended.
@@ -129,3 +128,25 @@ class BitcoinService(BaseBlockchainService):
         except Exception as e:
             logger.error(f"Error sending Bitcoin transaction: {e}")
             raise
+
+    def create_new_address(self, **kwargs) -> str:
+        """
+        Generates a new Bitcoin address from the system's HD wallet xpub.
+        Uses user_id for the derivation path to ensure uniqueness.
+        """
+        user_id = kwargs.get('user_id')
+        if user_id is None:
+            raise ValueError("user_id is required for Bitcoin address generation.")
+
+        xpub = getattr(settings, 'BITCOIN_XPUB_KEY', None)
+        if not xpub:
+            raise ValueError("BITCOIN_XPUB_KEY is not configured in settings.")
+
+        # Create a key from the master public key
+        master_key = Key(xpub, is_extended=True, network=self.network)
+
+        # Derive a child key for the user. Using a non-hardened path.
+        # m/0/user_id is a common scheme for public-facing addresses.
+        user_key = master_key.derive_path(f"m/0/{user_id}")
+
+        return user_key.address

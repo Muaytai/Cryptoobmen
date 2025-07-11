@@ -1,85 +1,51 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, AllowAny
 from .services_deposit import DepositService
-from .serializers import DepositInfoRequestSerializer
-from .models import UserDepositMemo
-from django.views.decorators.cache import never_cache
-from django.utils.decorators import method_decorator
 import logging
 
 logger = logging.getLogger(__name__)
 
-
 class DepositInfoView(APIView):
     """
-    API для получения информации для пополнения кошелька.
-    Возвращает системный адрес и уникальный Memo для пользователя.
+    View для получения информации для депозита (адрес и memo, если требуется).
     """
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
+    def get(self, request):
         """
-        Принимает:
-        - currency_symbol: 'USDT'
-        - network: 'TRC20'
+        Возвращает адрес и memo для пополнения указанной валюты.
+        Принимает query-параметры: `currency_symbol` и `network`.
         """
-        serializer = DepositInfoRequestSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        currency_symbol = request.query_params.get('currency_symbol')
+        network = request.query_params.get('network')
 
-        validated_data = serializer.validated_data
-        currency_symbol = validated_data['currency_symbol']
-        network = validated_data['network']
-        user = request.user
-
-        try:
-            address, memo = DepositService.get_deposit_info(
-                user=user,
-                currency_symbol=currency_symbol,
-                network=network
-            )
-
-            if not address:
-                return Response(
-                    {'error': f'Депозиты для {currency_symbol} в сети {network} временно недоступны.'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-            response = {
-                'address': address,
-                'currency': currency_symbol,
-                'network': network,
-                'requires_memo': memo is not None,
-            }
-            if memo is not None:
-                response['memo'] = memo
-            return Response(response, status=status.HTTP_200_OK)
-
-        except ValueError as e:
-            # Ошибки валидации бизнес-логики (не найдено или недоступно)
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            logger.exception("deposit/info failed: %s", e)
+        if not currency_symbol or not network:
             return Response(
-                {'error': 'Произошла внутренняя ошибка. Попробуйте позже.'},
+                {"error": "Параметры 'currency_symbol' и 'network' обязательны."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
-@method_decorator(never_cache, name='get')
-class DepositStatusView(APIView):
-    """
-    Проверяет статус конкретного Memo на пополнение.
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, memo, *args, **kwargs):
         try:
-            deposit_memo = UserDepositMemo.objects.get(memo=memo, user=request.user)
-            return Response({"status": deposit_memo.status})
-        except UserDepositMemo.DoesNotExist:
-            return Response({"error": "Memo not found or does not belong to user."}, status=404)
+            address, memo, qr_code = DepositService.get_deposit_info(
+                user=request.user,
+                currency_symbol=currency_symbol,
+                network=network
+            )
+            
+            response_data = {
+                'address': address,
+                'memo': memo,
+                'currency_symbol': currency_symbol,
+                'network': network,
+                'qr_code': qr_code
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except ValueError as e:
+            logger.warning(f"Error getting deposit info for user {request.user.id}: {e}")
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"error": str(e)}, status=500) 
+            logger.error(f"Unexpected error in DepositInfoView for user {request.user.id}: {e}", exc_info=True)
+            return Response({"error": "Произошла внутренняя ошибка сервера."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
