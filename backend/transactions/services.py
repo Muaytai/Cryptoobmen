@@ -217,6 +217,9 @@ class WithdrawalService:
         """
         Отправляет email с ссылкой для подтверждения вывода.
         """
+        """
+        Отправляет email с ссылкой для подтверждения вывода.
+        """
         confirmation_url = f"{settings.FRONTEND_URL}/confirm-withdrawal/{withdrawal.email_confirmation_token}/"
         
         context = {
@@ -287,6 +290,13 @@ class WithdrawalService:
             withdrawal.transaction.status = 'pending' # Теперь он готов к обработке таском
             withdrawal.transaction.save()
 
+            # Создаем Transfer и ставим задачу на отправку
+            transfer = Transfer.objects.create(
+                user=withdrawal.user,
+                type='out',
+                amount=amount_to_withdraw,
+                status=Transfer.Status.PENDING,
+            )
             # Создаем Transfer и ставим задачу на отправку
             transfer = Transfer.objects.create(
                 user=withdrawal.user,
