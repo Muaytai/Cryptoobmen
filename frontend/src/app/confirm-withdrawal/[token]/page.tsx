@@ -47,20 +47,31 @@ export default function ConfirmWithdrawalPage() {
 
             try {
                 // URL вашего бэкенда
-                const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/transactions/withdrawals/confirm/${token}/`;
+                const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/transactions/withdrawals/confirm/${token}/`;
                 const response = await fetch(apiUrl, {
                     method: 'GET',
                 });
 
-                const data = await response.json();
-
                 if (!response.ok) {
-                    throw new Error(data.error || 'Произошла неизвестная ошибка.');
+                    // Попытаемся прочитать тело ответа как текст, если это не JSON
+                    const errorText = await response.text();
+                    try {
+                        // Может быть, это все-таки JSON с ошибкой
+                        const errorJson = JSON.parse(errorText);
+                        throw new Error(errorJson.error || errorJson.detail || 'Произошла неизвестная ошибка.');
+                    } catch (jsonError) {
+                        // Если это не JSON, показываем как текст (может быть HTML)
+                        // В реальном приложении здесь лучше показать общую ошибку, а не HTML
+                        throw new Error('Ошибка сервера. Пожалуйста, попробуйте позже.');
+                    }
                 }
 
+                const data = await response.json();
                 setMessage(data.message || 'Вывод успешно подтвержден.');
+
             } catch (err: any) {
-                setError(err.message || 'Не удалось связаться с сервером.');
+                // Убираем лишний .message, так как мы уже формируем Error
+                setError(err.toString());
             } finally {
                 setIsLoading(false);
             }

@@ -406,6 +406,9 @@ SIMPLE_JWT = {
     'AUTH_COOKIE_SAMESITE': 'Lax',
 }
 
+# Время жизни токена подтверждения вывода в часах
+WITHDRAWAL_CONFIRMATION_TOKEN_LIFETIME_HOURS = int(os.getenv('WITHDRAWAL_CONFIRMATION_TOKEN_LIFETIME_HOURS', '24'))
+
 # REST Auth настройки
 REST_AUTH = {
     'USE_JWT': True,
