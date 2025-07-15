@@ -297,13 +297,6 @@ class WithdrawalService:
                 amount=amount_to_withdraw,
                 status=Transfer.Status.PENDING,
             )
-            # Создаем Transfer и ставим задачу на отправку
-            transfer = Transfer.objects.create(
-                user=withdrawal.user,
-                type='out',
-                amount=amount_to_withdraw,
-                status=Transfer.Status.PENDING,
-            )
             process_withdrawal.delay(transfer.id)
         
         return withdrawal

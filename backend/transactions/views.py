@@ -310,8 +310,7 @@ class TransactionHistoryView(generics.ListAPIView):
         return Transaction.objects.filter(user=user).select_related(
             'crypto'
         ).prefetch_related(
-            'exchange_transaction__from_currency',
-            'exchange_transaction__to_currency',
-            'deposit_transaction',
-            'withdrawal_transaction'
+            'exchange',
+            'deposit',
+            'withdrawal'
         ).order_by('-timestamp')

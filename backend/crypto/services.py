@@ -1,5 +1,6 @@
 import requests
 from django.conf import settings
+from django.core.cache import cache
 import logging
 
 # Настройка логгера
@@ -7,10 +8,11 @@ logger = logging.getLogger(__name__)
 
 # Можно вынести в настройки, если URL или параметры будут меняться
 COINGECKO_API_URL = "https://api.coingecko.com/api/v3/simple/price"
+CACHE_TIMEOUT = 60 * 5  # 5 минут
 
 def get_exchange_rates(vs_currencies=None):
     """
-    Получает актуальные курсы для активных криптовалют с CoinGecko.
+    Получает актуальные курсы для активных криптовалют с CoinGecko с использованием кеширования.
     
     :param vs_currencies: Список строковых идентификаторов целевых валют (например, ['usd', 'eur', 'btc']).
                           Если None, по умолчанию используется ['usd'].
@@ -23,6 +25,14 @@ def get_exchange_rates(vs_currencies=None):
     if vs_currencies is None:
         vs_currencies = ['usd']
         
+    vs_currencies_string = ",".join(sorted(vs_currencies))
+    cache_key = f"coingecko_rates_{vs_currencies_string}"
+    
+    cached_rates = cache.get(cache_key)
+    if cached_rates:
+        logger.debug(f"Returning cached rates for key: {cache_key}")
+        return cached_rates
+
     active_currencies = Cryptocurrency.objects.filter(
         is_active=True, 
         currency_type='crypto', 
@@ -35,7 +45,6 @@ def get_exchange_rates(vs_currencies=None):
 
     coingecko_ids = list(active_currencies.values_list('coingecko_id', flat=True))
     ids_string = ",".join(coingecko_ids)
-    vs_currencies_string = ",".join(vs_currencies)
     
     params = {
         'ids': ids_string,
@@ -49,6 +58,10 @@ def get_exchange_rates(vs_currencies=None):
         response.raise_for_status()
         rates = response.json()
         logger.debug(f"Received from Coingecko: {rates}")
+        
+        # Кешируем успешный результат
+        cache.set(cache_key, rates, CACHE_TIMEOUT)
+        
         return rates
     except requests.exceptions.HTTPError as http_err:
         logger.error(f"HTTP error occurred: {http_err} - Status: {response.status_code} - Response: {response.text}")
@@ -69,4 +82,4 @@ def get_exchange_rates(vs_currencies=None):
 #         for crypto_id, data in rates.items():
 #             print(f"1 {crypto_id.upper()} = {data.get('usd')} USD")
 #     else:
-#         print("Could not fetch exchange rates.") 
+#         print("Could not fetch exchange rates.")
