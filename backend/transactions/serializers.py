@@ -267,10 +267,10 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
 
     def get_details(self, obj):
         """Возвращает детали для конкретного типа транзакции."""
-        if obj.type == 'exchange' and hasattr(obj, 'exchange_transaction'):
-            return ExchangeDetailSerializer(obj.exchange_transaction).data
-        if obj.type == 'deposit' and hasattr(obj, 'deposit_transaction'):
-            return DepositDetailSerializer(obj.deposit_transaction).data
-        if obj.type == 'withdrawal' and hasattr(obj, 'withdrawal_transaction'):
-            return WithdrawalDetailSerializer(obj.withdrawal_transaction).data
+        if obj.type == 'exchange' and hasattr(obj, 'exchange'):
+            return ExchangeDetailSerializer(obj.exchange).data
+        if obj.type == 'deposit' and hasattr(obj, 'deposit'):
+            return DepositDetailSerializer(obj.deposit).data
+        if obj.type == 'withdrawal' and hasattr(obj, 'withdrawal'):
+            return WithdrawalDetailSerializer(obj.withdrawal).data
         return None

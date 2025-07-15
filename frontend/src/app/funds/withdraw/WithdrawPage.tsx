@@ -345,10 +345,8 @@ export const WithdrawPage: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
           <h2 className="text-2xl font-bold mb-4">Запрос на вывод успешно создан!</h2>
-          <p className="mb-6">Идентификатор операции: {withdrawalId}</p>
           <p className="mb-6 text-sm text-gray-400">
-            Ваш запрос на вывод средств принят в обработку. Обычно вывод занимает от 15 минут до нескольких часов.
-            Вы можете отслеживать статус операции в разделе "История транзакций".
+            зайдите на почту email вашего пользователя для подтверждения транзакции вывода
           </p>
           <div className="flex flex-col space-y-3">
             <Link href="/wallet" className="bg-purple-600 text-white py-2 px-6 rounded-lg hover:bg-purple-700 transition">

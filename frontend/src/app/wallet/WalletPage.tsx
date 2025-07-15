@@ -179,24 +179,42 @@ export const WalletPage: React.FC = () => {
       )}
 
       {/* Быстрые действия */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <Link href="/funds/deposit" className="bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl flex flex-col items-center justify-center transition-all transform hover:scale-105">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <Link href="/funds/deposit" className="group bg-gradient-to-br from-green-500 to-teal-500 text-white p-6 rounded-2xl flex items-center justify-between transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-green-500/30">
+          <div>
+            <h3 className="font-bold text-2xl">Пополнить</h3>
+            <p className="text-sm opacity-80">Внести средства на счет</p>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 opacity-50 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          <span className="font-medium">Пополнить</span>
         </Link>
-        <Link href="/exchange" className="bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl flex flex-col items-center justify-center transition-all transform hover:scale-105">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <Link href="/exchange" className="group bg-gradient-to-br from-blue-500 to-indigo-500 text-white p-6 rounded-2xl flex items-center justify-between transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-blue-500/30">
+          <div>
+            <h3 className="font-bold text-2xl">Обменять</h3>
+            <p className="text-sm opacity-80">Конвертировать валюты</p>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 opacity-50 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           </svg>
-          <span className="font-medium">Обменять</span>
         </Link>
-        <Link href="/funds/withdraw" className="bg-red-600 hover:bg-red-700 text-white py-4 rounded-xl flex flex-col items-center justify-center transition-all transform hover:scale-105">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <Link href="/funds/withdraw" className="group bg-gradient-to-br from-red-500 to-pink-500 text-white p-6 rounded-2xl flex items-center justify-between transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-red-500/30">
+          <div>
+            <h3 className="font-bold text-2xl">Вывести</h3>
+            <p className="text-sm opacity-80">Отправить средства</p>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 opacity-50 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20v-16m8 8H4" />
           </svg>
-          <span className="font-medium">Вывести</span>
+        </Link>
+        <Link href="/transactions" className="group bg-gradient-to-br from-gray-600 to-gray-700 text-white p-6 rounded-2xl flex items-center justify-between transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-gray-600/30">
+          <div>
+            <h3 className="font-bold text-2xl">История</h3>
+            <p className="text-sm opacity-80">Просмотреть транзакции</p>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 opacity-50 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+          </svg>
         </Link>
       </div>
 
