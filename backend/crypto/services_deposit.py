@@ -37,9 +37,8 @@ class DepositService:
                 # Для валют без MEMO — возвращаем уникальный адрес пользователя
                 user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=currency)
                 if not user_wallet.deposit_address:
-                    # Генерируем тестовый адрес (или интеграция с генератором адресов)
-                    user_wallet.deposit_address = f"TEST_{user.id}_{currency.symbol}_{network}"
-                    user_wallet.save()
+                    # Вместо генерации тестового адреса выбрасываем ошибку
+                    raise ValueError("Для этой валюты и сети не настроена генерация реальных адресов. Обратитесь к администратору.")
                 return user_wallet.deposit_address, None
 
         except SystemWalletAddress.DoesNotExist:

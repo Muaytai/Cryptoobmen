@@ -1,6 +1,7 @@
 from .base import BaseBlockchainService
 from .tron import TronService
 from .bitcoin import BitcoinService
+from .xrp import XRPService
 
 def get_blockchain_service(network: str) -> BaseBlockchainService:
     """
@@ -15,5 +16,7 @@ def get_blockchain_service(network: str) -> BaseBlockchainService:
     # Add other services here, e.g., for Ethereum
     # elif network_lower in ['erc20', 'ethereum']:
     #     return EthereumService()
+    elif network_lower in ['xrp', 'ripple']:
+        return XRPService(network='mainnet' if 'main' in network_lower else 'testnet')
     else:
         raise ValueError(f"Unsupported blockchain network: {network}")

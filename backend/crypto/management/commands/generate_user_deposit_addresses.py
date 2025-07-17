@@ -19,12 +19,13 @@ class Command(BaseCommand):
                     is_system_wallet=False,
                     defaults={}
                 )
-                test_address = f"TEST_{user.id}_{currency.symbol}_{currency.network or 'main'}"
-                if wallet.deposit_address != test_address:
-                    wallet.deposit_address = test_address
-                    wallet.save()
-                    if is_created:
-                        created += 1
-                    else:
-                        updated += 1
+                # Отключено: генерация тестовых адресов
+                # test_address = f"TEST_{user.id}_{currency.symbol}_{currency.network or 'main'}"
+                # if wallet.deposit_address != test_address:
+                #     wallet.deposit_address = test_address
+                #     wallet.save()
+                #     if is_created:
+                #         created += 1
+                #     else:
+                #         updated += 1
         self.stdout.write(self.style.SUCCESS(f'Готово! Создано: {created}, обновлено: {updated}')) 
