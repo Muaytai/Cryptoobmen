@@ -66,46 +66,28 @@ class UserWalletSerializer(serializers.ModelSerializer):
 
 
 class ExchangeCalculatorSerializer(serializers.Serializer):
-    """Сериализатор для расчета обмена валют"""
+    """Сериализатор для расчёта обмена. Делегирует бизнес-логику ExchangeService."""
     from_crypto_id = serializers.IntegerField()
     to_crypto_id = serializers.IntegerField()
     amount = serializers.DecimalField(max_digits=24, decimal_places=8)
-    
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Сумма должна быть положительной.")
+        return value
+
     def validate(self, data):
-        """Валидация данных для расчета обмена"""
+        """Проверяем только существование и активность валют."""
         try:
             from_crypto = Cryptocurrency.objects.get(id=data['from_crypto_id'], is_active=True)
             to_crypto = Cryptocurrency.objects.get(id=data['to_crypto_id'], is_active=True)
-            
-            # Проверяем, существует ли пара обмена
-            exchange_pair = ExchangePair.objects.filter(
-                from_crypto=from_crypto,
-                to_crypto=to_crypto,
-                is_active=True
-            ).first()
-            
-            if not exchange_pair:
-                raise serializers.ValidationError("Данная пара обмена недоступна")
-            
-            # Проверяем минимальную и максимальную сумму
-            # Используем min_from_amount/max_from_amount из ExchangePair если они заданы, иначе из Cryptocurrency
-            min_amount = exchange_pair.min_from_amount if exchange_pair.min_from_amount is not None else from_crypto.min_exchange_amount
-            max_amount = exchange_pair.max_from_amount if exchange_pair.max_from_amount is not None else from_crypto.max_exchange_amount
-            
-            # Важно: Убедимся, что min_amount и max_amount не None перед сравнением
-            if min_amount is not None and data['amount'] < min_amount:
-                raise serializers.ValidationError(f"Минимальная сумма для обмена: {min_amount} {from_crypto.symbol}")
-            
-            if max_amount is not None and data['amount'] > max_amount:
-                raise serializers.ValidationError(f"Максимальная сумма для обмена: {max_amount} {from_crypto.symbol}")
-            
-            data['from_crypto'] = from_crypto
-            data['to_crypto'] = to_crypto
-            data['exchange_pair'] = exchange_pair # Сохраняем найденную пару для дальнейшего использования
-            
-            return data
         except Cryptocurrency.DoesNotExist:
-            raise serializers.ValidationError("Одна из валют не найдена или неактивна")
+            raise serializers.ValidationError("Одна из валют не найдена или неактивна.")
+
+        data['from_crypto'] = from_crypto
+        data['to_crypto'] = to_crypto
+        return data
+
 
 
 
@@ -189,7 +171,9 @@ class ExchangeOrderSerializer(serializers.ModelSerializer):
 
 
 class PerformExchangeSerializer(serializers.Serializer):
-    """Сериализатор для выполнения обмена."""
+    """Сериализатор для выполнения обмена. Выполняет только базовую валидацию входных данных,
+    вся бизнес-логика (лимиты, комиссии, доступность пары) делегируется ExchangeService."""
+
     from_crypto_id = serializers.IntegerField()
     to_crypto_id = serializers.IntegerField()
     amount = serializers.DecimalField(max_digits=24, decimal_places=8)
@@ -198,6 +182,18 @@ class PerformExchangeSerializer(serializers.Serializer):
         if value <= 0:
             raise serializers.ValidationError("Сумма должна быть положительной.")
         return value
+
+    def validate(self, data):
+        """Проверяем только существование и активность валют."""
+        try:
+            from_crypto = Cryptocurrency.objects.get(id=data['from_crypto_id'], is_active=True)
+            to_crypto = Cryptocurrency.objects.get(id=data['to_crypto_id'], is_active=True)
+        except Cryptocurrency.DoesNotExist:
+            raise serializers.ValidationError("Одна из валют не найдена или неактивна.")
+
+        data['from_crypto'] = from_crypto
+        data['to_crypto'] = to_crypto
+        return data
 
 
 # --- CommissionWalletSerializer

@@ -22,6 +22,7 @@ from .serializers import (
     TransferSerializer, ExchangeOrderSerializer, CommissionWalletSerializer
 )
 from .services import get_exchange_rates
+from transactions.services import ExchangeService
 
 
 class CryptocurrencyViewSet(viewsets.ReadOnlyModelViewSet):
@@ -191,67 +192,25 @@ class ExchangeCalculatorAPIView(APIView):
     def post(self, request, *args, **kwargs):
         """Рассчитывает сумму к получению при обмене"""
         serializer = ExchangeCalculatorSerializer(data=request.data)
-        if serializer.is_valid():
-            from_crypto = serializer.validated_data['from_crypto']
-            to_crypto = serializer.validated_data['to_crypto']
-            amount = serializer.validated_data['amount']
-            
-            live_rates = get_exchange_rates() # Возвращает {'coingecko_id': {'usd': rate}, ...}
+        serializer.is_valid(raise_exception=True)
 
-            if live_rates is None:
-                return Response({"error": "Не удалось связаться с сервисом курсов валют. Попробуйте позже."},
-                                status=status.HTTP_503_SERVICE_UNAVAILABLE)
-            if not live_rates:
-                return Response({"error": "Сервис курсов валют не вернул данные. Возможно, нет активных валют с coingecko_id."},
-                                status=status.HTTP_404_NOT_FOUND)
+        from_crypto = serializer.validated_data['from_crypto']
+        to_crypto = serializer.validated_data['to_crypto']
+        amount = serializer.validated_data['amount']
 
-            from_usd_rate = None
-            if from_crypto.currency_type == 'crypto':
-                # Используем coingecko_id и извлекаем 'usd'
-                if from_crypto.coingecko_id and from_crypto.coingecko_id in live_rates:
-                    rate_data = live_rates[from_crypto.coingecko_id]
-                    if 'usd' in rate_data:
-                        from_usd_rate = Decimal(str(rate_data['usd']))
-            elif from_crypto.symbol == 'USD':
-                from_usd_rate = Decimal('1.0')
+        result = ExchangeService.calculate_by_currencies(from_crypto, to_crypto, amount)
 
-            to_usd_rate = None
-            if to_crypto.currency_type == 'crypto':
-                # Используем coingecko_id и извлекаем 'usd'
-                if to_crypto.coingecko_id and to_crypto.coingecko_id in live_rates:
-                    rate_data = live_rates[to_crypto.coingecko_id]
-                    if 'usd' in rate_data:
-                        to_usd_rate = Decimal(str(rate_data['usd']))
-            elif to_crypto.symbol == 'USD':
-                to_usd_rate = Decimal('1.0')
+        return Response({
+            "from_amount": amount,
+            "from_crypto": CryptocurrencySerializer(from_crypto).data,
+            "to_amount": round(result['to_amount'], 8),
+            "to_crypto": CryptocurrencySerializer(to_crypto).data,
+            "rate": round(result['rate'], 8),
+            "fee_percentage": result['fee_percent'],
+            "fee_amount_original_currency": round(result['fee_amount'], 8),
+        })
 
-            if from_usd_rate is None or from_usd_rate <= 0:
-                # Добавил coingecko_id в сообщение об ошибке для ясности
-                return Response({"error": f"Не удалось получить актуальный курс для {from_crypto.symbol} (ID: {from_crypto.coingecko_id}) или курс некорректен."},
-                                status=status.HTTP_400_BAD_REQUEST)
-            
-            if to_usd_rate is None or to_usd_rate <= 0:
-                # Добавил coingecko_id в сообщение об ошибке для ясности
-                return Response({"error": f"Не удалось получить актуальный курс для {to_crypto.symbol} (ID: {to_crypto.coingecko_id}) или курс некорректен."},
-                                status=status.HTTP_400_BAD_REQUEST)
-            
-            rate = from_usd_rate / to_usd_rate
-            
-            fee_percentage_from_crypto = from_crypto.fee_percentage if hasattr(from_crypto, 'fee_percentage') else Decimal('0.0')
-            fee_amount_from = amount * (fee_percentage_from_crypto / Decimal('100.0'))
-            amount_after_fee = amount - fee_amount_from
-            to_amount = amount_after_fee * rate
-            
-            return Response({
-                "from_amount": amount,
-                "from_crypto": CryptocurrencySerializer(from_crypto).data,
-                "to_amount": round(to_amount, 8),
-                "to_crypto": CryptocurrencySerializer(to_crypto).data,
-                "rate": round(rate, 8),
-                "fee_percentage": fee_percentage_from_crypto,
-                "fee_amount_original_currency": round(fee_amount_from, 8),
-            })
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class TransferViewSet(viewsets.ReadOnlyModelViewSet):
@@ -489,91 +448,12 @@ class ExchangeRateView(APIView):
             print(f"Error in ExchangeRateView: {e}")
             return Response({"error": "An unexpected error occurred while retrieving the exchange rate."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@transaction.atomic
-def perform_exchange_view(request):
-    """
-    Выполняет обмен валюты для пользователя.
-    """
-    serializer = PerformExchangeSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    validated_data = serializer.validated_data
-    from_crypto_id = validated_data['from_crypto_id']
-    to_crypto_id = validated_data['to_crypto_id']
-    amount = validated_data['amount']
-    user = request.user
-
-    # Используем select_for_update для блокировки строк на время транзакции
-    try:
-        from_wallet = UserWallet.objects.select_for_update().get(user=user, currency_id=from_crypto_id)
-        to_wallet, _ = UserWallet.objects.select_for_update().get_or_create(
-            user=user, currency_id=to_crypto_id, defaults={'balance': 0}
-        )
-    except UserWallet.DoesNotExist:
-        return Response({"error": "Исходный кошелек не найден."}, status=status.HTTP_404_NOT_FOUND)
-
-    # Проверка доступного баланса
-    if from_wallet.available_balance < amount:
-        return Response({"error": "Недостаточно средств на балансе."}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Получение актуальных курсов
-    try:
-        from_crypto = Cryptocurrency.objects.get(id=from_crypto_id)
-        to_crypto = Cryptocurrency.objects.get(id=to_crypto_id)
-        live_rates = get_exchange_rates(vs_currencies=['usd'])
-        
-        from_usd_rate = Decimal(str(live_rates[from_crypto.coingecko_id]['usd']))
-        to_usd_rate = Decimal(str(live_rates[to_crypto.coingecko_id]['usd']))
-        
-        if from_usd_rate <= 0 or to_usd_rate <= 0:
             raise ValueError("Invalid exchange rate")
             
-    except (KeyError, ValueError) as e:
-        return Response({"error": f"Не удалось получить актуальный курс для обмена. {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except (KeyError, ValueError) as e:
+            return Response({"error": f"Не удалось получить актуальный курс для обмена. {e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-    # Расчет суммы к получению
-    rate = from_usd_rate / to_usd_rate
-    to_amount = amount * rate # Упрощенный расчет без комиссии для примера
 
-    # Обновление балансов
-    from_wallet.balance -= amount
-    from_wallet.available_balance -= amount
-    to_wallet.balance += to_amount
-    to_wallet.available_balance += to_amount
-
-    from_wallet.save()
-    to_wallet.save()
-
-    # Создание записи о транзакции обмена
-    tx = TX.objects.create(
-        user=user,
-        type='exchange',
-        status='completed',
-        amount=amount,
-        fee=0,
-        crypto=from_crypto
-    )
-    exchange_tx = TransactionExchange.objects.create(
-        user=user,
-        transaction=tx,
-        from_crypto=from_crypto,
-        to_crypto=to_crypto,
-        from_amount=amount,
-        to_amount=to_amount,
-        rate=rate,
-        fee_percentage=0,
-        fee_amount=0
-    )
-
-    return Response({
-        "success": True,
-        "message": "Обмен успешно выполнен.",
-        "exchange_id": exchange_tx.id
-    }, status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------

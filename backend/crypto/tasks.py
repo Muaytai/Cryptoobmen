@@ -384,9 +384,32 @@ def process_pending_withdrawals():
     """
     Периодическая задача для обработки всех ожидающих заявок на вывод.
     """
-    from transactions.models import Transfer
-    pending_transfers = Transfer.objects.filter(status=Transfer.Status.PENDING)
-    for transfer in pending_transfers:
+    from transactions.models import Withdrawal
+    
+    pending_withdrawals = Withdrawal.objects.filter(
+        transaction__status='pending',
+        is_email_confirmed=True
+    )
+    
+    for withdrawal in pending_withdrawals:
+        # Здесь можно добавить дополнительную логику, если требуется,
+        # например, создание объекта Transfer перед вызовом задачи.
+        # На данный момент, предполагаем, что `process_withdrawal` 
+        # может быть вызван с ID вывода.
+        
+        # Найдем или создадим соответствующий Transfer
+        from transactions.models import Transfer
+        transfer, created = Transfer.objects.get_or_create(
+            user=withdrawal.user,
+            amount=withdrawal.transaction.amount,
+            status=Transfer.Status.PENDING,
+            # Можно добавить связь с withdrawal, если ее нет
+        )
+        
+        if created:
+            logger.info(f"Created new Transfer {transfer.id} for Withdrawal {withdrawal.id}")
+        
+        logger.info(f"Processing pending withdrawal {withdrawal.id} via transfer {transfer.id}")
         process_withdrawal.delay(transfer.id)
 
 @shared_task

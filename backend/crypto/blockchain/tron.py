@@ -122,3 +122,7 @@ class TronService(BaseBlockchainService):
         balance_raw = contract.functions.balanceOf(address)
         # USDT has 6 decimals
         return self.from_atomic_unit(balance_raw, 6)
+
+    def create_new_address(self, *args, **kwargs):
+        # TRON: генерация новых адресов не поддерживается (или реализовать при необходимости)
+        return None

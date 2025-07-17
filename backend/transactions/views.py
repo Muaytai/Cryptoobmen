@@ -7,6 +7,10 @@ from django.db.models import Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend, FilterSet, NumberFilter
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.decorators import api_view, permission_classes as dec_permission_classes
+from rest_framework import serializers
+from .services import WithdrawalService
+import uuid
 
 from .models import Transaction, Exchange, Deposit, Withdrawal, Review
 from .serializers import (
@@ -96,7 +100,7 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
         
         # Возвращаем созданный вывод через основной сериализатор
         response_serializer = WithdrawalSerializer(withdrawal)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        return Response({"message": "Запрос на вывод создан. Пожалуйста, проверьте свою электронную почту, чтобы подтвердить операцию."}, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
@@ -138,6 +142,23 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(withdrawal)
         return Response(serializer.data)
+
+
+@api_view(['GET'])
+@dec_permission_classes([AllowAny])
+def confirm_withdrawal_view(request, token):
+    """
+    View для подтверждения вывода по токену из email.
+    """
+    try:
+        token_uuid = uuid.UUID(token, version=4)
+        WithdrawalService.confirm_withdrawal(token_uuid)
+        # TODO: Сделать красивую HTML страницу для ответа
+        return Response({"message": "Вывод средств успешно подтвержден и поставлен в очередь на обработку."}, status=status.HTTP_200_OK)
+    except (ValueError, serializers.ValidationError) as e:
+        # TODO: Сделать красивую HTML страницу для ошибки
+        error_message = str(e.detail[0]) if isinstance(e, serializers.ValidationError) else "Неверный формат токена."
+        return Response({"error": error_message}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class DepositViewSet(viewsets.ReadOnlyModelViewSet):
@@ -289,8 +310,7 @@ class TransactionHistoryView(generics.ListAPIView):
         return Transaction.objects.filter(user=user).select_related(
             'crypto'
         ).prefetch_related(
-            'exchange_transaction__from_currency',
-            'exchange_transaction__to_currency',
-            'deposit_transaction',
-            'withdrawal_transaction'
+            'exchange',
+            'deposit',
+            'withdrawal'
         ).order_by('-timestamp')
