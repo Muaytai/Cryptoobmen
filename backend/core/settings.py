@@ -520,3 +520,7 @@ CHANNEL_LAYERS = {
 }
 
 TRON_PLATFORM_PRIVATE_KEY = os.getenv('TRON_PLATFORM_PRIVATE_KEY')
+
+# XUMM (Xaman) API ключи для интеграции с XRP Ledger через XUMM
+XAMAN_API_KEY = os.getenv('XAMAN_API_KEY', '')
+XAMAN_API_SECRET = os.getenv('XAMAN_API_SECRET', '')
