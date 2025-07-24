@@ -24,7 +24,7 @@ click==8.1.8
 click-didyoumean==0.3.1
 click-plugins==1.1.1
 click-repl==0.3.0
-coincurve==21.0.0
+coincurve==20.0.0
 constantly==23.10.4
 cron-descriptor==1.4.5
 cryptography==45.0.4
@@ -111,7 +111,6 @@ toolz==1.0.0
 tortoise-orm==0.25.1
 trio==0.30.0
 trio-websocket==0.12.2
-tronpy==0.5.0
 twisted[tls]==25.5.0
 txaio==23.1.1
 types-requests==2.32.4.20250611
@@ -130,5 +129,4 @@ werkzeug==3.1.3
 wsproto==1.2.0
 yarl==1.20.1
 zope-interface==7.2
-bitcoinlib==0.6.14
 segno==1.6.6

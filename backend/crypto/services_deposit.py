@@ -24,23 +24,21 @@ class DepositService:
         Также возвращает qr_code (base64 PNG).
         """
         try:
-            # 1. Найти системный адрес для валюты и сети
-            system_wallet = SystemWalletAddress.objects.select_related('currency').get(
-                currency__symbol__iexact=currency_symbol,
-                currency__is_active=True,
-                network__iexact=network
-            )
-            currency = system_wallet.currency
-            address = system_wallet.address
-
-            if not address:
-                return None, None, None
+            # 1. Найти валюту
+            currency = Cryptocurrency.objects.get(symbol__iexact=currency_symbol, is_active=True)
 
             if currency.requires_memo:
-                # 2. Сгенерировать уникальный Memo
+                # Логика для валют с MEMO
+                system_wallet = SystemWalletAddress.objects.select_related('currency').get(
+                    currency=currency,
+                    network__iexact=network
+                )
+                address = system_wallet.address
+                if not address:
+                    raise ValueError(f"Системный адрес для {currency_symbol} в сети {network} не настроен.")
+
                 memo = DepositService._generate_unique_memo()
-                # 3. Сохранить Memo в базу
-                expires_at = timezone.now() + timedelta(hours=24)  # Memo действителен 24 часа
+                expires_at = timezone.now() + timedelta(hours=24)
                 UserDepositMemo.objects.create(
                     user=user,
                     currency=currency,
@@ -48,26 +46,43 @@ class DepositService:
                     memo=memo,
                     expires_at=expires_at
                 )
-                # Генерируем QR-код: адрес + MEMO (например, через \n)
                 qr_data = f"{address}:{memo}"
                 qr_code = generate_qr_code(qr_data)
                 return address, memo, qr_code
             else:
-                # Для валют без MEMO — возвращаем или генерируем уникальный адрес пользователя
+                # Логика для валют без MEMO (например, Bitcoin)
                 user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=currency)
-                if not user_wallet.deposit_address:
-                    # Адреса нет - генерируем новый
+
+                # Проверяем, нужно ли пересоздать адрес
+                # Это нужно, если адреса нет, или если это testnet и адрес не в формате bech32 (не начинается с tb1)
+                is_testnet = network.lower() == 'testnet'
+                is_invalid_testnet_address = (
+                    is_testnet and
+                    currency.symbol == 'BTC' and
+                    user_wallet.deposit_address and
+                    not user_wallet.deposit_address.startswith('tb1')
+                )
+
+                if not user_wallet.deposit_address or is_invalid_testnet_address:
                     try:
                         blockchain_service = get_blockchain_service(network)
+                        # Для BTC в testnet мы передаем специальный флаг, если это необходимо
                         new_address = blockchain_service.create_new_address(user_id=user.id)
+                        if not new_address:
+                            raise ValueError(f"Сервис блокчейна для сети {network} не смог сгенерировать адрес.")
                         user_wallet.deposit_address = new_address
                         user_wallet.save()
                     except Exception as e:
-                        raise ValueError(f"Не удалось сгенерировать новый адрес для {currency.symbol}.")
-                # Генерируем QR-код только по адресу
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Критическая ошибка при генерации адреса для {currency.symbol} ({user.id}): {e}", exc_info=True)
+                        raise ValueError(f"Не удалось сгенерировать новый адрес. Ошибка: {e}")
+                
                 qr_code = generate_qr_code(user_wallet.deposit_address)
                 return user_wallet.deposit_address, None, qr_code
 
+        except Cryptocurrency.DoesNotExist:
+            raise ValueError(f"Криптовалюта {currency_symbol} не найдена или неактивна.")
         except SystemWalletAddress.DoesNotExist:
             raise ValueError(f"Системный кошелек для {currency_symbol} в сети {network} не найден или неактивен.")
         except Exception as e:

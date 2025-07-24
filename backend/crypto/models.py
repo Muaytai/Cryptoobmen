@@ -350,22 +350,34 @@ class CommissionTransaction(models.Model):
 def create_default_cryptocurrencies():
     # Примеры: BTC, ETH, USDT-ERC20, USDT-TRC20, BNB, XRP, LTC, SOL, MATIC
     default_cryptos = [
-        {"name": "Bitcoin", "symbol": "BTC", "network": "BTC", "icon_b64": None},
-        {"name": "Ethereum", "symbol": "ETH", "network": "ERC20", "icon_b64": None},
-        {"name": "Tether USD", "symbol": "USDT", "network": "ERC20", "icon_b64": None},
-        {"name": "Tether USD", "symbol": "USDT", "network": "TRC20", "icon_b64": None},
-        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "icon_b64": None},
-        {"name": "Ripple", "symbol": "XRP", "network": "XRP", "icon_b64": None},
-        {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "icon_b64": None},
-        {"name": "Solana", "symbol": "SOL", "network": "SOL", "icon_b64": None},
-        {"name": "Polygon", "symbol": "MATIC", "network": "Polygon", "icon_b64": None},
+        {"name": "Bitcoin", "symbol": "BTC", "network": "BTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
+        {"name": "Ethereum", "symbol": "ETH", "network": "ERC20", "decimals": 18, "requires_memo": False, "icon_b64": None},
+        {"name": "Tether USD", "symbol": "USDT", "network": "ERC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
+        {"name": "Tether USD", "symbol": "USDT", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
+        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "decimals": 18, "requires_memo": True, "icon_b64": None},
+        {"name": "Ripple", "symbol": "XRP", "network": "XRP", "decimals": 6, "requires_memo": True, "icon_b64": None},
+        {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
+        {"name": "Solana", "symbol": "SOL", "network": "SOL", "decimals": 9, "requires_memo": False, "icon_b64": None},
+        {"name": "Polygon", "symbol": "MATIC", "network": "Polygon", "decimals": 18, "requires_memo": False, "icon_b64": None},
     ]
-    for crypto in default_cryptos:
+    for crypto_data in default_cryptos:
         obj, created = Cryptocurrency.objects.get_or_create(
-            symbol=crypto["symbol"], network=crypto["network"], defaults={"name": crypto["name"]}
+            symbol=crypto_data["symbol"], 
+            network=crypto_data["network"], 
+            defaults={
+                "name": crypto_data["name"],
+                "decimals": crypto_data["decimals"],
+                "requires_memo": crypto_data["requires_memo"]
+            }
         )
-        if created and crypto["icon_b64"]:
-            obj.icon.save(f"{crypto['symbol']}.png", ContentFile(base64.b64decode(crypto["icon_b64"])), save=True)
+        if created:
+            if crypto_data["icon_b64"]:
+                obj.icon.save(f"{crypto_data['symbol']}.png", ContentFile(base64.b64decode(crypto_data["icon_b64"])), save=True)
+        else:
+            # Update existing records if needed
+            obj.decimals = crypto_data["decimals"]
+            obj.requires_memo = crypto_data["requires_memo"]
+        
         obj.is_active = True
         obj.save()
 
