@@ -6,7 +6,7 @@ import traceback
 from decimal import Decimal
 from celery import shared_task
 from celery.utils.log import get_task_logger
-
+from crypto.blockchain.xrp import XRPService
 from django.utils import timezone
 from django.db import transaction
 
@@ -246,24 +246,65 @@ def check_blockchain_deposits():
             # Получаем последние обработанные транзакции (можно доработать для оптимизации)
             last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
             # XRP Ledger не использует timestamp, а ledger index. Для простоты пока не фильтруем по ledger.
-            incoming_txs = get_xrp_incoming_transactions(wallet.address)
+            service = XRPService()
+            incoming_txs = service.get_transactions(wallet.address)
             logger.info(f"[check_blockchain_deposits][XRP] Found {len(incoming_txs)} incoming payments for {wallet.address}")
-            for tx in incoming_txs:
-                tx_hash = tx.get("hash")
-                amount_drops = int(tx.get("Amount", 0))
-                amount = Decimal(amount_drops) / Decimal(1_000_000)  # 1 XRP = 1_000_000 drops
-                destination_tag = str(tx.get("DestinationTag", ""))
-                logger.info(f"[check_blockchain_deposits][XRP] Processing tx_hash={tx_hash}, tag={destination_tag}, amount={amount}")
-                if not destination_tag:
-                    logger.warning("[XRP] Skipping tx without DestinationTag (memo)")
+            for ev in incoming_txs:
+                memo = ev.get("memo")
+                tx_hash = ev.get("transaction_id")
+                amount_str = ev.get("value")
+
+                logger.info(f"[XRP][DEPOSIT] Processing Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount_str}', ev={ev}")
+
+                user = None
+                deposit_memo = None
+
+                # Логика определения пользователя по транзакции
+                if memo:
+                    # Если есть memo, всегда пытаемся найти пользователя по нему
+                    try:
+                        deposit_memo = UserDepositMemo.objects.filter(memo=memo, status="waiting").first()
+                        if deposit_memo:
+                            user = deposit_memo.user
+                        else:
+                            logger.warning(f"No waiting UserDepositMemo found for memo='{memo}'. Skipping.")
+                            continue
+                    except Exception as e:
+                        logger.error(f"Error while fetching memo '{memo}': {e}", exc_info=True)
+                        continue
+                
+                elif wallet.currency.requires_memo:
+                    # Если memo обязательно, но его нет, пропускаем
+                    logger.warning(f"Skipping event for {wallet.currency.symbol} because it requires a memo, but none was provided. ev={ev}")
                     continue
+                
+                else:
+                    # Если memo не обязателен и его нет (например, BTC)
+                    # TODO: Реализовать логику для валют без memo (поиск по уникальному адресу)
+                    logger.info(f"Skipping deposit for {wallet.currency.symbol} as it does not require memo and no memo was provided (logic not implemented). ev={ev}")
+                    continue
+
+                if not user:
+                    logger.warning(f"User not found for transaction {tx_hash}. Skipping.")
+                    continue
+
+                # Проверяем на дубликат ДО основной логики
                 if Transaction.objects.filter(tx_hash=tx_hash).exists():
                     logger.warning(f"[XRP] Duplicate transaction found: tx_hash={tx_hash}. Skipping.")
                     continue
-                deposit_memo = UserDepositMemo.objects.filter(memo=destination_tag, status="waiting").first()
+                deposit_memo = UserDepositMemo.objects.filter(memo=memo, status="waiting").first()
                 if not deposit_memo:
-                    logger.warning(f"[XRP] No waiting UserDepositMemo found for tag='{destination_tag}'.")
+                    logger.warning(f"[XRP] No waiting UserDepositMemo found for tag='{memo}'.")
                     continue
+
+                # ВЫЧИСЛЯЕМ amount перед использованием!
+                try:
+                    decimals = getattr(wallet.currency, "decimals", 6) or 6
+                    amount = Decimal(amount_str) / Decimal(10 ** decimals)
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.error(f"Invalid amount format: {amount_str}. Skipping. Error: {e}")
+                    continue
+
                 with transaction.atomic():
                     user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
                     user_wallet.balance += amount
@@ -292,7 +333,7 @@ def check_blockchain_deposits():
                     deposit_memo.status = "used"
                     deposit_memo.save()
                     processed += 1
-                    logger.info(f"[XRP] Successfully processed deposit for tag='{destination_tag}', tx_hash={tx_hash}")
+                    logger.info(f"[XRP] Successfully processed deposit for tag='{memo}', tx_hash={tx_hash}")
         except Exception as e:
             logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 

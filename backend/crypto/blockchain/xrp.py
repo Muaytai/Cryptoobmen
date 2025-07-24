@@ -45,15 +45,20 @@ class XRPService(BaseBlockchainService):
         req = AccountTx(account=address)
         response = self.client.request(req)
         txs = response.result.get("transactions", [])
+        logger.info(f"[XRPService.get_transactions] RAW TXS: {txs}")
         incoming = []
         for tx in txs:
-            tx_data = tx.get("tx", {})
+            logger.info(f"[XRPService.get_transactions] TX RAW: {tx}")
+            tx_data = tx.get("tx_json") or tx.get("tx", {})
             if tx_data.get("Destination") == address and tx_data.get("TransactionType") == "Payment":
+                logger.info(f"[XRPService.get_transactions] TX MATCHED: {tx_data}")
+                # Сумма может быть в Amount или DeliverMax
+                value = tx_data.get('Amount') or tx_data.get('DeliverMax') or 0
                 incoming.append({
-                    'transaction_id': tx_data.get('hash'),
+                    'transaction_id': tx.get('hash') or tx_data.get('hash'),
                     'from_address': tx_data.get('Account'),
                     'to_address': tx_data.get('Destination'),
-                    'value': str(tx_data.get('Amount', 0)),  # в drops
+                    'value': str(value),  # в drops
                     'memo': str(tx_data.get('DestinationTag', '')) if tx_data.get('DestinationTag') else None
                 })
         logger.info(f"[XRPService.get_transactions] Found {len(incoming)} incoming payments for {address}")
@@ -100,3 +105,10 @@ class XRPService(BaseBlockchainService):
         except Exception as e:
             logger.error(f"[XRPService.send_transaction] Ошибка отправки XRP: {e}")
             raise 
+    
+    def create_new_address(self, user_id: int) -> str:
+        """
+        Создает новый адрес для пользователя.
+        """
+        wallet = Wallet.create()
+        return wallet.classic_address
