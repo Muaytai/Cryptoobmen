@@ -90,12 +90,6 @@ def check_blockchain_deposits():
                 logger.warning(f"Skipping event for {wallet.currency.symbol} because it requires a memo, but none was provided.")
                 continue
             
-            else:
-                # Если memo не обязателен и его нет (например, BTC)
-                # TODO: Реализовать логику для валют без memo (поиск по уникальному адресу)
-                logger.info(f"Skipping deposit for {wallet.currency.symbol} as it does not require memo and no memo was provided (logic not implemented).")
-                continue
-            
             if not user:
                 logger.warning(f"User not found for transaction {tx_hash}. Skipping.")
                 continue
@@ -195,8 +189,8 @@ def check_blockchain_deposits():
                 tx_hash = ev.get("transaction_id")
                 amount_str = ev.get("value")
                 logger.info(f"[no-memo] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
-                if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                    logger.info(f"[no-memo] Duplicate tx {tx_hash}, skipping.")
+                if Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).exists():
+                    logger.info(f"[no-memo] Duplicate tx {tx_hash} for user {user_wallet.user.id}, skipping.")
                     continue
                 try:
                     amount = Decimal(amount_str) / Decimal(10**currency.decimals)

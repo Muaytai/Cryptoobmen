@@ -138,9 +138,14 @@ class BitcoinService(BaseBlockchainService):
         if user_id is None:
             raise ValueError("user_id is required for Bitcoin address generation.")
 
-        xpub = getattr(settings, 'BITCOIN_XPUB_KEY', None)
-        if not xpub:
-            raise ValueError("BITCOIN_XPUB_KEY is not configured in settings.")
+        if self.network == 'testnet':
+            xpub = getattr(settings, 'BITCOIN_TESTNET_XPUB_KEY', None)
+            if not xpub:
+                raise ValueError("BITCOIN_TESTNET_XPUB_KEY is not configured for testnet.")
+        else:
+            xpub = getattr(settings, 'BITCOIN_XPUB_KEY', None)
+            if not xpub:
+                raise ValueError("BITCOIN_XPUB_KEY is not configured for mainnet.")
 
         # Create a key from the master public key
         master_key = Key(xpub, is_extended=True, network=self.network)
@@ -149,4 +154,6 @@ class BitcoinService(BaseBlockchainService):
         # m/0/user_id is a common scheme for public-facing addresses.
         user_key = master_key.derive_path(f"m/0/{user_id}")
 
-        return user_key.address
+        # Return the SegWit address (bech32 format, e.g., bc1... or tb1...).
+        # This is the modern and preferred address format.
+        return user_key.address_segwit

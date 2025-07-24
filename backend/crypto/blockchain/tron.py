@@ -54,6 +54,11 @@ class TronService(BaseBlockchainService):
 
     def get_transactions(self, address: str, min_timestamp: int = 0) -> List[Dict[str, Any]]:
         """Fetches TRC20 transfers to *address* after *min_timestamp* (ms)."""
+        # Базовая проверка валидности адреса Tron
+        if not address or not address.startswith('T') or len(address) != 34:
+            logger.warning(f"[TRON] Пропуск невалидного адреса: {address}")
+            return []
+
         url = f"{self.api_url}/v1/accounts/{address}/transactions/trc20"
         params = {
             "only_to": "true",
@@ -124,5 +129,13 @@ class TronService(BaseBlockchainService):
         return self.from_atomic_unit(balance_raw, 6)
 
     def create_new_address(self, *args, **kwargs):
-        # TRON: генерация новых адресов не поддерживается (или реализовать при необходимости)
-        return None
+        """Creates a new Tron address."""
+        try:
+            # This is not a secure way to generate keys for production.
+            # For demonstration purposes only.
+            priv_key = PrivateKey.random()
+            address = priv_key.public_key.to_base58check_address()
+            return address
+        except Exception as e:
+            logger.error(f"Error creating new Tron address: {e}")
+            raise

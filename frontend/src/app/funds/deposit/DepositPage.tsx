@@ -261,7 +261,10 @@ export const DepositPage: React.FC = () => {
     const referenceNetworks = currencyObj ? currencyObj.networks || [] : [];
     const allNetworks = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
 
-    const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[0] : null);
+    let networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[0] : null);
+    if (selectedCurrency && selectedCurrency.toLowerCase() === 'btc') {
+      networkToUse = 'bitcoin';
+    }
     if (!selectedCurrency || !networkToUse) {
       setError('Пожалуйста, выберите криптовалюту и сеть.');
       toast.error('Выберите криптовалюту и сеть', {
