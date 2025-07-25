@@ -507,8 +507,8 @@ export const DepositPage: React.FC = () => {
     const connect = () => {
       let wsUrl = '';
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = process.env.NEXT_PUBLIC_WS_BASE_URL 
-        ? process.env.NEXT_PUBLIC_WS_BASE_URL 
+      const host = process.env.NEXT_PUBLIC_WS_URL 
+        ? process.env.NEXT_PUBLIC_WS_URL 
         : `${protocol}//${window.location.hostname}:8000`;
       if (depositInfo.memo) {
         wsUrl = `${host}/ws/deposit_status/${depositInfo.memo}/`;
