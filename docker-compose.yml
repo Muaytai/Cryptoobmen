@@ -55,7 +55,7 @@ services:
         while ! pg_isready -h postgres -p 5432 -q; do sleep 1; done &&
         echo 'PostgreSQL started' &&
         python manage.py migrate --noinput &&
-        gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+        uvicorn core.asgi:application --host 0.0.0.0 --port 8000 --workers 3
       "
 
   # Фронтенд Cryptoobmen
@@ -96,4 +96,4 @@ networks:
     external: true
 
 volumes:
-  pgadmin_data: 
+  pgadmin_data:

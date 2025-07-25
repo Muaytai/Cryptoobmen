@@ -7,6 +7,7 @@ import uuid
 import logging
 from django.core.files.base import ContentFile
 import base64
+from .blockchain.factory import get_blockchain_service # Используем фабрику
 
 logger = logging.getLogger(__name__)
 
@@ -160,26 +161,29 @@ class UserWallet(models.Model):
         # Убедимся, что системный кошелек не привязан к пользователю
         if self.is_system_wallet:
             self.user = None
-        
+
+        # Генерация адреса для криптовалют, если он пуст
+        if self.currency.currency_type == 'crypto' and not self.deposit_address and not self.is_system_wallet:
+            try:
+                # Используем фабрику для получения нужного сервиса
+                service = get_blockchain_service(self.currency.network)
+                # create_new_address теперь может возвращать кортеж (адрес, приватный ключ)
+                new_address, private_key = service.create_new_address()
+                self.deposit_address = new_address
+                # В проде здесь должно быть шифрование
+                self.encrypted_private_key = private_key 
+                logger.info(f"Generated new {self.currency.symbol} address {new_address} for user {self.user.email}")
+            except Exception as e:
+                logger.error(f"Could not generate address for {self.currency.symbol}: {e}")
+
         # При создании кошелька или если available_balance не был установлен вручную
         if self.pk is None or self.available_balance == Decimal('0.0') and self.locked_balance == Decimal('0.0'):
              self.available_balance = self.balance - self.locked_balance
         else:
             # Общий баланс всегда сумма доступного и заблокированного
-            # Это условие может быть избыточным если available_balance и locked_balance управляются отдельно
-            # и balance вычисляется как их сумма при чтении (через property например).
-            # Для упрощения пока оставим как есть, но обычно меняется available/locked, а balance - их сумма.
-            # Если же balance меняется напрямую, то available_balance должен быть пересчитан, если нет locked_balance.
-            # Логика здесь может быть сложнее в зависимости от операций.
-            # Пока предположим, что balance - это основное поле, а available_balance - это balance минус locked_balance.
             self.available_balance = self.balance - self.locked_balance
             if self.available_balance < 0:
-                # Этого не должно происходить, нужна валидация или другая логика
-                # Для примера, можно вызвать исключение или установить available_balance в 0
-                # raise ValueError("Available balance cannot be negative.")
-                self.available_balance = Decimal('0.0') 
-                # И, возможно, скорректировать locked_balance или balance
-                # self.balance = self.locked_balance # Если available_balance не может быть отрицательным
+                self.available_balance = Decimal('0.0')
 
         super().save(*args, **kwargs)
 

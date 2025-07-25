@@ -67,10 +67,11 @@ class DepositService:
                     try:
                         blockchain_service = get_blockchain_service(network)
                         # Для BTC в testnet мы передаем специальный флаг, если это необходимо
-                        new_address = blockchain_service.create_new_address(user_id=user.id)
+                        new_address, private_key = blockchain_service.create_new_address(user_id=user.id)
                         if not new_address:
                             raise ValueError(f"Сервис блокчейна для сети {network} не смог сгенерировать адрес.")
                         user_wallet.deposit_address = new_address
+                        user_wallet.encrypted_private_key = private_key
                         user_wallet.save()
                     except Exception as e:
                         import logging
