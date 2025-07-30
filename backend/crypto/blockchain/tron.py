@@ -128,14 +128,15 @@ class TronService(BaseBlockchainService):
         # USDT has 6 decimals
         return self.from_atomic_unit(balance_raw, 6)
 
-    def create_new_address(self, *args, **kwargs):
-        """Creates a new Tron address."""
+    def create_new_address(self, *args, **kwargs) -> tuple[str, str]:
+        """Creates a new Tron address and returns it along with the private key."""
         try:
             # This is not a secure way to generate keys for production.
             # For demonstration purposes only.
             priv_key = PrivateKey.random()
             address = priv_key.public_key.to_base58check_address()
-            return address
+            private_key_hex = priv_key.hex()
+            return address, private_key_hex
         except Exception as e:
             logger.error(f"Error creating new Tron address: {e}")
             raise

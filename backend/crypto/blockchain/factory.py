@@ -3,6 +3,7 @@ from .base import BaseBlockchainService
 from .tron import TronService
 from .bitcoin import BitcoinService
 from .xrp import XRPService
+from .ethereum import EthereumService
 
 def get_blockchain_service(network: str) -> BaseBlockchainService:
     """
@@ -16,9 +17,10 @@ def get_blockchain_service(network: str) -> BaseBlockchainService:
         # Временно используем testnet для разработки
         btc_network = 'testnet'
         return BitcoinService(network=btc_network)
-    # Add other services here, e.g., for Ethereum
-    # elif network_lower in ['erc20', 'ethereum']:
-    #     return EthereumService()
+    elif network_lower in ['erc20', 'ethereum', 'eth']:
+        # Используем сеть из настроек
+        eth_network = getattr(settings, 'ETHEREUM_NETWORK', 'goerli')
+        return EthereumService(network=eth_network)
     elif network_lower in ['xrp', 'ripple']:
         return XRPService(network='mainnet' if 'main' in network_lower else 'testnet')
     else:
