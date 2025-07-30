@@ -524,3 +524,21 @@ TRON_PLATFORM_PRIVATE_KEY = os.getenv('TRON_PLATFORM_PRIVATE_KEY')
 # XUMM (Xaman) API ключи для интеграции с XRP Ledger через XUMM
 XAMAN_API_KEY = os.getenv('XAMAN_API_KEY', '')
 XAMAN_API_SECRET = os.getenv('XAMAN_API_SECRET', '')
+
+# Ethereum настройки
+ETHEREUM_NETWORK = os.getenv('ETHEREUM_NETWORK', 'mainnet')  # mainnet, goerli, sepolia
+ETHEREUM_RPC_URL = os.getenv('ETHEREUM_RPC_URL', 'https://mainnet.infura.io/v3/YOUR_PROJECT_ID')
+ETHEREUM_BACKUP_RPC_URL = os.getenv('ETHEREUM_BACKUP_RPC_URL', '')  # Резервный RPC
+INFURA_PROJECT_ID = os.getenv('INFURA_PROJECT_ID', '')
+ALCHEMY_API_KEY = os.getenv('ALCHEMY_API_KEY', '')
+
+# Ethereum контракты
+USDT_ERC20_CONTRACT_ADDRESS = os.getenv('USDT_ERC20_CONTRACT_ADDRESS', '0xdAC17F958D2ee523a2206206994597C13D831ec7')
+USDC_ERC20_CONTRACT_ADDRESS = os.getenv('USDC_ERC20_CONTRACT_ADDRESS', '0xA0b86a33E6441b8C4505B8C4505B8C4505B8C4505')
+DAI_ERC20_CONTRACT_ADDRESS = os.getenv('DAI_ERC20_CONTRACT_ADDRESS', '0x6B175474E89094C44Da98b954EedeAC495271d0F')
+
+# Gas настройки
+ETHEREUM_GAS_PRICE_MULTIPLIER = float(os.getenv('ETHEREUM_GAS_PRICE_MULTIPLIER', '1.1'))  # 10% надбавка к базовой цене
+ETHEREUM_MAX_GAS_PRICE = int(os.getenv('ETHEREUM_MAX_GAS_PRICE', '100'))  # Максимальная цена газа в Gwei
+ETHEREUM_GAS_LIMIT_ETH = int(os.getenv('ETHEREUM_GAS_LIMIT_ETH', '21000'))  # Лимит газа для ETH
+ETHEREUM_GAS_LIMIT_ERC20 = int(os.getenv('ETHEREUM_GAS_LIMIT_ERC20', '65000'))  # Лимит газа для ERC-20
