@@ -486,21 +486,26 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
-# Периодические задачи
+# Настройки логирования для Celery (уменьшить шум в логах)
+CELERY_WORKER_LOG_LEVEL = 'WARNING'  # Показывать только предупреждения и ошибки
+CELERY_WORKER_LOG_FORMAT = '[%(asctime)s: %(levelname)s/%(processName)s] %(message)s'
+CELERY_TASK_LOG_FORMAT = '[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s'
+
+# Периодические задачи (уменьшена частота для разработки)
 from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {
-    'scan_deposits_every_30s': {
+    'scan_deposits_every_5min': {
         'task': 'crypto.tasks.check_blockchain_deposits',
-        'schedule': 30.0,
+        'schedule': 300.0,  # каждые 5 минут вместо 30 секунд
     },
-    'process-pending-withdrawals-every-minute': {
+    'process-pending-withdrawals-every-5min': {
         'task': 'crypto.tasks.process_pending_withdrawals',
-        'schedule': 60.0,
+        'schedule': 300.0,  # каждые 5 минут вместо 1 минуты
     },
-    'process-pending-deposits-every-minute': {
+    'process-pending-deposits-every-5min': {
         'task': 'crypto.tasks.process_pending_deposits',
-        'schedule': 60.0,
+        'schedule': 300.0,  # каждые 5 минут вместо 1 минуты
     },
 }
 

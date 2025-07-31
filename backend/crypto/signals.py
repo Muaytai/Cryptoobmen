@@ -40,7 +40,6 @@ def send_deposit_status_update(sender, instance, **kwargs):
     from channels.layers import get_channel_layer
     try:
         if instance.status in ['used', 'expired']:
-            logger.info(f"Caught status change for memo {instance.memo} to '{instance.status}'. Sending WebSocket update.")
             channel_layer = get_channel_layer()
             group_name = f'deposit_memo_{instance.memo}'
             if channel_layer:
@@ -54,7 +53,6 @@ def send_deposit_status_update(sender, instance, **kwargs):
                         }
                     }
                 )
-                logger.info(f"Successfully sent WebSocket update to group {group_name}")
     except Exception as e:
         logger.error(f"Error in send_deposit_status_update signal for memo {instance.memo}: {e}")
 
@@ -67,13 +65,9 @@ def handle_transaction_status_change(sender, instance, **kwargs):
     Обрабатывает изменение статуса транзакции.
     Возвращает средства пользователю при отмене или ошибке вывода.
     """
-    logger.info(f"Signal handle_transaction_status_change called for transaction {instance.pk}")
-    
     # Проверяем, изменился ли статус на 'cancelled' или 'failed'
     if (instance.status in ['cancelled', 'failed'] and 
         instance.type == 'withdrawal'):
-        
-        logger.info(f"Refunding transaction {instance.pk}")
         # Ищем связанный объект Withdrawal
         try:
             from transactions.models import Withdrawal
@@ -90,11 +84,7 @@ def handle_transaction_status_change(sender, instance, **kwargs):
                 withdrawal.refunded = True
                 withdrawal.save(update_fields=['refunded'])
                 
-                logger.info(
-                    f"Возвращены средства пользователю {instance.user.email}: "
-                    f"{instance.amount} {instance.crypto.symbol} "
-                    f"(транзакция {instance.transaction_id})"
-                )
+
                 
         except Withdrawal.DoesNotExist:
             logger.warning(
@@ -128,8 +118,4 @@ def handle_withdrawal_status_change(sender, instance, **kwargs):
         instance.refunded = True
         instance.save(update_fields=['refunded'])
         
-        logger.info(
-            f"Возвращены средства пользователю {instance.user.email}: "
-            f"{instance.transaction.amount} {instance.transaction.crypto.symbol} "
-            f"(вывод {instance.id})"
-        )
+

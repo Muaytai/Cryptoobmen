@@ -106,6 +106,8 @@ class WithdrawalAdmin(admin.ModelAdmin):
                 withdrawal.transaction.status = 'cancelled'
                 withdrawal.transaction.save()
     cancel_withdrawals.short_description = "Отменить выбранные выводы средств"
+    
+
 
     def get_status(self, obj):
         return obj.transaction.get_status_display()
