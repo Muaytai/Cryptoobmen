@@ -19,7 +19,7 @@ from django.conf import settings
 from .models import Cryptocurrency
 
 logger = get_task_logger(__name__)
-logger.setLevel(logging.WARNING)  # Изменено с DEBUG на WARNING
+logger.setLevel(logging.DEBUG)
 
 
 @shared_task
@@ -30,6 +30,7 @@ def check_blockchain_deposits():
     from transactions.models import Transaction
     from .models import SystemWalletAddress, UserDepositMemo, UserWallet
     processed = 0
+    logger.info("[check_blockchain_deposits] Starting deposit check...")
 
     # 1. Сначала обрабатываем валюты с MEMO (как раньше)
     for wallet in SystemWalletAddress.objects.select_related('currency').all():
@@ -37,10 +38,14 @@ def check_blockchain_deposits():
         if not currency.is_active:
             continue
         if not getattr(currency, 'requires_memo', False):
+            logger.info(f"Skipping {currency.symbol} in {wallet.network}: MEMO not required (per official docs)")
             continue
 
+        logger.info(f"[check_blockchain_deposits] Checking wallet: {wallet.address} for currency {wallet.currency.symbol} in network {wallet.network}")
+        
         last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
         min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
+        logger.info(f"Checking from timestamp: {min_ts}")
 
         # Используем фабрику для получения нужного сервиса
         try:
@@ -50,6 +55,8 @@ def check_blockchain_deposits():
             continue
         
         raw_transactions = service.get_transactions(address=wallet.address, min_timestamp=min_ts)
+        
+        logger.info(f"Found {len(raw_transactions)} raw transactions for wallet {wallet.address}")
 
         if not raw_transactions:
             continue
@@ -58,6 +65,8 @@ def check_blockchain_deposits():
             memo = ev.get("memo")
             tx_hash = ev.get("transaction_id")
             amount_str = ev.get("value")
+
+            logger.info(f"Processing Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount_str}'")
 
             user = None
             deposit_memo = None
@@ -108,6 +117,7 @@ def check_blockchain_deposits():
 
             try:
                 with transaction.atomic():
+                    logger.info(f"Updating balance for user {user.id} and wallet {wallet.currency.symbol}")
                     user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
                     user_wallet.balance += amount
                     user_wallet.save()
@@ -135,9 +145,11 @@ def check_blockchain_deposits():
                         deposit_memo.save()
                     
                     processed += 1
+                    logger.info(f"Successfully processed deposit for user {user.id}, tx_hash={tx_hash}")
 
                 # После успешной транзакции отправляем сигнал
                 if deposit_memo:
+                    logger.info(f"!!! SENDING WEBSOCKET SIGNAL for memo {deposit_memo.memo} !!!")
                     channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
                         f"deposit_memo_{deposit_memo.memo}",
@@ -150,6 +162,7 @@ def check_blockchain_deposits():
                             }
                         }
                     )
+                    logger.info(f"!!! WEBSOCKET SIGNAL SENT for memo {deposit_memo.memo} !!!")
 
             except Exception as e:
                 logger.error(f"Error during database transaction for memo='{memo}': {e}", exc_info=True)
@@ -160,6 +173,7 @@ def check_blockchain_deposits():
         user_wallets = UserWallet.objects.filter(currency=currency, is_system_wallet=False, deposit_address__isnull=False).exclude(deposit_address='')
         for user_wallet in user_wallets:
             address = user_wallet.deposit_address
+            logger.info(f"[no-memo][DEBUG] SCAN: currency={currency.symbol}, network={currency.network}, user={user_wallet.user_id}, address={address}")
             try:
                 service = get_blockchain_service(currency.network or currency.symbol)
             except ValueError:
@@ -174,7 +188,6 @@ def check_blockchain_deposits():
                 tx_hash__isnull=False
             ).order_by("-timestamp").first()
             min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
-            
             logger.info(f"[no-memo][DEBUG] CALL get_transactions: address={address}, min_ts={min_ts}, contract={currency.contract_address}")
             
             # Для Ethereum и ERC-20 токенов передаем contract_address
@@ -242,7 +255,7 @@ def check_blockchain_deposits():
                         status="completed",
                         timestamp=timezone.now()
                     )
-
+                    logger.info(f"[no-memo] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
 
                 # Отправляем WebSocket сигнал по адресу
                 try:
@@ -260,22 +273,28 @@ def check_blockchain_deposits():
                             }
                         }
                     )
+                    logger.info(f"[no-memo] WebSocket signal sent for address {address}")
                 except Exception as e:
                     logger.error(f"[no-memo] Failed to send WebSocket signal for address {address}: {e}")
 
     # --- XRP Ledger ---
     xrp_wallets = SystemWalletAddress.objects.filter(network__iexact="XRP", currency__is_active=True)
+    logger.info(f"[check_blockchain_deposits] Found {xrp_wallets.count()} XRP wallets to check")
     for wallet in xrp_wallets:
         try:
+            logger.info(f"[check_blockchain_deposits][XRP] Checking wallet: {wallet.address} for currency {wallet.currency.symbol}")
             # Получаем последние обработанные транзакции (можно доработать для оптимизации)
             last_tx = Transaction.objects.filter(crypto=wallet.currency, tx_hash__isnull=False).order_by("-timestamp").first()
             # XRP Ledger не использует timestamp, а ledger index. Для простоты пока не фильтруем по ledger.
             service = XRPService()
             incoming_txs = service.get_transactions(wallet.address)
+            logger.info(f"[check_blockchain_deposits][XRP] Found {len(incoming_txs)} incoming payments for {wallet.address}")
             for ev in incoming_txs:
                 memo = ev.get("memo")
                 tx_hash = ev.get("transaction_id")
                 amount_str = ev.get("value")
+
+                logger.info(f"[XRP][DEPOSIT] Processing Event: tx_hash={tx_hash}, memo='{memo}', amount='{amount_str}', ev={ev}")
 
                 user = None
                 deposit_memo = None
@@ -302,6 +321,7 @@ def check_blockchain_deposits():
                 else:
                     # Если memo не обязателен и его нет (например, BTC)
                     # TODO: Реализовать логику для валют без memo (поиск по уникальному адресу)
+                    logger.info(f"Skipping deposit for {wallet.currency.symbol} as it does not require memo and no memo was provided (logic not implemented). ev={ev}")
                     continue
 
                 if not user:
@@ -353,10 +373,11 @@ def check_blockchain_deposits():
                     deposit_memo.status = "used"
                     deposit_memo.save()
                     processed += 1
-
+                    logger.info(f"[XRP] Successfully processed deposit for tag='{memo}', tx_hash={tx_hash}")
         except Exception as e:
             logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 
+    logger.info(f"Finished deposit check. Processed {processed} transactions.")
     return f"Готово, обработано: {processed}"
 
 
@@ -374,7 +395,8 @@ def process_withdrawal(self, transfer_id: int) -> str:
                 return "error:not_found"
 
             if transfer.status != Transfer.Status.PENDING:
-                    return "skip:not_pending"
+                logger.info("[process_withdrawal] transfer %s not pending, skip", transfer_id)
+                return "skip:not_pending"
 
             withdrawal = Withdrawal.objects.filter(
                 user=transfer.user,
@@ -390,31 +412,16 @@ def process_withdrawal(self, transfer_id: int) -> str:
                 network = withdrawal.transaction.crypto.network
                 currency = withdrawal.transaction.crypto
 
-                # Ищем системный кошелек в SystemWalletAddress
-                system_wallet = SystemWalletAddress.objects.filter(
+                system_wallet = UserWallet.objects.filter(
                     currency=currency,
-                    network=network
+                    is_system_wallet=True,
+                    is_active=True
                 ).first()
 
-                if not system_wallet:
-                    raise Exception(f"Системный кошелек для {currency.symbol} ({network}) не найден.")
+                if not system_wallet or not system_wallet.encrypted_private_key:
+                    raise Exception(f"Активный системный кошелек для {currency.symbol} ({network}) не найден или не имеет приватного ключа.")
 
-                # Для XRP нужно получить приватный ключ из UserWallet
-                if currency.symbol == 'XRP':
-                    xrp_system_wallet = UserWallet.objects.filter(
-                        currency=currency,
-                        is_system_wallet=True,
-                        is_active=True
-                    ).first()
-                    
-                    if not xrp_system_wallet or not xrp_system_wallet.encrypted_private_key:
-                        raise Exception(f"Системный XRP кошелек не найден или не имеет приватного ключа.")
-                    
-                    seed = xrp_system_wallet.encrypted_private_key
-                    from_address = system_wallet.address
-                else:
-                    # Для других валют используем логику из SystemWalletAddress
-                    raise Exception(f"Логика для {currency.symbol} не реализована")
+                priv_key = system_wallet.encrypted_private_key
                 to_address = withdrawal.destination_address
                 amount = transfer.amount
                 memo = f"withdrawal_{withdrawal.id}_{transfer.id}"
@@ -424,14 +431,14 @@ def process_withdrawal(self, transfer_id: int) -> str:
                 # Для Ethereum и ERC-20 токенов передаем contract_address
                 if network and network.upper() == 'ERC20':
                     tx_hash = service.send_transaction(
-                        seed,
+                        priv_key,
                         to_address,
                         amount,
                         memo,
                         contract_address=currency.contract_address
                     )
                 else:
-                    tx_hash = service.send_transaction(seed, to_address, amount, memo)
+                    tx_hash = service.send_transaction(priv_key, to_address, amount, memo)
                 
                 fee = Decimal("0.0001")  # TODO: вычислять реальную комиссию
                 status = Transfer.Status.SUCCESS
@@ -460,6 +467,7 @@ def process_withdrawal(self, transfer_id: int) -> str:
         logger.error(f"Critical error in process_withdrawal for transfer {transfer_id}: {e}", exc_info=True)
         return "error:transaction_failed"
 
+    logger.info("[process_withdrawal] transfer %s completed -> %s", transfer.id, tx_hash)
     return tx_hash or "error:tx_failed"
 
 
@@ -490,6 +498,10 @@ def process_pending_withdrawals():
             # Можно добавить связь с withdrawal, если ее нет
         )
         
+        if created:
+            logger.info(f"Created new Transfer {transfer.id} for Withdrawal {withdrawal.id}")
+        
+        logger.info(f"Processing pending withdrawal {withdrawal.id} via transfer {transfer.id}")
         process_withdrawal.delay(transfer.id)
 
 @shared_task
