@@ -70,7 +70,6 @@ class TronService(BaseBlockchainService):
         
         try:
             resp = requests.get(url, params=params, headers=self._headers(), timeout=20)
-            logger.info(f"[TRON][RAW_RESPONSE] {resp.text}")
             resp.raise_for_status()
             data = resp.json()
 

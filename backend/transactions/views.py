@@ -153,12 +153,26 @@ def confirm_withdrawal_view(request, token):
     try:
         token_uuid = uuid.UUID(token, version=4)
         WithdrawalService.confirm_withdrawal(token_uuid)
-        # TODO: Сделать красивую HTML страницу для ответа
-        return Response({"message": "Вывод средств успешно подтвержден и поставлен в очередь на обработку."}, status=status.HTTP_200_OK)
-    except (ValueError, serializers.ValidationError) as e:
-        # TODO: Сделать красивую HTML страницу для ошибки
-        error_message = str(e.detail[0]) if isinstance(e, serializers.ValidationError) else "Неверный формат токена."
-        return Response({"error": error_message}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            "message": "Вывод средств успешно подтвержден и поставлен в очередь на обработку."
+        }, status=status.HTTP_200_OK)
+        
+    except ValueError as e:
+        return Response({
+            "error": "Неверный формат токена подтверждения."
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+    except serializers.ValidationError as e:
+        error_message = str(e.detail[0]) if hasattr(e, 'detail') and e.detail else str(e)
+        return Response({
+            "error": error_message
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+    except Exception as e:
+        return Response({
+            "error": "Произошла внутренняя ошибка сервера. Пожалуйста, попробуйте позже."
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class DepositViewSet(viewsets.ReadOnlyModelViewSet):

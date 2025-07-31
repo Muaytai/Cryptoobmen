@@ -172,7 +172,7 @@ class UserWallet(models.Model):
                 self.deposit_address = new_address
                 # В проде здесь должно быть шифрование
                 self.encrypted_private_key = private_key 
-                logger.info(f"Generated new {self.currency.symbol} address {new_address} for user {self.user.email}")
+
             except Exception as e:
                 logger.error(f"Could not generate address for {self.currency.symbol}: {e}")
 

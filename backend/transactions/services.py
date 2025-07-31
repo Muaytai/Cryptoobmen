@@ -168,9 +168,13 @@ class WithdrawalService:
             if amount - fee_amount <= 0:
                 raise serializers.ValidationError("Сумма к выводу после комиссии должна быть положительной")
 
-            # Проверяем MEMO
-            if getattr(crypto, 'requires_memo', False) and not memo:
-                raise serializers.ValidationError("Для этой валюты требуется MEMO/Tag")
+            # Проверяем MEMO (для вывода делаем необязательным)
+            # requires_memo = getattr(crypto, 'requires_memo', False)
+            # Для вывода MEMO необязателен, так как пользователь может не знать MEMO получателя
+            # if requires_memo and not memo:
+            #     error_msg = "Для этой валюты требуется MEMO/Tag"
+            #     logger.error(f"[WithdrawalService] {error_msg}")
+            #     raise serializers.ValidationError(error_msg)
 
         except Cryptocurrency.DoesNotExist:
             raise serializers.ValidationError("Криптовалюта не найдена или неактивна")
@@ -220,6 +224,7 @@ class WithdrawalService:
         """
         Отправляет email с ссылкой для подтверждения вывода.
         """
+        # Используем фронтенд URL для подтверждения
         confirmation_url = f"{settings.FRONTEND_URL}/confirm-withdrawal/{withdrawal.email_confirmation_token}/"
         
         context = {

@@ -47,22 +47,35 @@ export default function ConfirmWithdrawalPage() {
 
             try {
                 // URL вашего бэкенда
-                const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/transactions/withdrawals/confirm/${token}/`;
+                const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+                const apiUrl = `${apiBaseUrl}/transactions/withdrawals/confirm/${token}/`;
+                
                 const response = await fetch(apiUrl, {
                     method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
                 });
 
                 if (!response.ok) {
                     // Попытаемся прочитать тело ответа как текст, если это не JSON
                     const errorText = await response.text();
+                    
                     try {
                         // Может быть, это все-таки JSON с ошибкой
                         const errorJson = JSON.parse(errorText);
-                        throw new Error(errorJson.error || errorJson.detail || 'Произошла неизвестная ошибка.');
+                        const errorMessage = errorJson.error || errorJson.detail || errorJson.message || 'Произошла неизвестная ошибка.';
+                        throw new Error(errorMessage);
                     } catch (jsonError) {
                         // Если это не JSON, показываем как текст (может быть HTML)
                         // В реальном приложении здесь лучше показать общую ошибку, а не HTML
-                        throw new Error('Ошибка сервера. Пожалуйста, попробуйте позже.');
+                        if (response.status === 404) {
+                            throw new Error('Страница подтверждения не найдена. Возможно, ссылка устарела или неверна.');
+                        } else if (response.status === 500) {
+                            throw new Error('Ошибка сервера. Пожалуйста, попробуйте позже.');
+                        } else {
+                            throw new Error(`Ошибка сервера (${response.status}). Пожалуйста, попробуйте позже.`);
+                        }
                     }
                 }
 

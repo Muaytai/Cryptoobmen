@@ -8,8 +8,7 @@ from .base import BaseBlockchainService
 from xrpl.clients import JsonRpcClient
 from xrpl.models.requests import AccountTx, AccountInfo
 from xrpl.wallet import Wallet
-from xrpl.transaction.reliable_submission import submit_and_wait
-from xrpl.transaction import autofill_and_sign
+from xrpl.transaction import autofill_and_sign, submit_and_wait
 from xrpl.models.transactions import Payment
 from xrpl.utils import xrp_to_drops
 from xrpl.account import get_balance as xrpl_get_balance
@@ -45,13 +44,10 @@ class XRPService(BaseBlockchainService):
         req = AccountTx(account=address)
         response = self.client.request(req)
         txs = response.result.get("transactions", [])
-        logger.info(f"[XRPService.get_transactions] RAW TXS: {txs}")
         incoming = []
         for tx in txs:
-            logger.info(f"[XRPService.get_transactions] TX RAW: {tx}")
             tx_data = tx.get("tx_json") or tx.get("tx", {})
             if tx_data.get("Destination") == address and tx_data.get("TransactionType") == "Payment":
-                logger.info(f"[XRPService.get_transactions] TX MATCHED: {tx_data}")
                 # Сумма может быть в Amount или DeliverMax
                 value = tx_data.get('Amount') or tx_data.get('DeliverMax') or 0
                 incoming.append({
@@ -61,7 +57,6 @@ class XRPService(BaseBlockchainService):
                     'value': str(value),  # в drops
                     'memo': str(tx_data.get('DestinationTag', '')) if tx_data.get('DestinationTag') else None
                 })
-        logger.info(f"[XRPService.get_transactions] Found {len(incoming)} incoming payments for {address}")
         return incoming
 
     def get_balance(self, address: str) -> Decimal:
@@ -76,39 +71,61 @@ class XRPService(BaseBlockchainService):
             logger.error(f"[XRPService.get_balance] Ошибка получения баланса для {address}: {e}")
             return Decimal('0.0')
 
-    def send_transaction(self, private_key: str, to_address: str, amount: Decimal, memo: str = "") -> str:
+    def send_transaction(self, seed: str, to_address: str, amount: Decimal, memo: str = "") -> str:
         """
         Отправляет транзакцию XRP.
-        :param private_key: seed (family seed) отправителя
+        :param seed: seed (family seed) отправителя
         :param to_address: классический адрес получателя
         :param amount: сумма в XRP
         :param memo: DestinationTag (если нужно)
         :return: хэш транзакции
         """
         try:
-            # Для xrpl-py seed используется для создания Wallet
-            wallet = Wallet(seed=private_key, sequence=0)
+            from xrpl.transaction import autofill, sign, submit_and_wait
+            wallet = Wallet.from_seed(seed)
             from_address = wallet.classic_address
             amount_drops = xrp_to_drops(amount)
-            destination_tag = int(memo.replace('withdrawal_', '').split('_')[0]) if memo and memo.startswith('withdrawal_') else None
+            # Обрабатываем memo для destination_tag
+            destination_tag = None
+            if memo:
+                try:
+                    # Если memo содержит withdrawal_ID_TRANSFER_ID, извлекаем ID
+                    if memo.startswith('withdrawal_'):
+                        parts = memo.split('_')
+                        if len(parts) >= 2:
+                            destination_tag = int(parts[1])  # Берем ID вывода
+                    else:
+                        # Если это просто число
+                        destination_tag = int(memo)
+                except (ValueError, IndexError):
+                    # Если не удается преобразовать, используем None
+                    destination_tag = None
+
             payment = Payment(
                 account=from_address,
                 amount=str(amount_drops),
                 destination=to_address,
                 destination_tag=destination_tag
             )
-            tx = autofill_and_sign(payment, wallet, self.client)
-            response = submit_and_wait(tx, self.client)
+
+            # 1. Autofill (fee, sequence, и т.д.)
+            tx = autofill(payment, self.client)
+
+            # 2. Подпись
+            signed_tx = sign(tx, wallet)
+
+            # 3. Отправка и ожидание
+            response = submit_and_wait(signed_tx, self.client)
             tx_hash = response.result.get("hash")
-            logger.info(f"[XRPService.send_transaction] Sent {amount} XRP from {from_address} to {to_address}, tx_hash={tx_hash}")
             return tx_hash
         except Exception as e:
             logger.error(f"[XRPService.send_transaction] Ошибка отправки XRP: {e}")
-            raise 
+            raise
     
-    def create_new_address(self, user_id: int) -> str:
+    def create_new_address(self, user_id: int = None) -> tuple[str, str]:
         """
         Создает новый адрес для пользователя.
+        Возвращает кортеж (адрес, приватный ключ).
         """
         wallet = Wallet.create()
-        return wallet.classic_address
+        return wallet.classic_address, wallet.seed
