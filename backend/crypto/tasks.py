@@ -165,20 +165,71 @@ def check_blockchain_deposits():
             except ValueError:
                 logger.warning(f"Unsupported network {currency.network} for {currency.symbol}. Skipping.")
                 continue
+            
             # Получаем последние транзакции по адресу
-            last_tx = Transaction.objects.filter(crypto=currency, tx_hash__isnull=False, user=user_wallet.user).order_by("-timestamp").first()
+            # Получаем последнюю транзакцию для КОНКРЕТНОГО пользователя
+            last_tx = Transaction.objects.filter(
+                user=user_wallet.user,
+                crypto=currency,
+                tx_hash__isnull=False
+            ).order_by("-timestamp").first()
             min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
-            raw_transactions = service.get_transactions(address=address, min_timestamp=min_ts)
+            
+            logger.info(f"[no-memo][DEBUG] CALL get_transactions: address={address}, min_ts={min_ts}, contract={currency.contract_address}")
+            
+            # Для Ethereum и ERC-20 токенов передаем contract_address
+            if currency.network and currency.network.upper() == 'ERC20':
+                raw_transactions = service.get_transactions(
+                    address=address,
+                    min_timestamp=min_ts,
+                    contract_address=currency.contract_address
+                )
+            else:
+                raw_transactions = service.get_transactions(address=address, min_timestamp=min_ts)
+            
+            logger.info(f"[no-memo] Found {len(raw_transactions)} tx for {currency.symbol} address {address}")
             for ev in raw_transactions:
                 tx_hash = ev.get("transaction_id")
                 amount_str = ev.get("value")
-                if Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).exists():
+                logger.info(f"[no-memo] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
+                existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).first()
+                if existing_tx:
+                    logger.warning(f"[no-memo] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Re-sending signal.")
+                    # Повторно отправляем сигнал, если транзакция уже существует
+                    try:
+                        channel_layer = get_channel_layer()
+                        async_to_sync(channel_layer.group_send)(
+                            f"deposit_address_{address}",
+                            {
+                                "type": "deposit_status_update",
+                                "data": {
+                                    "address": address,
+                                    "currency": currency.symbol,
+                                    "network": currency.network,
+                                    "status": "used",
+                                    "amount": str(existing_tx.amount),
+                                }
+                            }
+                        )
+                        logger.info(f"[no-memo] Re-sent WebSocket signal for address {address}")
+                    except Exception as e:
+                        logger.error(f"[no-memo] Failed to re-send WebSocket signal for address {address}: {e}")
                     continue
                 try:
-                    amount = Decimal(amount_str) / Decimal(10**currency.decimals)
+                    # Для Ethereum используем правильное количество десятичных знаков
+                    if currency.network and currency.network.upper() == 'ERC20':
+                        if currency.symbol == 'ETH':
+                            # ETH в Wei (18 decimals)
+                            amount = Decimal(amount_str) / Decimal(10**18)
+                        else:
+                            # ERC-20 токены используют свои decimals
+                            amount = Decimal(amount_str) / Decimal(10**currency.decimals)
+                    else:
+                        amount = Decimal(amount_str) / Decimal(10**currency.decimals)
                 except (ValueError, TypeError):
                     logger.error(f"[no-memo] Invalid amount: {amount_str}")
                     continue
+                    
                 with transaction.atomic():
                     user_wallet.balance += amount
                     user_wallet.save()
@@ -369,7 +420,18 @@ def process_withdrawal(self, transfer_id: int) -> str:
                 memo = f"withdrawal_{withdrawal.id}_{transfer.id}"
 
                 service = get_blockchain_service(network)
-                tx_hash = service.send_transaction(seed, to_address, amount, memo)
+                
+                # Для Ethereum и ERC-20 токенов передаем contract_address
+                if network and network.upper() == 'ERC20':
+                    tx_hash = service.send_transaction(
+                        seed,
+                        to_address,
+                        amount,
+                        memo,
+                        contract_address=currency.contract_address
+                    )
+                else:
+                    tx_hash = service.send_transaction(seed, to_address, amount, memo)
                 
                 fee = Decimal("0.0001")  # TODO: вычислять реальную комиссию
                 status = Transfer.Status.SUCCESS

@@ -12,6 +12,7 @@ from rest_framework import serializers
 from .services import WithdrawalService
 import uuid
 
+from crypto.models import Cryptocurrency, UserWallet
 from .models import Transaction, Exchange, Deposit, Withdrawal, Review
 from .serializers import (
     TransactionSerializer, ExchangeSerializer, DepositSerializer,
@@ -175,15 +176,52 @@ def confirm_withdrawal_view(request, token):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class DepositViewSet(viewsets.ReadOnlyModelViewSet):
-    """API для просмотра депозитов"""
-    serializer_class = DepositSerializer
+class DepositViewSet(viewsets.ViewSet):
+    """API для депозитов"""
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
         """Пользователь может видеть только свои депозиты"""
         user = self.request.user
         return Deposit.objects.filter(user=user).order_by('-transaction__timestamp')
+
+    def list(self, request):
+        """Возвращает список депозитов пользователя"""
+        queryset = self.get_queryset()
+        serializer = DepositSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='address')
+    def get_deposit_address(self, request):
+        """
+        Возвращает или создает адрес для пополнения.
+        """
+        user = request.user
+        currency_id = request.data.get('currency_id')
+
+        if not currency_id:
+            return Response({"error": "currency_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            currency = Cryptocurrency.objects.get(id=currency_id)
+            wallet, created = UserWallet.objects.get_or_create(user=user, currency=currency)
+
+            if not wallet.deposit_address:
+                # Предполагаем, что у нас есть сервис для создания адресов
+                from crypto.blockchain.tron import TronService
+                service = TronService()
+                address, private_key = service.create_new_address()
+                wallet.deposit_address = address
+                # Важно: шифрование ключа перед сохранением
+                wallet.encrypted_private_key = wallet.encrypt_private_key(private_key)
+                wallet.save()
+
+            return Response({'address': wallet.deposit_address}, status=status.HTTP_200_OK)
+
+        except Cryptocurrency.DoesNotExist:
+            return Response({"error": "Invalid currency_id"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ReviewFilter(FilterSet):

@@ -279,48 +279,16 @@ export const DepositPage: React.FC = () => {
     setError(null);
     
     try {
-      // Получение токена для авторизации
-      const cookies = document.cookie.split('; ');
-      const accessToken = cookies.find(row => row.startsWith('access_token='));
-      const token = accessToken ? accessToken.split('=')[1] : '';
-
-      // Формируем URL с query string
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-      const url = `${apiBaseUrl}/crypto/deposit/info/?currency_symbol=${encodeURIComponent(selectedCurrency)}&network=${encodeURIComponent(networkToUse)}`;
-      
-      console.log(`DepositPage: прямой GET-запрос на URL = ${url}`);
-      toast.loading('Получение адреса для пополнения...', {
-        duration: 5000,
-        position: 'top-center',
-      });
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-        credentials: 'include',
-      });
-      
-      toast.dismiss();
-      
-      console.log('DepositPage: получен ответ от сервера:', response.status, response.statusText);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('DepositPage: ошибка от сервера:', errorText);
-        
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch (e) {
-          errorData = { error: errorText || `Ошибка ${response.status}: ${response.statusText}` };
-        }
-        
-        throw new Error(errorData.error || `Ошибка ${response.status}: ${response.statusText}`);
+      const currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
+      if (!currency) {
+          throw new Error("Selected currency not found");
       }
+
+      const response = await api.post('/transactions/deposits/address/', {
+          currency_id: currency.id
+      });
       
-      const data = await response.json();
+      const data = response;
       console.log('DepositPage: успешно получена информация для депозита:', data);
       
       if (!data || !data.address) {
@@ -505,20 +473,20 @@ export const DepositPage: React.FC = () => {
     }
 
     const connect = () => {
+      // Используем базовый адрес из env или по умолчанию
+      const wsBase = process.env.NEXT_PUBLIC_WS_URL || `ws://${window.location.hostname}:8000`;
       let wsUrl = '';
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = process.env.NEXT_PUBLIC_WS_URL 
-        ? process.env.NEXT_PUBLIC_WS_URL 
-        : `${protocol}//${window.location.hostname}:8000`;
       if (depositInfo.memo) {
-        wsUrl = `${host}/ws/deposit_status/${depositInfo.memo}/`;
-        console.log(`DepositPage: подключение к WebSocket по memo: ${wsUrl}`);
+        wsUrl = `${wsBase}/ws/deposit_status/${depositInfo.memo}/`;
       } else if (depositInfo.address) {
-        wsUrl = `${host}/ws/deposit_status/address/${depositInfo.address}/`;
-        console.log(`DepositPage: подключение к WebSocket по адресу: ${wsUrl}`);
+        wsUrl = `${wsBase}/ws/deposit_status/address/${depositInfo.address}/`;
       } else {
         return;
       }
+      console.log('Финальный wsUrl:', wsUrl);
+      
+      console.log(`DepositPage: Попытка подключения к WebSocket: ${wsUrl}`);
+
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
       try {
         const ws = new WebSocket(wsUrl);
