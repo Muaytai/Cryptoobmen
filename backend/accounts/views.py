@@ -141,6 +141,7 @@ class SocialLoginCallbackView(View):
                     secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE']
                 )
                 
+                logger.info(f"Успешная авторизация через соцсеть для пользователя {request.user.email}")
                 return response
             
             # Если пользователь не авторизован, перенаправляем на страницу входа

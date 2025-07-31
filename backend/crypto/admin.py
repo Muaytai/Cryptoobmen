@@ -68,7 +68,10 @@ class SystemWalletAddressAdmin(admin.ModelAdmin):
     def display_balance(self, obj):
         """Запрашивает и отображает баланс токена для данного адреса кошелька."""
 
-
+        self.logger.info(f"Attempting to fetch balance for {obj.address} ({obj.currency.symbol})")
+        self.logger.info(f"  - Network: {obj.network}")
+        self.logger.info(f"  - Contract Address: {obj.currency.contract_address}")
+        self.logger.info(f"  - Decimals: {obj.currency.decimals}")
         
         # Проверяем, что это TRC20 токен и у него есть адрес контракта
         if obj.network.upper() != 'TRC20' or not obj.currency.contract_address or not obj.currency.decimals:
