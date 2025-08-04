@@ -59,11 +59,11 @@ class DepositAdmin(admin.ModelAdmin):
 
 @admin.register(Withdrawal)
 class WithdrawalAdmin(admin.ModelAdmin):
-    list_display = ('transaction', 'user', 'wallet_currency_display', 'destination_address', 'get_status', 'is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin')
-    list_filter = ('is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin', 'wallet__currency__symbol', 'transaction__status')
+    list_display = ('transaction', 'user', 'wallet_currency_display', 'destination_address', 'get_status', 'is_email_confirmed', 'confirmed_by_admin')
+    list_filter = ('is_email_confirmed', 'confirmed_by_admin', 'wallet__currency__symbol', 'transaction__status')
     search_fields = ('user__email', 'user__username', 'transaction__transaction_id', 'destination_address', 'wallet__currency__symbol')
-    readonly_fields = ('transaction', 'user', 'wallet', 'destination_address', 'is_2fa_confirmed', 'is_email_confirmed', 'get_transaction_status', 'change_status')
-    actions = ['cancel_withdrawals']
+    readonly_fields = ('transaction', 'user', 'wallet', 'destination_address', 'is_email_confirmed', 'get_transaction_status', 'change_status')
+    actions = ['approve_withdrawals', 'cancel_withdrawals', 'process_pending']
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -85,7 +85,7 @@ class WithdrawalAdmin(admin.ModelAdmin):
                     'fields': ('change_status',),
                 }),
                 ('Confirmation', {
-                    'fields': ('is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin', 'rejected_reason', 'confirmation_date')
+                    'fields': ('is_email_confirmed', 'confirmed_by_admin', 'rejected_reason', 'confirmation_date')
                 }),
             )
         return super().get_fieldsets(request, obj)
@@ -106,6 +106,47 @@ class WithdrawalAdmin(admin.ModelAdmin):
                 withdrawal.transaction.status = 'cancelled'
                 withdrawal.transaction.save()
     cancel_withdrawals.short_description = "Отменить выбранные выводы средств"
+
+    def approve_withdrawals(self, request, queryset):
+        """Одобряет выбранные выводы и запускает их обработку"""
+        from crypto.tasks import process_withdrawal
+        from .models import Transfer
+
+        approved_count = 0
+        for withdrawal in queryset.filter(transaction__status='awaiting_confirmation', is_email_confirmed=True, confirmed_by_admin=False):
+            withdrawal.confirmed_by_admin = True
+            withdrawal.transaction.status = 'pending'
+            withdrawal.save()
+            withdrawal.transaction.save()
+
+            # Создаем или находим соответствующий Transfer
+            transfer, created = Transfer.objects.get_or_create(
+                withdrawal=withdrawal,
+                defaults={
+                    'user': withdrawal.user,
+                    'amount': withdrawal.transaction.amount,
+                    'status': Transfer.Status.PENDING,
+                    'type': 'out'
+                }
+            )
+            if created:
+                self.message_user(request, f"Создан новый Transfer {transfer.id} для вывода {withdrawal.id}")
+
+            process_withdrawal.delay(withdrawal.id)
+            approved_count += 1
+        
+        if approved_count > 0:
+            self.message_user(request, f"Успешно одобрено и поставлено в очередь {approved_count} выводов.")
+        else:
+            self.message_user(request, "Не найдено выводов для одобрения (возможно, они уже одобрены или не подтверждены по email).", level='WARNING')
+    approve_withdrawals.short_description = "✅ Одобрить выбранные выводы"
+
+    def process_pending(self, request, queryset):
+        """Запускает обработку ожидающих выводов."""
+        from crypto.tasks import process_pending_withdrawals
+        process_pending_withdrawals.delay()
+        self.message_user(request, "Запущена задача обработки ожидающих выводов.")
+    process_pending.short_description = "⚙️ Обработать ожидающие выводы"
 
     def get_status(self, obj):
         return obj.transaction.get_status_display()
@@ -336,3 +377,4 @@ class ReviewAdmin(admin.ModelAdmin):
         """Добавить отзывы в избранное"""
         queryset.update(is_featured=True, is_published=True, is_verified=True)
     mark_featured.short_description = "Добавить в избранное"
+

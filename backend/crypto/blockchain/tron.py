@@ -103,12 +103,17 @@ class TronService(BaseBlockchainService):
 
     def send_transaction(self, private_key: str, to_address: str, amount: Decimal, memo: str = "") -> str:
         """Sends USDT (TRC20) from a platform wallet to an external address."""
+        logger.info(f"[TRON][SEND_TRANSACTION] Starting to send {amount} USDT to {to_address} with memo '{memo}'")
         priv_key = PrivateKey(bytes.fromhex(private_key))
+        logger.info("[TRON][SEND_TRANSACTION] Getting contract")
         contract = self.client.get_contract(USDT_CONTRACT)
+        logger.info("[TRON][SEND_TRANSACTION] Got contract")
         
         # USDT has 6 decimals
         amount_int = self.to_atomic_unit(amount, 6)
+        logger.info(f"[TRON][SEND_TRANSACTION] Amount in atomic units: {amount_int}")
 
+        logger.info("[TRON][SEND_TRANSACTION] Building transaction")
         txn = (
             contract.functions.transfer(to_address, amount_int)
             .with_owner(priv_key.public_key.to_base58check_address())
@@ -117,9 +122,21 @@ class TronService(BaseBlockchainService):
         if memo:
             txn = txn.memo(memo)
         
+        logger.info("[TRON][SEND_TRANSACTION] Signing transaction")
         signed_txn = txn.build().sign(priv_key)
-        result = signed_txn.broadcast().wait()
-        return result['id']
+        logger.info("[TRON][SEND_TRANSACTION] Transaction signed")
+        
+        logger.info("[TRON][SEND_TRANSACTION] Broadcasting transaction and waiting for confirmation with timeout")
+        try:
+            result = signed_txn.broadcast().wait(timeout=30)  # Таймаут 30 секунд
+            logger.info(f"[TRON][SEND_TRANSACTION] Transaction broadcasted and confirmed. Result: {result}")
+            return result['id']
+        except TimeoutError as e:
+            logger.error(f"[TRON][SEND_TRANSACTION] Timeout while waiting for transaction confirmation: {e}")
+            raise TronGridError(f"Transaction wait timeout: {e}")
+        except Exception as e:
+            logger.error(f"[TRON][SEND_TRANSACTION] Error while broadcasting or waiting for transaction: {e}")
+            raise TronGridError(f"Transaction error: {e}")
 
     def get_balance(self, address: str) -> Decimal:
         """Gets the USDT balance for a given address."""

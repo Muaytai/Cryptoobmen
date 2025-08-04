@@ -382,127 +382,120 @@ def check_blockchain_deposits():
 
 
 @shared_task(bind=True, name='crypto.tasks.process_withdrawal')
-def process_withdrawal(self, transfer_id: int) -> str:
-    from transactions.models import Transfer, Withdrawal
+def process_withdrawal(self, withdrawal_id: int) -> str:
+    logger.info(f"--- Starting processing for withdrawal_id: {withdrawal_id} ---")
+    from transactions.models import Withdrawal
+    from .models import CommissionWallet, CommissionTransaction
 
-    tx_hash = None  # Инициализируем tx_hash
+    withdrawal = None
     try:
+        # Используем одну транзакцию БД для всех проверок и начальных изменений
         with transaction.atomic():
-            try:
-                transfer = Transfer.objects.select_for_update().get(id=transfer_id)
-            except Transfer.DoesNotExist:
-                logger.error("[process_withdrawal] transfer %s not found", transfer_id)
-                return "error:not_found"
+            # Получаем все связанные объекты одним запросом
+            withdrawal = Withdrawal.objects.select_related(
+                'transaction', 'wallet', 'user', 'transaction__crypto'
+            ).get(id=withdrawal_id)
 
-            if transfer.status != Transfer.Status.PENDING:
-                logger.info("[process_withdrawal] transfer %s not pending, skip", transfer_id)
-                return "skip:not_pending"
+            if withdrawal.transaction.status not in ['pending', 'processing']:
+                logger.warning(f"Withdrawal {withdrawal_id} is not pending or processing. Status: {withdrawal.transaction.status}")
+                return f"skip:not_pending"
 
-            withdrawal = Withdrawal.objects.filter(
-                user=transfer.user,
-                transaction__amount=transfer.amount,
-                transaction__status='pending'
-            ).order_by('-id').first()
-
-            if not withdrawal:
-                logger.error(f"[process_withdrawal] No matching Withdrawal for transfer {transfer_id}")
-                raise Exception("No matching Withdrawal found")
-
-            try:
-                network = withdrawal.transaction.crypto.network
-                currency = withdrawal.transaction.crypto
-
-                system_wallet = UserWallet.objects.filter(
-                    currency=currency,
-                    is_system_wallet=True,
-                    is_active=True
-                ).first()
-
-                if not system_wallet or not system_wallet.encrypted_private_key:
-                    raise Exception(f"Активный системный кошелек для {currency.symbol} ({network}) не найден или не имеет приватного ключа.")
-
-                priv_key = system_wallet.encrypted_private_key
-                to_address = withdrawal.destination_address
-                amount = transfer.amount
-                memo = f"withdrawal_{withdrawal.id}_{transfer.id}"
-
-                service = get_blockchain_service(network)
-                
-                # Для Ethereum и ERC-20 токенов передаем contract_address
-                if network and network.upper() == 'ERC20':
-                    tx_hash = service.send_transaction(
-                        priv_key,
-                        to_address,
-                        amount,
-                        memo,
-                        contract_address=currency.contract_address
-                    )
-                else:
-                    tx_hash = service.send_transaction(priv_key, to_address, amount, memo)
-                
-                fee = Decimal("0.0001")  # TODO: вычислять реальную комиссию
-                status = Transfer.Status.SUCCESS
-                withdrawal.transaction.status = 'completed'
-                withdrawal.transaction.tx_hash = tx_hash
-                withdrawal.transaction.save(update_fields=["status", "tx_hash"])
-                withdrawal.confirmation_date = timezone.now()
-                withdrawal.save(update_fields=["confirmation_date"])
-
-            except Exception as e:
-                logger.error(f"[process_withdrawal] Ошибка отправки: {e}", exc_info=True)
-                tx_hash = None
-                fee = None
-                status = Transfer.Status.FAILED
+            crypto = withdrawal.transaction.crypto
+            amount_to_send = withdrawal.transaction.amount
+            commission = withdrawal.transaction.fee
+            total_amount = amount_to_send + commission
+            
+            # --- Проверка баланса пользователя ---
+            user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
+            if user_wallet.balance < total_amount:
                 withdrawal.transaction.status = 'failed'
-                withdrawal.transaction.save(update_fields=["status"])
-                raise
+                withdrawal.transaction.notes = "Insufficient funds at the time of processing."
+                withdrawal.transaction.save()
+                logger.error(f"Insufficient funds for withdrawal {withdrawal.id}. Balance: {user_wallet.balance}, required: {total_amount}")
+                return "error:insufficient_funds"
 
-            transfer.tx_hash = tx_hash
-            transfer.fee = fee
-            transfer.status = status
-            transfer.completed_at = timezone.now()
-            transfer.save(update_fields=["tx_hash", "fee", "status", "completed_at"])
+            # Меняем статус на "в обработке" перед отправкой в сеть
+            withdrawal.transaction.status = 'processing'
+            withdrawal.transaction.save()
+
+        # --- Отправка в блокчейн (вне транзакции БД) ---
+        network = crypto.network
+        system_wallet = UserWallet.objects.get(currency=crypto, is_system_wallet=True, is_active=True)
+        
+        if not system_wallet.encrypted_private_key:
+            raise Exception(f"System wallet for {crypto.symbol} has no private key.")
+
+        service = get_blockchain_service(network)
+        
+        tx_kwargs = {
+            'private_key': system_wallet.encrypted_private_key,
+            'to_address': withdrawal.destination_address,
+            'amount': amount_to_send,
+            'memo': f"withdrawal_{withdrawal.id}"
+        }
+        
+        if network.upper() == 'ERC20':
+            tx_kwargs['contract_address'] = crypto.contract_address
+
+        tx_hash = service.send_transaction(**tx_kwargs)
+
+        # --- Финализация в БД после успешной отправки ---
+        with transaction.atomic():
+            # Обновляем основную транзакцию
+            withdrawal.transaction.tx_hash = tx_hash
+            withdrawal.transaction.status = 'awaiting_network_confirmation'
+            withdrawal.transaction.save()
+
+            # --- Начисление комиссии на внутренний кошелек ---
+            commission_wallet, _ = CommissionWallet.objects.get_or_create(currency=crypto)
+            commission_wallet.balance += commission
+            commission_wallet.save()
+
+            # --- Логирование транзакции комиссии ---
+            CommissionTransaction.objects.create(
+                user=withdrawal.user,
+                currency=crypto,
+                amount=commission,
+                commission_type='withdraw',
+                related_object_id=str(withdrawal.transaction.transaction_id)
+            )
+
+        # Запускаем отложенную задачу для проверки подтверждения
+        check_withdrawal_confirmation.apply_async(args=[withdrawal.id], countdown=60)
+
+        logger.info(f"Withdrawal {withdrawal.id} sent to blockchain with tx_hash: {tx_hash}. Commission: {commission}. Awaiting confirmation.")
+        return f"success:sent_to_network:{tx_hash}"
 
     except Exception as e:
-        logger.error(f"Critical error in process_withdrawal for transfer {transfer_id}: {e}", exc_info=True)
-        return "error:transaction_failed"
-
-    logger.info("[process_withdrawal] transfer %s completed -> %s", transfer.id, tx_hash)
-    return tx_hash or "error:tx_failed"
+        logger.error(f"!!! Caught exception for withdrawal {withdrawal_id} !!!", exc_info=True)
+        logger.error(f"Transaction failed for withdrawal {withdrawal_id}: {e}", exc_info=True)
+        if withdrawal:
+            withdrawal.transaction.status = 'failed'
+            withdrawal.transaction.notes = f"Transaction error: {str(e)}"
+            withdrawal.transaction.save()
+        return f"error:transaction_failed - {str(e)}"
 
 
 @shared_task
 def process_pending_withdrawals():
     """
-    Периодическая задача для обработки всех ожидающих заявок на вывод.
+    Периодическая задача для обработки всех ожидающих или зависших заявок на вывод.
+    Находит выводы, которые подтверждены по email, но не завершены,
+    и перезапускает для них задачу обработки.
     """
     from transactions.models import Withdrawal
-    
-    pending_withdrawals = Withdrawal.objects.filter(
-        transaction__status='pending',
+    from django.db.models import Q
+
+    stuck_withdrawals = Withdrawal.objects.filter(
+        Q(transaction__status='pending') | Q(transaction__status='processing'),
         is_email_confirmed=True
     )
     
-    for withdrawal in pending_withdrawals:
-        # Здесь можно добавить дополнительную логику, если требуется,
-        # например, создание объекта Transfer перед вызовом задачи.
-        # На данный момент, предполагаем, что `process_withdrawal` 
-        # может быть вызван с ID вывода.
-        
-        # Найдем или создадим соответствующий Transfer
-        from transactions.models import Transfer
-        transfer, created = Transfer.objects.get_or_create(
-            user=withdrawal.user,
-            amount=withdrawal.transaction.amount,
-            status=Transfer.Status.PENDING,
-            # Можно добавить связь с withdrawal, если ее нет
-        )
-        
-        if created:
-            logger.info(f"Created new Transfer {transfer.id} for Withdrawal {withdrawal.id}")
-        
-        logger.info(f"Processing pending withdrawal {withdrawal.id} via transfer {transfer.id}")
-        process_withdrawal.delay(transfer.id)
+    logger.info(f"Found {stuck_withdrawals.count()} stuck withdrawals to process.")
+
+    for withdrawal in stuck_withdrawals:
+        logger.info(f"Re-queueing processing for withdrawal {withdrawal.id}")
+        process_withdrawal.delay(withdrawal.id)
 
 @shared_task
 def process_pending_deposits():
@@ -511,3 +504,92 @@ def process_pending_deposits():
     """
     # Здесь можно реализовать обработку зависших депозитов, если такая логика нужна
     pass
+
+@shared_task(bind=True, max_retries=20, default_retry_delay=60)
+def check_withdrawal_confirmation(self, withdrawal_id: int):
+    """
+    Проверяет подтверждение транзакции вывода в блокчейне.
+    """
+    from transactions.models import Withdrawal
+
+    withdrawal = None
+    try:
+        withdrawal = Withdrawal.objects.select_related('transaction', 'wallet', 'user').get(id=withdrawal_id)
+        
+        if withdrawal.transaction.status != 'awaiting_network_confirmation':
+            logger.info(f"Withdrawal {withdrawal_id} is not awaiting confirmation. Status: {withdrawal.transaction.status}. Skipping check.")
+            return f"skip:not_awaiting_confirmation"
+
+        network = withdrawal.transaction.crypto.network
+        tx_hash = withdrawal.transaction.tx_hash
+
+        if not tx_hash:
+            logger.error(f"Withdrawal {withdrawal_id} is awaiting confirmation but has no tx_hash. Setting to failed.")
+            withdrawal.transaction.status = 'failed'
+            withdrawal.transaction.notes = "Transaction hash was missing during confirmation check."
+            withdrawal.transaction.save()
+            return "error:missing_tx_hash"
+
+        service = get_blockchain_service(network)
+        is_confirmed = service.is_transaction_confirmed(tx_hash)
+
+        if is_confirmed:
+            logger.info(f"Withdrawal {withdrawal_id} (tx: {tx_hash}) is confirmed on the blockchain.")
+            # Сумма для списания = отправленная сумма + комиссия
+            amount_to_withdraw = withdrawal.transaction.amount + withdrawal.transaction.fee
+            
+            with transaction.atomic():
+                # Блокируем кошелек для безопасного списания
+                user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
+                
+                # Повторная проверка баланса на всякий случай
+                if user_wallet.balance < amount_to_withdraw:
+                    withdrawal.transaction.status = 'failed'
+                    withdrawal.transaction.notes = "Insufficient funds discovered upon withdrawal confirmation."
+                    withdrawal.transaction.save()
+                    logger.error(f"Insufficient funds for withdrawal {withdrawal.id} upon confirmation. Balance: {user_wallet.balance}, required: {amount_to_withdraw}")
+                    return "error:insufficient_funds_on_confirmation"
+
+                # Списываем средства
+                user_wallet.balance -= amount_to_withdraw
+                user_wallet.save()
+
+                # Обновляем транзакцию
+                withdrawal.transaction.status = 'completed'
+                withdrawal.transaction.save()
+                
+                # Обновляем сам вывод
+                withdrawal.confirmation_date = timezone.now()
+                withdrawal.save()
+
+            logger.info(f"Successfully finalized withdrawal {withdrawal.id}.")
+            return f"success:confirmed_and_completed"
+        
+        else:
+            logger.info(f"Withdrawal {withdrawal_id} (tx: {tx_hash}) is not yet confirmed. Retrying...")
+            # Увеличиваем задержку с каждой попыткой
+            # Увеличиваем задержку с каждой попыткой, как указано в требованиях
+            retry_countdown = 60 * (self.request.retries + 1)
+            self.retry(countdown=retry_countdown, max_retries=20)
+
+    except Withdrawal.DoesNotExist:
+        logger.error(f"Withdrawal with id {withdrawal_id} not found for confirmation check.")
+        return f"error:not_found"
+    except Exception as e:
+        logger.error(f"Error checking confirmation for withdrawal {withdrawal_id}: {e}", exc_info=True)
+        try:
+            # Если после нескольких попыток возникает ошибка, помечаем как failed
+            if self.request.retries >= self.max_retries:
+                 if withdrawal:
+                    withdrawal.transaction.status = 'failed'
+                    withdrawal.transaction.notes = f"Failed to confirm transaction after multiple retries: {str(e)}"
+                    withdrawal.transaction.save()
+                 return f"error:max_retries_exceeded"
+            self.retry(exc=e)
+        except Exception as retry_exc:
+             logger.error(f"Failed to retry task for withdrawal {withdrawal_id}: {retry_exc}", exc_info=True)
+             if withdrawal:
+                withdrawal.transaction.status = 'failed'
+                withdrawal.transaction.notes = f"Critical error during confirmation check: {str(e)}"
+                withdrawal.transaction.save()
+             return f"error:critical_failure"

@@ -17,9 +17,6 @@ class User(AbstractUser):
     date_of_birth = models.DateField(blank=True, null=True)
     address = models.TextField(blank=True, null=True)
     
-    # Поля для двухфакторной аутентификации
-    has_2fa = models.BooleanField(default=False)
-    
     # Для отправки уведомлений
     notify_via_email = models.BooleanField(default=True)
     notify_via_telegram = models.BooleanField(default=False)

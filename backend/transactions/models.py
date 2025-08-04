@@ -126,8 +126,6 @@ class Withdrawal(models.Model):
     email_confirmation_token = models.UUIDField(null=True, blank=True, verbose_name=_("Email Confirmation Token"))
     email_confirmation_token_expires_at = models.DateTimeField(null=True, blank=True, verbose_name=_("Email Token Expires At"))
 
-    is_2fa_confirmed = models.BooleanField(default=False, verbose_name=_("2FA Confirmed"))
-
     # Статусы подтверждения
     confirmed_by_admin = models.BooleanField(default=False)
     rejected_reason = models.TextField(blank=True, null=True)
@@ -186,7 +184,14 @@ class Transfer(models.Model):
     tx_hash = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
-
+    withdrawal = models.OneToOneField(
+        'Withdrawal',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transfer'
+    )
+ 
     def __str__(self):
         return f"Transfer {self.id} {self.get_type_display()} {self.amount} - {self.status}"
 
