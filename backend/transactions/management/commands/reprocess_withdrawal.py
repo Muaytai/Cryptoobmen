@@ -43,14 +43,14 @@ class Command(BaseCommand):
                 self.stdout.write("Reprocessing cancelled by user.")
                 return
 
-        # Re-queue the withdrawal processing task to a high-priority queue
-        process_withdrawal.apply_async(args=[withdrawal.id], queue='high_priority')
+        # Re-queue the withdrawal processing task to the default queue
+        process_withdrawal.delay(withdrawal.id)
 
         # Optionally, you might want to reset the status to 'pending' if it was 'failed'
         if transaction.status == 'failed':
             transaction.status = 'pending'
             transaction.notes = 'Manually re-queued for processing by admin command.'
             transaction.save()
-            self.stdout.write(self.style.SUCCESS(f"Reset status to 'pending' and re-queued withdrawal {withdrawal.id} to 'high_priority' queue."))
+            self.stdout.write(self.style.SUCCESS(f"Reset status to 'pending' and re-queued withdrawal {withdrawal.id} to the default queue."))
         else:
-            self.stdout.write(self.style.SUCCESS(f"Successfully re-queued withdrawal {withdrawal.id} to 'high_priority' queue."))
+            self.stdout.write(self.style.SUCCESS(f"Successfully re-queued withdrawal {withdrawal.id} to the default queue."))

@@ -6,7 +6,10 @@ from celery import Celery
 # Имя настроечного модуля Django берём из переменной окружения
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 
-app = Celery("cryptoobmen")
+import django
+django.setup()
+
+app = Celery("core")
 
 # Читаем конфиги Celery из переменных окружения с префиксом CELERY_
 app.config_from_object("django.conf:settings", namespace="CELERY")
