@@ -226,7 +226,7 @@ export const WithdrawPage: React.FC = () => {
       }
       try {
         // Запрашиваем у API адрес для пополнения, чтобы узнать requires_memo (используем тот же эндпоинт, что и для депозита)
-        const resp = await api.get(`/crypto/deposit-info/?currency=${selectedWallet.currency.symbol}&network=${selectedWallet.currency.network}`);
+        const resp = await api.get(`/crypto/withdraw-info/?currency=${selectedWallet.currency.symbol}&network=${selectedWallet.currency.network}`);
         setRequiresMemo(!!resp.requires_memo);
       } catch {
         setRequiresMemo(false);
