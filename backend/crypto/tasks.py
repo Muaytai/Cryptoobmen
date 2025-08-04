@@ -176,6 +176,9 @@ def check_blockchain_deposits():
     # 2. Теперь обрабатываем валюты без MEMO/tag по уникальным адресам пользователей
     currencies_no_memo = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
     for currency in currencies_no_memo:
+        # Явно логируем поддержку Solana
+        if currency.symbol.lower() in ["sol", "solana"]:
+            logger.info(f"[Solana][DEPOSIT] Обработка депозитов для Solana: network={currency.network}, symbol={currency.symbol}")
         user_wallets = UserWallet.objects.filter(currency=currency, is_system_wallet=False, deposit_address__isnull=False).exclude(deposit_address='')
         for user_wallet in user_wallets:
             address = user_wallet.deposit_address
@@ -237,6 +240,7 @@ def check_blockchain_deposits():
                 except Exception as e:
                     logger.error(f"[no-memo] Failed to send WebSocket signal for address {address}: {e}")
 
+    # Примечание: Solana (SOL) поддерживается как валюта без MEMO. Для неё используется SolanaService и логика выше.
     logger.info(f"Finished deposit check. Processed {processed} transactions.")
     return f"Готово, обработано: {processed}"
 

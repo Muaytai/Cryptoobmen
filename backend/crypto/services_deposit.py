@@ -55,6 +55,7 @@ class DepositService:
             else:
                 # Для валют без MEMO — возвращаем или генерируем уникальный адрес пользователя
                 user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=currency)
+                
                 if not user_wallet.deposit_address:
                     # Адреса нет - генерируем новый
                     try:
