@@ -82,6 +82,11 @@ const LoginFormWithSearchParams = () => {
             setLoginAttempted(true);
             await login(credentials);
             console.log('Вход выполнен успешно');
+            // Определяем куда редиректить после успешного входа
+            const redirectParam = searchParams.get('redirect');
+            const target = redirectParam ? decodeURIComponent(redirectParam) : '/';
+            // Используем replace, чтобы не оставлять страницу логина в истории
+            router.replace(target);
         } catch (err) {
             console.error('Ошибка входа:', err);
             setLoginAttempted(false);
