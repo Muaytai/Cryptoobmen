@@ -1,5 +1,21 @@
 services:
 
+  redis:
+    image: redis:7-alpine
+    container_name: docker-redis-1
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+    networks:
+      - cryptoobmen_network
+
   backend:
     build:
       context: ..
@@ -49,7 +65,7 @@ services:
     depends_on:
       - backend
       - redis
-    command: celery -A core beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: celery -A core beat -l info
     networks:
       - default
       - cryptoobmen_network
@@ -64,6 +80,7 @@ services:
       - ../frontend/.env.development
     environment:
       - NODE_ENV=development
+      - NODE_OPTIONS=--max-old-space-size=4096
     volumes:
       - ../frontend:/app
       - /app/.next
@@ -82,3 +99,7 @@ networks:
   cryptoobmen_network:
     external: true
 
+
+volumes:
+  redis_data:
+    name: cryptoobmen_redis_data

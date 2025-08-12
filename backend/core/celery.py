@@ -6,8 +6,6 @@ from celery import Celery
 # Имя настроечного модуля Django берём из переменной окружения
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 
-import django
-django.setup()
 
 app = Celery("core")
 

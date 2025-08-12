@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'drf_spectacular', 
 
     # Установленные приложения
     'channels',
@@ -56,6 +57,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.yandex',
+    
     
     # Приложения для безопасности
     'django_recaptcha',  # django-recaptcha
@@ -138,6 +140,9 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Важно для безопаснос
 
 # Настройки REST Framework
 REST_FRAMEWORK = {
+    # Явное указание использовать drf-spectacular для генерации схемы API
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'dj_rest_auth.jwt_auth.JWTCookieAuthentication',
     ),
@@ -219,7 +224,7 @@ DATABASES = {
         'NAME': os.getenv('POSTGRES_DB'),
         'USER': os.getenv('POSTGRES_USER'),
         'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
-        'HOST': os.getenv('POSTGRES_HOST', '127.0.0.1'),
+        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
         'OPTIONS': {
             'client_encoding': 'UTF8',
@@ -269,7 +274,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Настройки аутентификации
 AUTHENTICATION_BACKENDS = (
-    # 'axes.backends.AxesStandaloneBackend', # временно отключено
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
 )
@@ -421,6 +425,8 @@ REST_AUTH = {
     'JWT_AUTH_SAMESITE': SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
     'JWT_AUTH_SECURE': SIMPLE_JWT['AUTH_COOKIE_SECURE'],
     'SESSION_LOGIN': False,
+    'LOGIN_SERIALIZER': 'accounts.serializers.CustomLoginSerializer',
+    'REGISTER_SERIALIZER': 'accounts.serializers.CustomRegisterSerializer',
 }
 
 # AllAuth настройки
@@ -435,8 +441,10 @@ ACCOUNT_EMAIL_SUBJECT_PREFIX = 'Cryptoobmen - '
 ACCOUNT_EMAIL_CONFIRMATION_HMAC = True
 ACCOUNT_LOGIN_METHODS = ['email']
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password']
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_RATE_LIMITS = {
     'confirm_email': '5/m',
 }
@@ -475,6 +483,16 @@ SOCIALACCOUNT_PROVIDERS = {
         }
     }
 }
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Cryptoobmen API',  # Название вашего проекта
+    'DESCRIPTION': 'Документация для API проекта Cryptoobmen', # Описание
+    'VERSION': '1.0.0',
+    # Указываем, что UI должен быть доступен через HTTPS в продакшене
+    'SERVE_PUBLIC': True,
+    'SERVE_INCLUDE_SCHEMA': False,  # Не показывать голую схему по умолчанию
+}
+
 
 ADMIN_URL = 'admin/'
 

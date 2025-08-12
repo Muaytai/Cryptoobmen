@@ -187,7 +187,8 @@ const LoginFormWithSearchParams = () => {
                                     пароль?</a>
                             </div>
                             <button
-                                type="submit"
+                                type="button"
+                                onClick={handleSubmit}
                                 className={styles.submitBtn}
                                 disabled={isLoading}
                             >

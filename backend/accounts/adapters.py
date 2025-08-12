@@ -17,19 +17,20 @@ class CustomAccountAdapter(DefaultAccountAdapter):
     
     def save_user(self, request, user, form, commit=True):
         """Сохраняет пользователя и создает его профиль"""
+        # The user object is already populated by allauth.
+        # We call the parent method first.
         user = super().save_user(request, user, form, commit=False)
-        
-        # Дополнительная настройка пользователя
+
+        # Add custom data from the form.
         if hasattr(form, 'cleaned_data'):
-            if 'phone_number' in form.cleaned_data:
-                user.phone_number = form.cleaned_data['phone_number']
-        
+            user.phone_number = form.cleaned_data.get('phone_number')
+
         if commit:
             user.save()
-            # Создаем профиль пользователя
+            # Create the user profile
             from accounts.models import UserProfile
             UserProfile.objects.create(user=user)
-            
+
         return user
     
     def confirm_email(self, request, email_address):

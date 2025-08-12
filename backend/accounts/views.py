@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     UserDetailsSerializer, UserDocumentSerializer, UserUpdateSerializer,
+    CustomLoginSerializer,
     UserProfileSerializer
 )
 from .models import UserDocument, UserProfile
@@ -21,6 +22,10 @@ import logging
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
+from dj_rest_auth.views import LoginView as RestAuthLoginView
+
+class CustomLoginView(RestAuthLoginView):
+    serializer_class = CustomLoginSerializer
 
 class UserViewSet(viewsets.ModelViewSet):
     """API для работы с пользователями"""
