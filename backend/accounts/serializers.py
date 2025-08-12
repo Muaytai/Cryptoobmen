@@ -41,11 +41,12 @@ class CustomRegisterSerializer(RegisterSerializer):
     password2 = serializers.CharField(write_only=True)
     
     def get_cleaned_data(self):
-        data = super().get_cleaned_data()
-        data.update({
+        return {
+            'password': self.validated_data.get('password1', ''),
+            'email': self.validated_data.get('email', ''),
+            'username': self.validated_data.get('username', ''),
             'phone_number': self.validated_data.get('phone_number', ''),
-        })
-        return data
+        }
 
 
 class UserDocumentSerializer(serializers.ModelSerializer):
@@ -93,22 +94,32 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         return instance 
 
 
-class CustomLoginSerializer(LoginSerializer):
-    """Кастомный сериализатор для логина, использующий email вместо username"""
-    username = None  # Отключаем поле username
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(style={'input_type': 'password'})
+class CustomLoginSerializer(serializers.Serializer):
+    """
+    Полностью кастомный сериализатор для входа по email.
+    Наследуется от базового Serializer для полного контроля.
+    """
+    email = serializers.EmailField(required=True, write_only=True)
+    password = serializers.CharField(style={'input_type': 'password'}, trim_whitespace=False, write_only=True)
 
     def validate(self, attrs):
-        # Здесь переносим email в поле username для стандартной аутентификации
-        email = attrs.get('email')
+        email = attrs.get('email').lower()
         password = attrs.get('password')
-        
-        # Проверяем, что email и пароль указаны
-        if email and password:
-            # Подготавливаем данные для стандартной аутентификации
-            attrs['username'] = email  # Django будет искать пользователя по username
-            return super().validate(attrs)
-        else:
-            msg = 'Необходимо указать "email" и "password".'
-            raise serializers.ValidationError(msg, code='authorization') 
+
+        if not email or not password:
+            raise serializers.ValidationError(
+                'Пожалуйста, укажите email и пароль.',
+                code='authorization',
+            )
+
+        request = self.context.get('request')
+        user = authenticate(request=request, username=email, password=password)
+
+        if not user:
+            raise serializers.ValidationError(
+                'Невозможно войти в систему с указанными учетными данными.',
+                code='authorization',
+            )
+
+        attrs['user'] = user
+        return attrs

@@ -126,37 +126,56 @@ export const useAuthStore = create<AuthState>()(
         console.log('[AuthStore] login: Начало входа');
         set({ isLoading: true, error: null });
         try {
-          await api.post('/auth/login/', credentials); 
-          console.log('[AuthStore] login: api.auth.login успешно выполнен. Вызов checkAuthStatus(true)...');
-          await get().checkAuthStatus(true);
-          console.log(
-            '[AuthStore] login: checkAuthStatus завершен. Текущее состояние: user: ',
-            get().user,
-            ', isAuthenticated: ',
-            get().isAuthenticated
-          );
+          // Шаг 1: Выполняем вход и получаем токены (предполагается, что бэкенд устанавливает HttpOnly куки)
+          await api.post('/auth/login/', credentials);
+          console.log('[AuthStore] login: api.post(/auth/login/) успешно выполнен.');
+
+          // Шаг 2: Сразу после успешного входа обновляем состояние
+          set({
+            isAuthenticated: true,
+            isLoading: false, // Можно установить в false, т.к. основная операция завершена
+            disableAutoLogin: false,
+            error: null
+          });
+          localStorage.removeItem('disableAutoLogin');
+          console.log('[AuthStore] login: Состояние обновлено, isAuthenticated: true.');
+
+          // Шаг 3: Асинхронно и без блокировки получаем данные пользователя
+          get().checkAuthStatus(true).then(() => {
+            console.log(
+              '[AuthStore] login: checkAuthStatus в then() завершен. Текущее состояние: user: ',
+              get().user,
+              ', isAuthenticated: ',
+              get().isAuthenticated
+            );
+          }).catch(error => {
+            // Если checkAuthStatus не удался, это не отменяет успешный вход,
+            // но логируем ошибку, чтобы понимать, почему данные пользователя не загрузились.
+            console.error('[AuthStore] login: Ошибка в фоновом checkAuthStatus после входа:', error);
+            // Можно установить какое-то некритичное сообщение об ошибке, не сбрасывая аутентификацию
+            // set({ error: 'Не удалось загрузить данные профиля, но вы вошли в систему.' });
+          });
+
         } catch (error: any) {
-          console.error('[useAuthStore login] Ошибка входа или проверки статуса:', error);
-          clearAuthData();
+          console.error('[useAuthStore login] Ошибка входа:', error);
+          clearAuthData(); // Очищаем все данные при ошибке входа
           set({
             error: handleApiError(error, 'Ошибка входа. Проверьте email и пароль или попробуйте позже.'),
-            isLoading: false, 
+            isLoading: false,
             isAuthenticated: false,
             user: null,
-            tokens: null, 
+            tokens: null,
             disableAutoLogin: true,
           });
           console.log('[AuthStore] login: Ошибка, состояние сброшено.');
-        } finally {
-          console.log('[AuthStore] login: Блок finally, установка isLoading: false.');
-          set({ isLoading: false });
+          throw error; // Пробрасываем ошибку, чтобы компонент мог на нее среагировать
         }
       },
       
       register: async (data: RegistrationData) => {
         set({ isLoading: true, error: null });
         try {
-          await api.post('/auth/login/', { email: data.email, password: data.password1 });
+          await api.post('/auth/registration/', data);
           set({ isLoading: false });
         } catch (error) {
           console.error('Ошибка регистрации:', error);
