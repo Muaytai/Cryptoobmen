@@ -31,6 +31,10 @@ class Command(BaseCommand):
                 'contract_address': '', 'decimals': 6
             },
             {
+                'name': 'Solana', 'symbol': 'SOL', 'network': 'SOL', 'coingecko_id': 'solana',
+                'contract_address': '', 'decimals': 9
+            },
+            {
                 'name': 'Binance Coin', 'symbol': 'BNB', 'network': 'BEP20', 'coingecko_id': 'binancecoin',
                 'contract_address': '', 'decimals': 18
             },

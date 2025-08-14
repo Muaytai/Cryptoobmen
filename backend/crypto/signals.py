@@ -1,39 +1,85 @@
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.db import transaction
 import logging
 
 logger = logging.getLogger(__name__)
 
-@receiver(post_save, sender=settings.AUTH_USER_MODEL)
-def create_user_wallets(sender, instance, created, **kwargs):
-    """Создает кошельки для нового пользователя"""
-    if created:
-        from .models import Cryptocurrency, UserWallet
-        active_currencies = Cryptocurrency.objects.filter(is_active=True)
-        for currency_obj in active_currencies:
-            UserWallet.objects.get_or_create(
-                user=instance,
-                currency=currency_obj,
-                defaults={'balance': 0, 'available_balance': 0, 'is_active': True}
-            )
+# Используем реальные классы моделей как senders для корректной регистрации сигналов
+User = get_user_model()
+from .models import Cryptocurrency, UserWallet, UserDepositMemo  # noqa: E402 – импорт после настройки Django
 
-@receiver(post_save, sender='crypto.Cryptocurrency')
+def _create_missing_wallets_for_user(user: User) -> None:  # type: ignore[name-defined]
+    """Создает недостающие кошельки для пользователя по всем активным криптовалютам.
+
+    Использует bulk_create для эффективности и исключает возможные дубликаты.
+    """
+    active_currency_qs = Cryptocurrency.objects.filter(is_active=True, currency_type='crypto')
+    existing_currency_ids = set(
+        UserWallet.objects.filter(user=user).values_list('currency_id', flat=True)
+    )
+
+    wallets_to_create = [
+        UserWallet(
+            user=user,
+            currency=currency_obj,
+            balance=0,
+            available_balance=0,
+            locked_balance=0,
+            is_active=True,
+        )
+        for currency_obj in active_currency_qs
+        if currency_obj.id not in existing_currency_ids
+    ]
+
+    if wallets_to_create:
+        UserWallet.objects.bulk_create(wallets_to_create, ignore_conflicts=True)
+        logger.info(
+            "Created %s wallets for user %s", len(wallets_to_create), getattr(user, 'email', user.pk)
+        )
+
+
+@receiver(post_save, sender=User, dispatch_uid='crypto_create_user_wallets')
+def create_user_wallets(sender, instance, created, **kwargs):
+    """Создает кошельки для нового пользователя после коммита транзакции."""
+    if not created:
+        return
+
+    # Отложим создание кошельков до успешного коммита транзакции, чтобы избежать гонок
+    transaction.on_commit(lambda: _create_missing_wallets_for_user(instance))
+
+@receiver(post_save, sender=Cryptocurrency, dispatch_uid='crypto_create_wallets_for_new_currency')
 def create_wallets_for_new_cryptocurrency(sender, instance, created, **kwargs):
     """Создает кошельки для всех пользователей при добавлении новой криптовалюты"""
-    if created and instance.is_active:
-        from .models import UserWallet
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
+    if not (created and instance.is_active and instance.currency_type == 'crypto'):
+        return
+
+    def _create_for_all_users():
         users = User.objects.all()
-        for user in users:
-            UserWallet.objects.get_or_create(
+        existing = set(
+            UserWallet.objects.filter(currency=instance).values_list('user_id', flat=True)
+        )
+        to_create = [
+            UserWallet(
                 user=user,
                 currency=instance,
-                defaults={'balance': 0, 'available_balance': 0, 'is_active': True}
+                balance=0,
+                available_balance=0,
+                locked_balance=0,
+                is_active=True,
             )
+            for user in users
+            if user.id not in existing
+        ]
+        if to_create:
+            UserWallet.objects.bulk_create(to_create, ignore_conflicts=True)
+            logger.info("Created %s wallets for new currency %s", len(to_create), instance)
 
-@receiver(post_save, sender='crypto.UserDepositMemo')
+    transaction.on_commit(_create_for_all_users)
+
+@receiver(post_save, sender=UserDepositMemo)
 def send_deposit_status_update(sender, instance, **kwargs):
     """Отправляет WebSocket уведомления об изменении статуса депозита"""
     from asgiref.sync import async_to_sync
