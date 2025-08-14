@@ -25,6 +25,7 @@ class JWTCookieMiddleware:
             '/accounts/google/',
             '/accounts/yandex/',
             '/api/accounts/social/',
+            '/auth/callback/',
             '/admin/',
             '/api/auth/login/',
             '/api/auth/registration/',

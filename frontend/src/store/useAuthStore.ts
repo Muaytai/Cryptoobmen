@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api from '@/lib/api/fetch';
+import { useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
 interface User {
   id: string | number;
@@ -126,8 +127,25 @@ export const useAuthStore = create<AuthState>()(
         console.log('[AuthStore] login: Начало входа');
         set({ isLoading: true, error: null });
         try {
+          // Получаем токен reCAPTCHA v3 (action=login), если провайдер доступен в окне
+          let payload: any = { ...credentials };
+          try {
+            const grecaptcha = (window as any)?.grecaptcha;
+            const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+            if (siteKey && grecaptcha?.ready && grecaptcha?.execute) {
+              // Дожидаемся готовности скрипта
+              await new Promise<void>((resolve) => grecaptcha.ready(() => resolve()));
+              const token = await grecaptcha.execute(siteKey, { action: 'login' });
+              if (token) {
+                payload.recaptcha_token = token;
+              }
+            }
+          } catch (e) {
+            console.warn('[AuthStore] login: Не удалось получить reCAPTCHA токен, продолжаем без него.', e);
+          }
+
           // Шаг 1: Выполняем вход и получаем токены (предполагается, что бэкенд устанавливает HttpOnly куки)
-          await api.post('/auth/login/', credentials);
+          await api.post('/auth/login/', payload);
           console.log('[AuthStore] login: api.post(/auth/login/) успешно выполнен.');
 
           // Шаг 2: Сразу после успешного входа обновляем состояние

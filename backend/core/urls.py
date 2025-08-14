@@ -10,15 +10,24 @@ from django.views.generic import TemplateView
 from rest_framework import permissions
 from rest_framework.routers import DefaultRouter
 from django.http import HttpResponseRedirect
+import logging
+from urllib.parse import urlencode
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
 # Создаем главный роутер
 router = DefaultRouter()
 
 # Функция для перенаправления на фронтенд после авторизации
+logger = logging.getLogger(__name__)
+
 def auth_callback(request):
-    """Перенаправляет на эндпоинт обработки социальной авторизации"""
-    return HttpResponseRedirect(f"/api/accounts/social/callback/?next={settings.FRONTEND_URL}/profile")
+    """Перенаправляет на обработчик социальной авторизации и пробрасывает next из запроса."""
+    next_param = request.GET.get('next', f"{settings.FRONTEND_URL}/profile")
+    logger.info(f"auth_callback: received, user.is_authenticated={getattr(request, 'user', None) and request.user.is_authenticated}, next={next_param}")
+    query = urlencode({'next': next_param})
+    redirect_url = f"/api/accounts/social/callback/?{query}"
+    logger.info(f"auth_callback: redirecting to {redirect_url}")
+    return HttpResponseRedirect(redirect_url)
 
 # Кастомные URL-адреса для регистрации dj_rest_auth
 dj_rest_auth_custom_registration_urls = [
