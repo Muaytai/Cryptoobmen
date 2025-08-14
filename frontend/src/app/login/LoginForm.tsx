@@ -15,7 +15,7 @@ import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 const LoginFormWithSearchParams = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const {login, isLoading, error, setDisableAutoLogin, setTokens} = useAuthStore();
+    const {login, isLoading, error, setDisableAutoLogin, setTokens, checkAuthStatus, isAuthenticated} = useAuthStore();
     const [credentials, setCredentials] = useState({email: '', password: ''});
     const [showPassword, setShowPassword] = useState(false);
     const [loginAttempted, setLoginAttempted] = useState(false);
@@ -74,7 +74,21 @@ const LoginFormWithSearchParams = () => {
                 setVerificationSuccess(false);
             }, 5000);
         }
+        // Попытка подтянуть сессию после социальной авторизации: куки уже выставлены бэкендом
+        // Запрашиваем профиль без очистки данных, чтобы сразу показать пользователя
+        // Обязательно указываем isLoginProcess=true, чтобы обойти disableAutoLogin
+        checkAuthStatus(true).catch(() => {});
     }, [searchParams, setDisableAutoLogin]);
+
+    // Если пользователь уже аутентифицирован (например, вернулись с соц-логина), уводим со страницы логина
+    useEffect(() => {
+        if (isAuthenticated) {
+            const redirectParam = searchParams.get('redirect');
+            const target = redirectParam ? decodeURIComponent(redirectParam) : '/';
+            router.replace(target);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -104,23 +118,23 @@ const LoginFormWithSearchParams = () => {
     const handleGoogleLogin = () => {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
         const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
-        const next = `${frontendUrl}/login`;
-        
-        // Очищаем все данные перед авторизацией
+        const finalNext = `${frontendUrl}/login`;
+        const callback = `${backendUrl}/auth/callback/?next=${encodeURIComponent(finalNext)}`;
+
         clearAllAuthData();
-        
-        window.location.href = `${backendUrl}/accounts/google/login/?process=login&next=${encodeURIComponent(next)}`;
+
+        window.location.href = `${backendUrl}/accounts/google/login/?process=login&next=${encodeURIComponent(callback)}`;
     };
 
     const handleYandexLogin = () => {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
         const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
-        const next = `${frontendUrl}/login`;
-        
-        // Очищаем все данные перед авторизацией
+        const finalNext = `${frontendUrl}/login`;
+        const callback = `${backendUrl}/auth/callback/?next=${encodeURIComponent(finalNext)}`;
+
         clearAllAuthData();
-        
-        window.location.href = `${backendUrl}/accounts/yandex/login/?process=login&next=${encodeURIComponent(next)}`;
+
+        window.location.href = `${backendUrl}/accounts/yandex/login/?process=login&next=${encodeURIComponent(callback)}`;
     };
 
     // Проверяем наличие ошибок в URL при загрузке страницы

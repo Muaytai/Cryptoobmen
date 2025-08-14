@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib.sites.shortcuts import get_current_site
 from django.shortcuts import redirect
 from urllib.parse import urlparse
+import logging
 from allauth.account.utils import user_email
 from allauth.socialaccount.models import SocialLogin
 from django.contrib.auth import get_user_model
@@ -42,12 +43,12 @@ class CustomAccountAdapter(DefaultAccountAdapter):
         user.save()
 
     def get_login_redirect_url(self, request):
-        """Перенаправляет на фронтенд после логина"""
-        # Проверяем, есть ли параметр next в запросе
-        next_url = request.GET.get('next', None)
-        if next_url:
-            return next_url
-        return settings.FRONTEND_URL + '/profile'
+        """После логина перенаправляем на backend callback, который выставит JWT-куки, затем на next."""
+        from urllib.parse import urlencode
+        next_url = request.GET.get('next', settings.FRONTEND_URL + '/profile')
+        callback_url = f"{settings.BACKEND_URL}/auth/callback/?{urlencode({'next': next_url})}"
+        logging.getLogger(__name__).info(f"CustomAccountAdapter.get_login_redirect_url -> {callback_url}")
+        return callback_url
         
     def is_safe_url(self, url):
         """Переопределяем проверку безопасности URL, разрешая все URL"""
@@ -179,37 +180,12 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         return settings.FRONTEND_URL
     
     def get_login_redirect_url(self, request):
-        """Перенаправляет на frontend после социальной авторизации"""
-        # Получаем URL для перенаправления из параметра next или используем дефолтный
-        next_url = request.GET.get('next', settings.FRONTEND_URL)
-        
-        # Генерируем JWT токены
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            refresh = RefreshToken.for_user(request.user)
-            access_token = str(refresh.access_token)
-            refresh_token = str(refresh)
-            
-            # Устанавливаем куки с токенами
-            response = redirect(next_url)
-            response.set_cookie(
-                'access_token',
-                access_token,
-                httponly=True,
-                secure=settings.SESSION_COOKIE_SECURE,
-                samesite='Lax',
-                max_age=3600  # 1 час
-            )
-            response.set_cookie(
-                'refresh_token',
-                refresh_token,
-                httponly=True,
-                secure=settings.SESSION_COOKIE_SECURE,
-                samesite='Lax',
-                max_age=7 * 24 * 3600  # 7 дней
-            )
-            return response
-            
-        return next_url
+        """Возвращает URL backend callback, который установит JWT-куки и затем перенаправит на next."""
+        from urllib.parse import urlencode
+        next_url = request.GET.get('next', settings.FRONTEND_URL + '/profile')
+        callback_url = f"{settings.BACKEND_URL}/auth/callback/?{urlencode({'next': next_url})}"
+        logging.getLogger(__name__).info(f"CustomSocialAccountAdapter.get_login_redirect_url -> {callback_url}")
+        return callback_url
     
     def is_auto_signup_allowed(self, request, sociallogin):
         """Всегда разрешаем автоматическую регистрацию"""

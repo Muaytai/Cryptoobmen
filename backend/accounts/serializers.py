@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from django.conf import settings
+import requests
 from django.contrib.auth import get_user_model, authenticate
 from allauth.account.adapter import get_adapter
 from dj_rest_auth.registration.serializers import RegisterSerializer
@@ -101,10 +103,51 @@ class CustomLoginSerializer(serializers.Serializer):
     """
     email = serializers.EmailField(required=True, write_only=True)
     password = serializers.CharField(style={'input_type': 'password'}, trim_whitespace=False, write_only=True)
+    recaptcha_token = serializers.CharField(required=True, write_only=True)
+
+    def _verify_recaptcha(self, token: str, expected_action: str, remote_ip: str | None = None) -> None:
+        """Проверяет reCAPTCHA v3 токен через серверный endpoint.
+
+        Поднимает ValidationError при некорректной проверке.
+        """
+        secret_key = getattr(settings, 'RECAPTCHA_PRIVATE_KEY', '')
+        required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
+        recaptcha_domain = getattr(settings, 'RECAPTCHA_DOMAIN', 'www.google.com')
+
+        if not secret_key:
+            raise serializers.ValidationError('Серверная проверка reCAPTCHA не настроена.')
+
+        verify_url = f"https://{recaptcha_domain}/recaptcha/api/siteverify"
+        data = {
+            'secret': secret_key,
+            'response': token,
+        }
+        if remote_ip:
+            data['remoteip'] = remote_ip
+
+        try:
+            resp = requests.post(verify_url, data=data, timeout=5)
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception:
+            raise serializers.ValidationError('Ошибка проверки reCAPTCHA. Попробуйте позже.')
+
+        if not payload.get('success'):
+            raise serializers.ValidationError('Проверка reCAPTCHA не пройдена.')
+
+        action = payload.get('action')
+        score = payload.get('score', 0)
+
+        if action and expected_action and action != expected_action:
+            raise serializers.ValidationError('Неверное действие reCAPTCHA.')
+
+        if score < required_score:
+            raise serializers.ValidationError('Слишком низкий балл reCAPTCHA.')
 
     def validate(self, attrs):
         email = attrs.get('email').lower()
         password = attrs.get('password')
+        recaptcha_token = attrs.get('recaptcha_token')
 
         if not email or not password:
             raise serializers.ValidationError(
@@ -113,6 +156,13 @@ class CustomLoginSerializer(serializers.Serializer):
             )
 
         request = self.context.get('request')
+
+        # Проверяем reCAPTCHA перед аутентификацией
+        client_ip = None
+        if request:
+            # Стандартные заголовки для реального IP за прокси/балансировщиком
+            client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0] or request.META.get('REMOTE_ADDR')
+        self._verify_recaptcha(recaptcha_token, expected_action='login', remote_ip=client_ip)
         user = authenticate(request=request, username=email, password=password)
 
         if not user:
