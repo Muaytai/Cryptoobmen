@@ -60,7 +60,10 @@ export const WalletPage: React.FC = () => {
         api.get('/crypto/wallets/balance/')
       ]);
 
-      const walletsData = Array.isArray(walletsResp) ? walletsResp : (walletsResp as any).data;
+      // Нормализуем ответ: поддерживаем массив и пагинацию DRF (results)
+      const walletsData = Array.isArray(walletsResp)
+        ? walletsResp
+        : ((walletsResp as any)?.results ?? (walletsResp as any)?.data ?? []);
       const pricesData = Array.isArray(pricesResp) ? pricesResp : (pricesResp as any).data;
       const balanceData = (balanceResp as any).data ?? balanceResp;
 
