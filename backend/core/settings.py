@@ -429,7 +429,7 @@ REST_AUTH = {
     'REGISTER_SERIALIZER': 'accounts.serializers.CustomRegisterSerializer',
 }
 
-# AllAuth настройки
+# AllAuth настройки (обновлены для версии 65.11.0)
 ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'http'
@@ -439,12 +439,17 @@ ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
 ACCOUNT_EMAIL_SUBJECT_PREFIX = 'Cryptoobmen - '
 ACCOUNT_EMAIL_CONFIRMATION_HMAC = True
+
+# Новые настройки для allauth 65.11.0+
 ACCOUNT_LOGIN_METHODS = ['email']
-ACCOUNT_SIGNUP_FIELDS = ['email*', 'password']
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1']
 ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
-ACCOUNT_USERNAME_REQUIRED = False
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_EMAIL_REQUIRED = True
+
+# Устаревшие настройки заменены на новые
+# ACCOUNT_USERNAME_REQUIRED = False  # Убрано
+# ACCOUNT_AUTHENTICATION_METHOD = 'email'  # Убрано  
+# ACCOUNT_EMAIL_REQUIRED = True  # Убрано
+
 ACCOUNT_RATE_LIMITS = {
     'confirm_email': '5/m',
 }
