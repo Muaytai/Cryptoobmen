@@ -23,6 +23,7 @@ interface User {
 interface Credentials {
   email: string;
   password: string;
+  recaptcha_token: string;
 }
 
 interface RegistrationData {
@@ -30,6 +31,7 @@ interface RegistrationData {
   email: string;
   password1: string;
   password2: string;
+  recaptcha_token: string;
 }
 
 interface Tokens {
@@ -127,21 +129,12 @@ export const useAuthStore = create<AuthState>()(
         console.log('[AuthStore] login: Начало входа');
         set({ isLoading: true, error: null });
         try {
-          // Получаем токен reCAPTCHA v3 (action=login), если провайдер доступен в окне
+          // Используем токен reCAPTCHA, переданный из формы
           let payload: any = { ...credentials };
-          try {
-            const grecaptcha = (window as any)?.grecaptcha;
-            const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
-            if (siteKey && grecaptcha?.ready && grecaptcha?.execute) {
-              // Дожидаемся готовности скрипта
-              await new Promise<void>((resolve) => grecaptcha.ready(() => resolve()));
-              const token = await grecaptcha.execute(siteKey, { action: 'login' });
-              if (token) {
-                payload.recaptcha_token = token;
-              }
-            }
-          } catch (e) {
-            console.warn('[AuthStore] login: Не удалось получить reCAPTCHA токен, продолжаем без него.', e);
+          
+          // Проверяем, что токен reCAPTCHA присутствует
+          if (!payload.recaptcha_token) {
+            throw new Error('Отсутствует токен reCAPTCHA');
           }
 
           // Шаг 1: Выполняем вход и получаем токены (предполагается, что бэкенд устанавливает HttpOnly куки)

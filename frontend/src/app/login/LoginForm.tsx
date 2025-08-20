@@ -5,6 +5,7 @@ import {useRouter, useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
+import ReCaptcha from '@/components/ReCaptcha';
 import styles from './Login.module.css';
 import {FaEye, FaEyeSlash, FaGoogle} from 'react-icons/fa';
 import {TbBrandYandex} from 'react-icons/tb';
@@ -20,6 +21,7 @@ const LoginFormWithSearchParams = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [loginAttempted, setLoginAttempted] = useState(false);
     const [verificationSuccess, setVerificationSuccess] = useState(false);
+    const [recaptchaToken, setRecaptchaToken] = useState('');
     const modalManagerChangePassword = useModal(false);
 
     // Функция для очистки всех данных аутентификации
@@ -92,9 +94,17 @@ const LoginFormWithSearchParams = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // Проверяем наличие токена reCAPTCHA
+        if (!recaptchaToken) {
+            console.error('Отсутствует токен reCAPTCHA');
+            return;
+        }
+        
         try {
             setLoginAttempted(true);
-            await login(credentials);
+            // Добавляем токен reCAPTCHA к учетным данным
+            await login({...credentials, recaptcha_token: recaptchaToken});
             console.log('Вход выполнен успешно');
             // Определяем куда редиректить после успешного входа
             const redirectParam = searchParams.get('redirect');
@@ -201,15 +211,33 @@ const LoginFormWithSearchParams = () => {
                                     {showPassword ? <FaEyeSlash/> : <FaEye/>}
                                 </button>
                             </div>
+                            
+                            {/* Компонент reCAPTCHA */}
+                            <div className="mb-4">
+                                <p className="text-xs text-gray-400 mb-2">
+                                    reCAPTCHA Site Key: {process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ? 'Настроен' : 'НЕ НАСТРОЕН'}
+                                </p>
+                                <ReCaptcha
+                                    siteKey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}
+                                    onVerify={(token) => {
+                                        console.log('reCAPTCHA токен получен:', token ? 'Да' : 'Нет');
+                                        setRecaptchaToken(token);
+                                    }}
+                                    action="login"
+                                />
+                                {recaptchaToken && (
+                                    <p className="text-xs text-green-400 mt-1">✓ reCAPTCHA пройдена</p>
+                                )}
+                            </div>
+                            
                             <div className={styles.linkForgotPassword}>
                                 <a className="text-sm  hover:underline">Забыли
                                     пароль?</a>
                             </div>
                             <button
-                                type="button"
-                                onClick={handleSubmit}
+                                type="submit"
                                 className={styles.submitBtn}
-                                disabled={isLoading}
+                                disabled={isLoading || !recaptchaToken}
                             >
                                 {isLoading ? 'Загрузка...' : 'Войти'}
                             </button>
