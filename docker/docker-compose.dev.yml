@@ -1,21 +1,5 @@
 services:
 
-  redis:
-    image: redis:7-alpine
-    container_name: docker-redis-1
-    restart: always
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - redis_data:/data
-    networks:
-      - cryptoobmen_network
-
   backend:
     build:
       context: ..
@@ -28,8 +12,6 @@ services:
     ports:
       - "8000:8000"
     command: uvicorn core.asgi:application --host 0.0.0.0 --port 8000 --reload
-    depends_on:
-      - redis
     networks:
       - default
       - cryptoobmen_network
@@ -46,7 +28,6 @@ services:
       - ./backend/entrypoint.sh:/app/entrypoint.sh
     depends_on:
       - backend
-      - redis
     command: celery -A core worker -l info --pool=solo
     networks:
       - default
@@ -64,7 +45,6 @@ services:
       - ./backend/entrypoint.sh:/app/entrypoint.sh
     depends_on:
       - backend
-      - redis
     command: celery -A core beat -l info
     networks:
       - default
@@ -99,7 +79,3 @@ networks:
   cryptoobmen_network:
     external: true
 
-
-volumes:
-  redis_data:
-    name: cryptoobmen_redis_data
