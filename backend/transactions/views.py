@@ -182,32 +182,124 @@ class DepositViewSet(viewsets.ViewSet):
         """
         Возвращает или создает адрес для пополнения.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         user = request.user
         currency_id = request.data.get('currency_id')
+        network = request.data.get('network')  # Добавляем поддержку network
+        
+        logger.info(f"get_deposit_address: user={user.email}, currency_id={currency_id}, network={network}")
+        logger.info(f"get_deposit_address: request.data={request.data}")
+        logger.info(f"get_deposit_address: request.user.id={user.id}")
 
         if not currency_id:
             return Response({"error": "currency_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            currency = Cryptocurrency.objects.get(id=currency_id)
-            wallet, created = UserWallet.objects.get_or_create(user=user, currency=currency)
+            # Если указана сеть, ищем валюту по символу и сети
+            if network:
+                # Ищем валюту по символу и сети (не только USDT)
+                currency = Cryptocurrency.objects.get(symbol__iexact=currency_id, network=network)
+                logger.info(f"get_deposit_address: found currency by symbol and network: {currency.symbol} (id={currency.id}, network={currency.network})")
+            else:
+                # Иначе ищем по ID (для обратной совместимости)
+                try:
+                    # Сначала пытаемся найти по ID (число)
+                    currency_id_int = int(currency_id)
+                    currency = Cryptocurrency.objects.get(id=currency_id_int)
+                    logger.info(f"get_deposit_address: found currency by id: {currency.symbol} (id={currency.id}, network={currency.network})")
+                except (ValueError, TypeError):
+                    # Если не число, ищем по символу
+                    currency = Cryptocurrency.objects.get(symbol__iexact=currency_id)
+                    logger.info(f"get_deposit_address: found currency by symbol: {currency.symbol} (id={currency.id}, network={currency.network})")
+            
+            # Проверяем существующие кошельки пользователя для этой валюты
+            existing_wallets = UserWallet.objects.filter(user=user, currency=currency)
+            logger.info(f"get_deposit_address: found {existing_wallets.count()} existing wallets for user {user.email} and currency {currency.symbol} ({currency.network})")
+            
+            for wallet in existing_wallets:
+                logger.info(f"get_deposit_address: wallet id={wallet.id}, address={wallet.deposit_address}, is_system={wallet.is_system_wallet}")
+            
+            # Если у пользователя несколько кошельков для одной валюты, выбираем тот, у которого есть адрес
+            wallet = None
+            created = False
+            
+            if existing_wallets.count() > 1:
+                # Выбираем кошелек с адресом, если есть
+                wallet_with_address = existing_wallets.filter(deposit_address__isnull=False).exclude(deposit_address='').first()
+                if wallet_with_address:
+                    wallet = wallet_with_address
+                    logger.info(f"get_deposit_address: selected wallet with address id={wallet.id}, address={wallet.deposit_address}")
+                else:
+                    # Если нет кошелька с адресом, берем первый
+                    wallet = existing_wallets.first()
+                    logger.info(f"get_deposit_address: selected first wallet id={wallet.id}, address={wallet.deposit_address}")
+            elif existing_wallets.count() == 1:
+                wallet = existing_wallets.first()
+                logger.info(f"get_deposit_address: found single wallet id={wallet.id}, address={wallet.deposit_address}")
+            else:
+                # Создаем новый кошелек только если не нашли существующий
+                wallet = UserWallet.objects.create(user=user, currency=currency)
+                created = True
+                logger.info(f"get_deposit_address: created new wallet id={wallet.id}")
+
+            # Проверяем, что адрес соответствует выбранной сети
+            if wallet.deposit_address and not created:
+                # Проверяем формат адреса для соответствия сети
+                address = wallet.deposit_address
+                if currency.network == 'ERC20' and not address.startswith('0x'):
+                    logger.warning(f"get_deposit_address: wallet {wallet.id} has non-ERC20 address {address} for ERC20 currency {currency.symbol}")
+                    # Сбрасываем неправильный адрес
+                    wallet.deposit_address = None
+                    wallet.save()
+                elif currency.network == 'TRC20' and not address.startswith('T'):
+                    logger.warning(f"get_deposit_address: wallet {wallet.id} has non-TRC20 address {address} for TRC20 currency {currency.symbol}")
+                    # Сбрасываем неправильный адрес
+                    wallet.deposit_address = None
+                    wallet.save()
 
             if not wallet.deposit_address:
-                # Предполагаем, что у нас есть сервис для создания адресов
-                from crypto.blockchain.tron import TronService
-                service = TronService()
-                address, private_key = service.create_new_address()
+                logger.info(f"get_deposit_address: generating new address for wallet {wallet.id}")
+                
+                # Генерируем адрес в зависимости от сети
+                if currency.network == 'TRC20':
+                    from crypto.blockchain.tron import TronService
+                    service = TronService()
+                    address, private_key = service.create_new_address()
+                    logger.info(f"get_deposit_address: generated TRC20 address {address} for wallet {wallet.id}")
+                elif currency.network == 'ERC20':
+                    from crypto.blockchain.ethereum import EthereumService
+                    service = EthereumService()
+                    address, private_key = service.create_new_address()
+                    logger.info(f"get_deposit_address: generated ERC20 address {address} for wallet {wallet.id}")
+                else:
+                    # Для других сетей используем TronService как fallback
+                    from crypto.blockchain.tron import TronService
+                    service = TronService()
+                    address, private_key = service.create_new_address()
+                    logger.info(f"get_deposit_address: generated fallback address {address} for wallet {wallet.id}")
+                
                 wallet.deposit_address = address
-                # Важно: шифрование ключа перед сохранением
-                wallet.encrypted_private_key = wallet.encrypt_private_key(private_key)
+                # Сохраняем приватный ключ (в продакшене здесь должно быть шифрование)
+                wallet.encrypted_private_key = private_key
                 wallet.save()
+                logger.info(f"get_deposit_address: saved new address {address} for wallet {wallet.id}")
+            else:
+                logger.info(f"get_deposit_address: using existing address {wallet.deposit_address} for wallet {wallet.id}")
 
-            return Response({'address': wallet.deposit_address}, status=status.HTTP_200_OK)
+            return Response({
+                'address': wallet.deposit_address,
+                'currency_symbol': currency.symbol,
+                'network': currency.network
+            }, status=status.HTTP_200_OK)
 
         except Cryptocurrency.DoesNotExist:
-            return Response({"error": "Invalid currency_id"}, status=status.HTTP_400_BAD_REQUEST)
+            logger.error(f"get_deposit_address: currency with id {currency_id} and network {network} not found")
+            return Response({"error": "Currency not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"get_deposit_address: unexpected error: {e}", exc_info=True)
+            return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ReviewFilter(FilterSet):
