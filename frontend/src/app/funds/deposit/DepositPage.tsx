@@ -14,7 +14,9 @@ console.log('--- Файл DepositPage.tsx ЗАГРУЖЕН (v2) ---');
 interface Wallet {
   id: string;
   network?: string;
+  deposit_address?: string;
   currency: {
+    id: string;
     symbol: string;
     name: string;
     icon?: string;
@@ -228,20 +230,22 @@ export const DepositPage: React.FC = () => {
 
     const netsArr = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
     console.log('DepositPage: доступные сети для валюты:', netsArr);
+    console.log('DepositPage: сети из кошельков пользователя:', walletNetworks);
+    console.log('DepositPage: справочные сети:', referenceNetworks);
     setNetworkOptions(netsArr);
       
-      if (netsArr.length === 1) {
-        console.log('DepositPage: автоматический выбор единственной сети:', netsArr[0]);
-        setSelectedNetwork(netsArr[0]);
-        
-        // Если только одна сеть, можно автоматически запросить адрес после небольшой задержки
-        // setTimeout(() => {
-        //   if (currency.symbol === selectedCurrency) {
-        //     handleRequestDeposit(new MouseEvent('click') as any);
-        //   }
-        // }, 500);
+    if (netsArr.length === 1) {
+      console.log('DepositPage: автоматический выбор единственной сети:', netsArr[0]);
+      setSelectedNetwork(netsArr[0]);
+    } else if (netsArr.length > 1) {
+      console.log('DepositPage: доступно несколько сетей, пользователь должен выбрать');
+      // Если есть несколько сетей, попробуем автоматически выбрать ту, которая соответствует кошельку пользователя
+      if (walletNetworks.length === 1) {
+        console.log('DepositPage: автоматический выбор сети из кошелька пользователя:', walletNetworks[0]);
+        setSelectedNetwork(walletNetworks[0]);
       }
-    }, [availableCurrencies, userWallets]);
+    }
+  }, [availableCurrencies, userWallets]);
 
   const handleNetworkSelection = useCallback((network: string) => {
     console.log('DepositPage: выбрана сеть:', network);
@@ -279,14 +283,113 @@ export const DepositPage: React.FC = () => {
     setError(null);
     
     try {
-      const currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
+      // Находим валюту, которая соответствует и символу, и сети
+      let currency = null;
+      
+      // Сначала пытаемся найти валюту по символу и сети
+      if (selectedNetwork) {
+        // Ищем валюту, которая поддерживает выбранную сеть
+        currency = availableCurrencies.find(c => 
+          c.symbol === selectedCurrency && 
+          c.networks && 
+          c.networks.includes(selectedNetwork)
+        );
+        
+        // Если не нашли, попробуем найти валюту, которая соответствует сети из кошельков пользователя
+        if (!currency) {
+          const userWalletForNetwork = userWallets.find(w => 
+            w.currency.symbol === selectedCurrency && 
+            w.network === selectedNetwork
+          );
+          
+          if (userWalletForNetwork) {
+            // Ищем валюту с тем же ID, что и в кошельке пользователя
+            currency = availableCurrencies.find(c => c.id === userWalletForNetwork.currency.id);
+            console.log('DepositPage: найдена валюта по кошельку пользователя:', {
+              walletCurrencyId: userWalletForNetwork.currency.id,
+              foundCurrency: currency
+            });
+          }
+        }
+        
+        // Если все еще не нашли, попробуем найти валюту, которая точно соответствует сети
+        if (!currency) {
+          console.log('DepositPage: пытаемся найти валюту по точному соответствию сети:', selectedNetwork);
+          // Ищем валюту, которая точно соответствует выбранной сети
+          const exactMatchCurrency = availableCurrencies.find(c => 
+            c.symbol === selectedCurrency && 
+            c.networks && 
+            c.networks.some(network => 
+              network.toLowerCase() === selectedNetwork.toLowerCase() ||
+              network.toLowerCase().includes(selectedNetwork.toLowerCase()) ||
+              selectedNetwork.toLowerCase().includes(network.toLowerCase())
+            )
+          );
+          
+          if (exactMatchCurrency) {
+            currency = exactMatchCurrency;
+            console.log('DepositPage: найдена валюта по точному соответствию сети:', {
+              symbol: exactMatchCurrency.symbol,
+              id: exactMatchCurrency.id,
+              networks: exactMatchCurrency.networks,
+              selectedNetwork
+            });
+          }
+        }
+      }
+      
+      // Если не нашли по сети, ищем только по символу (fallback)
+      if (!currency) {
+        currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
+        console.log('DepositPage: fallback - найдена валюта только по символу:', {
+          symbol: currency?.symbol,
+          id: currency?.id,
+          networks: currency?.networks
+        });
+      }
+      
       if (!currency) {
           throw new Error("Selected currency not found");
       }
 
-      const response = await api.post('/transactions/deposits/address/', {
-          currency_id: currency.id
+      console.log('DepositPage: выбрана валюта для запроса:', {
+        symbol: currency.symbol,
+        id: currency.id,
+        networks: currency.networks,
+        selectedNetwork
       });
+      
+      console.log('DepositPage: доступные валюты для отладки:', availableCurrencies.map(c => ({
+        id: c.id,
+        symbol: c.symbol,
+        networks: c.networks
+      })));
+      
+      console.log('DepositPage: кошельки пользователя для отладки:', userWallets.map(w => ({
+        id: w.id,
+        currencyId: w.currency.id,
+        symbol: w.currency.symbol,
+        network: w.network,
+        address: w.deposit_address
+      })));
+
+      // Определяем параметры для запроса
+      let requestParams: any = {};
+      
+      if (selectedNetwork || networkToUse) {
+        // Если указана сеть, передаем symbol и network
+        requestParams = {
+          currency_id: selectedCurrency,  // Передаем symbol валюты
+          network: selectedNetwork || networkToUse
+        };
+      } else {
+        // Если сеть не указана, передаем currency_id
+        requestParams = {
+          currency_id: currency.id
+        };
+      }
+
+      const response = await api.post('/transactions/deposits/address/', requestParams);
       
       const data = response;
       console.log('DepositPage: успешно получена информация для депозита:', data);
