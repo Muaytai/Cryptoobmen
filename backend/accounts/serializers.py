@@ -28,8 +28,9 @@ class UserDetailsSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name', 
             'avatar', 'phone_number', 'is_verified', 'kyc_verified',
-            'telegram_id', 'date_joined', 'profile', 'has_2fa',
-            'notify_via_email', 'notify_via_telegram'
+            'telegram_id', 'date_joined', 'profile',
+            'notify_via_email', 'notify_via_telegram',
+            'date_of_birth', 'address', 'full_name'
         ]
         read_only_fields = ['id', 'email', 'date_joined', 'is_verified', 'kyc_verified']
 

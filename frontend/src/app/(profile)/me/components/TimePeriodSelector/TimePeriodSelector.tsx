@@ -1,5 +1,5 @@
 import React from "react";
-import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import styles from "./TimePeriodSelector.module.css";
 
 const timePeriods = [

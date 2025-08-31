@@ -76,32 +76,54 @@
   opacity: 1;
 }
 
-/* Сетка карточек */
-/*.cardsGrid {*/
-/*  display: grid;*/
-/*  grid-template-columns: 0.6fr 0.6fr 1.4fr 1.4fr;*/
-/*  gap: 20px;*/
-/*}*/
 
+
+/* Сетка карточек */
 .cardsGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.7fr 1.7fr; /* последние две колонки шире */
+  grid-template-columns: 1fr 2fr; /* левая колонка уже, правая шире для личных данных */
   grid-template-areas:
-    "div1 div1 div6 div8"
-    "div2 div3 div6 div8"
-    "div4 div5 div7 div9";
-  gap: 20px;
+    "div3 div10"
+    "div1 div10";
+  gap: 24px; /* увеличили отступы для красоты */
 }
 
 .div1 { grid-area: div1; }
-.div2 { grid-area: div2; }
 .div3 { grid-area: div3; }
-.div4 { grid-area: div4; }
-.div5 { grid-area: div5; }
-.div6 { grid-area: div6; }
-.div7 { grid-area: div7; }
-.div8 { grid-area: div8; }
-.div9 { grid-area: div9; }
+.div10 { 
+  grid-area: div10; /* Личные данные */
+}
+
+.div10 .cardContent {
+  padding: 32px 40px;
+  position: relative;
+}
+
+.div10 .dataGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-top: 24px;
+}
+
+.div10 .dataRow {
+  padding: 20px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+.div10 .dataRow:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  padding-left: 12px;
+  padding-right: 12px;
+  margin-left: -12px;
+  margin-right: -12px;
+}
+
+.div10 .dataRow:last-child {
+  border-bottom: none;
+}
 
 /* ✅ Адаптив: 1224px */
 @media (max-width: 1224px) {
@@ -109,10 +131,11 @@
     grid-template-columns: repeat(2, 1fr);
     grid-template-areas:
       "div1 div1"
-      "div6 div8"
-      "div2 div3"
-      "div4 div5"
-      "div7 div9";
+      "div3 div3"
+      "div2 div4"
+      "div5 div6"
+      "div10 div11"
+      "div12 .";
   }
 }
 
@@ -129,7 +152,10 @@
       "div4"
       "div5"
       "div7"
-      "div9";
+      "div9"
+      "div10"
+      "div11"
+      "div12";
   }
 
   .profileSection {
@@ -145,6 +171,8 @@
   .actionButton {
     max-width: 100%;
   }
+
+
 }
 
 

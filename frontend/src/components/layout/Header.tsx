@@ -115,7 +115,8 @@ export function Header() {
     e.preventDefault();
     // Переходим на страницу профиля только если пользователь аутентифицирован
     if (isAuthenticated && user) {
-      router.push('/profile2');
+      {/*router.push('/profile2');*/} // было заглушкой
+      router.push('/me');
     } else {
       router.push('/login');
     }
