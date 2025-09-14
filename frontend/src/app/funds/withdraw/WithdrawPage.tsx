@@ -428,16 +428,48 @@ export const WithdrawPage: React.FC = () => {
                     } transition`}
                   >
                     <div className="flex-shrink-0 mr-3">
-                      {wallet.currency.icon ? (
-                        <Image
-                          src={wallet.currency.icon.startsWith('http') ? wallet.currency.icon : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`}
-                          alt={wallet.currency.symbol}
-                          width={32}
-                          height={32}
-                          className="rounded-full"
-                          unoptimized
-                        />
-                      ) : (
+                      {wallet.currency.icon && wallet.currency.icon.trim() !== '' ? (() => {
+                        const iconUrl = wallet.currency.icon.startsWith('http') 
+                          ? wallet.currency.icon 
+                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`;
+                        
+                        // Проверяем валидность URL
+                        try {
+                          new URL(iconUrl);
+                          return (
+                            <>
+                              <Image
+                                src={iconUrl}
+                                alt={wallet.currency.symbol}
+                                width={32}
+                                height={32}
+                                className="rounded-full"
+                                unoptimized
+                                onError={(e) => {
+                                  console.error('WithdrawPage: Ошибка загрузки иконки валюты:', iconUrl);
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const fallback = target.nextElementSibling as HTMLElement;
+                                  if (fallback) fallback.style.display = 'flex';
+                                }}
+                              />
+                              <div 
+                                className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold"
+                                style={{ display: 'none' }}
+                              >
+                                {wallet.currency.symbol.slice(0, 2)}
+                              </div>
+                            </>
+                          );
+                        } catch (error) {
+                          console.error('WithdrawPage: Некорректный URL иконки валюты:', iconUrl, error);
+                          return (
+                            <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
+                              {wallet.currency.symbol.slice(0, 2)}
+                            </div>
+                          );
+                        }
+                      })() : (
                         <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
                           {wallet.currency.symbol.slice(0, 2)}
                         </div>

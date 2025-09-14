@@ -190,8 +190,19 @@ def check_blockchain_deposits():
             min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
             logger.info(f"[no-memo][DEBUG] CALL get_transactions: address={address}, min_ts={min_ts}, contract={currency.contract_address}")
             
+            # Для Polygon используем ограниченное сканирование (последние 500 блоков)
+            if currency.symbol == 'POL':
+                # Ограничиваем сканирование для предотвращения зависания
+                current_block = service.w3.eth.block_number
+                from_block = max(current_block - 500, 1)  # Последние 500 блоков или с блока 1
+                logger.info(f"[POL] Quick scan: blocks {from_block} to {current_block} for {address}")
+                raw_transactions = service.get_transactions(
+                    address=address,
+                    from_block=from_block,
+                    to_block=current_block
+                )
             # Для Ethereum и ERC-20 токенов передаем contract_address
-            if currency.network and currency.network.upper() == 'ERC20':
+            elif currency.network and currency.network.upper() == 'ERC20':
                 raw_transactions = service.get_transactions(
                     address=address,
                     min_timestamp=min_ts,
@@ -256,6 +267,35 @@ def check_blockchain_deposits():
                         timestamp=timezone.now()
                     )
                     logger.info(f"[no-memo] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
+                    
+                    # Для POL запускаем немедленную консолидацию после депозита
+                    if currency.symbol == 'POL':
+                        logger.info(f"[POL] Triggering immediate consolidation after deposit for user {user_wallet.user.id}")
+                        from .tasks_consolidation import consolidate_user_deposits
+                        
+                        # Проверяем доступность Celery worker'ов для POL
+                        try:
+                            from celery import current_app
+                            inspect = current_app.control.inspect()
+                            active_workers = inspect.active()
+                            
+                            if active_workers and any(active_workers.values()):
+                                # Есть активные worker'ы - запускаем асинхронно
+                                consolidate_user_deposits.delay()
+                                logger.info("[POL] Consolidation task queued after deposit via Celery")
+                            else:
+                                # Нет worker'ов - запускаем синхронно
+                                logger.warning("[POL] No active Celery workers, running consolidation synchronously")
+                                result = consolidate_user_deposits()
+                                logger.info(f"[POL] Sync consolidation after deposit: {result}")
+                                
+                        except Exception as e:
+                            logger.warning(f"[POL] Celery check failed, running sync consolidation: {e}")
+                            try:
+                                result = consolidate_user_deposits()
+                                logger.info(f"[POL] Sync consolidation after deposit: {result}")
+                            except Exception as sync_e:
+                                logger.error(f"[POL] Sync consolidation failed: {sync_e}")
 
                 # Отправляем WebSocket сигнал по адресу
                 try:
@@ -378,6 +418,37 @@ def check_blockchain_deposits():
             logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 
     logger.info(f"Finished deposit check. Processed {processed} transactions.")
+    
+    # Всегда запускаем консолидацию средств (даже если новых депозитов нет)
+    # Это обеспечивает консолидацию средств, которые могли поступить ранее
+    from .tasks_consolidation import consolidate_user_deposits
+    logger.info("Starting consolidation of user deposits...")
+    
+    # Проверяем доступность Celery worker'ов
+    try:
+        from celery import current_app
+        inspect = current_app.control.inspect()
+        active_workers = inspect.active()
+        
+        if active_workers and any(active_workers.values()):
+            # Есть активные worker'ы - запускаем асинхронно
+            consolidate_user_deposits.delay()
+            logger.info("Consolidation task queued successfully via Celery")
+        else:
+            # Нет worker'ов - запускаем синхронно
+            logger.warning("No active Celery workers found, running consolidation synchronously")
+            result = consolidate_user_deposits()
+            logger.info(f"Synchronous consolidation completed: {result}")
+            
+    except Exception as e:
+        # Если проблемы с Celery, запускаем синхронно
+        logger.warning(f"Celery check failed ({e}), running consolidation synchronously")
+        try:
+            result = consolidate_user_deposits()
+            logger.info(f"Synchronous consolidation completed: {result}")
+        except Exception as sync_error:
+            logger.error(f"Synchronous consolidation failed: {sync_error}", exc_info=True)
+    
     return f"Готово, обработано: {processed}"
 
 
