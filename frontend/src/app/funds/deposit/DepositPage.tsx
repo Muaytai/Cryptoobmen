@@ -157,6 +157,15 @@ export const DepositPage: React.FC = () => {
       
       const aggregatedCurrencies = Array.from(cryptoMap.values());
       console.log('DepositPage: Агрегированные валюты:', aggregatedCurrencies);
+      
+      // Отладочные логи для icon
+      aggregatedCurrencies.forEach(currency => {
+        console.log(`DepositPage: Валюта ${currency.symbol} - icon: "${currency.icon}"`);
+        if (!currency.icon || currency.icon.trim() === '') {
+          console.warn(`DepositPage: У валюты ${currency.symbol} отсутствует или пуста иконка`);
+        }
+      });
+      
       setAvailableCurrencies(aggregatedCurrencies);
       
       const walletIdParam = searchParams.get('wallet_id');
@@ -785,16 +794,48 @@ export const DepositPage: React.FC = () => {
                           : 'bg-gray-700 hover:bg-gray-650'
                       }`}
                     >
-                      {currency.icon ? (
-                        <Image
-                          src={currency.icon.startsWith('http') ? currency.icon : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${currency.icon}`}
-                          alt={currency.symbol}
-                          width={32}
-                          height={32}
-                          className="rounded-full mb-2"
-                          unoptimized
-                        />
-                      ) : (
+                      {currency.icon && currency.icon.trim() !== '' ? (() => {
+                        const iconUrl = currency.icon.startsWith('http') 
+                          ? currency.icon 
+                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${currency.icon}`;
+                        
+                        // Проверяем валидность URL
+                        try {
+                          new URL(iconUrl);
+                          return (
+                            <>
+                              <Image
+                                src={iconUrl}
+                                alt={currency.symbol}
+                                width={32}
+                                height={32}
+                                className="rounded-full mb-2"
+                                unoptimized
+                                onError={(e) => {
+                                  console.error('DepositPage: Ошибка загрузки иконки валюты:', iconUrl);
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const fallback = target.nextElementSibling as HTMLElement;
+                                  if (fallback) fallback.style.display = 'flex';
+                                }}
+                              />
+                              <div 
+                                className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold"
+                                style={{ display: 'none' }}
+                              >
+                                {currency.symbol.slice(0, 2)}
+                              </div>
+                            </>
+                          );
+                        } catch (error) {
+                          console.error('DepositPage: Некорректный URL иконки валюты:', iconUrl, error);
+                          return (
+                            <div className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold">
+                              {currency.symbol.slice(0, 2)}
+                            </div>
+                          );
+                        }
+                      })() : (
                         <div className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold">
                           {currency.symbol.slice(0, 2)}
                         </div>
@@ -875,16 +916,74 @@ export const DepositPage: React.FC = () => {
         return (
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
             <div className="flex items-center justify-center mb-6">
-              {selectedCurrency && (
-                <Image
-                  src={`${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${availableCurrencies.find(c => c.symbol === selectedCurrency)?.icon || ''}`}
-                  alt={selectedCurrency}
-                  width={48}
-                  height={48}
-                  className="rounded-full mr-3"
-                  unoptimized
-                />
-              )}
+              {selectedCurrency && (() => {
+                const currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
+                const iconPath = currency?.icon;
+                const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '');
+                
+                // Отладочные логи
+                const proposedUrl = iconPath && iconPath.startsWith('http') ? iconPath : `${baseUrl}${iconPath || ''}`;
+                console.log('DepositPage: Данные для изображения:', {
+                  selectedCurrency,
+                  currency,
+                  iconPath,
+                  baseUrl,
+                  isFullUrl: iconPath?.startsWith('http') || false,
+                  finalUrl: proposedUrl
+                });
+                
+                // Проверяем корректность URL
+                if (!iconPath || iconPath.trim() === '') {
+                  console.warn('DepositPage: Пустой путь к иконке для валюты:', selectedCurrency);
+                  return (
+                    <div className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center">
+                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                    </div>
+                  );
+                }
+                
+                // Определяем финальный URL: если iconPath уже содержит http, используем его как есть
+                const fullImageUrl = iconPath && iconPath.startsWith('http') ? iconPath : `${baseUrl}${iconPath || ''}`;
+                
+                // Проверяем валидность URL
+                try {
+                  new URL(fullImageUrl);
+                } catch (error) {
+                  console.error('DepositPage: Некорректный URL для изображения:', fullImageUrl, error);
+                  return (
+                    <div className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center">
+                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                    </div>
+                  );
+                }
+                
+                return (
+                  <>
+                    <Image
+                      src={fullImageUrl}
+                      alt={selectedCurrency}
+                      width={48}
+                      height={48}
+                      className="rounded-full mr-3"
+                      unoptimized
+                      onError={(e) => {
+                        console.error('DepositPage: Ошибка загрузки изображения:', fullImageUrl);
+                        // Заменяем на fallback
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const fallback = target.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
+                    />
+                    <div 
+                      className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center"
+                      style={{ display: 'none' }}
+                    >
+                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                    </div>
+                  </>
+                );
+              })()}
               <div>
                 <h2 className="text-xl font-bold">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.name}</h2>
                 <p className="text-gray-400">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol} ({selectedNetwork})</p>

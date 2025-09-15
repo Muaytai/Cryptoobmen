@@ -363,7 +363,7 @@ def create_default_cryptocurrencies():
         {"name": "Ripple", "symbol": "XRP", "network": "XRP", "decimals": 6, "requires_memo": True, "icon_b64": None},
         {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
         {"name": "Solana", "symbol": "SOL", "network": "SOL", "decimals": 9, "requires_memo": False, "icon_b64": None},
-        {"name": "Polygon", "symbol": "MATIC", "network": "Polygon", "decimals": 18, "requires_memo": False, "icon_b64": None},
+        {"name": "Polygon", "symbol": "POL", "network": "Polygon", "decimals": 18, "requires_memo": False, "icon_b64": None},
     ]
     for crypto_data in default_cryptos:
         obj, created = Cryptocurrency.objects.get_or_create(

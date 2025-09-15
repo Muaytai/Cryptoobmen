@@ -233,16 +233,48 @@ export const WalletPage: React.FC = () => {
             <div key={wallet.id} className={`bg-gray-800 rounded-xl p-6 shadow-lg flex flex-col justify-between ${itemClassName} hover:bg-gray-750 transition-colors`}>
               <div>
                 <div className="flex items-center mb-4">
-                  {wallet.currency.icon ? (
-                    <Image
-                      src={wallet.currency.icon.startsWith('http') ? wallet.currency.icon : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`}
-                      alt={wallet.currency.symbol}
-                      width={40}
-                      height={40}
-                      className="rounded-full mr-3"
-                      unoptimized
-                    />
-                  ) : (
+                  {wallet.currency.icon && wallet.currency.icon.trim() !== '' ? (() => {
+                    const iconUrl = wallet.currency.icon.startsWith('http') 
+                      ? wallet.currency.icon 
+                      : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`;
+                    
+                    // Проверяем валидность URL
+                    try {
+                      new URL(iconUrl);
+                      return (
+                        <>
+                          <Image
+                            src={iconUrl}
+                            alt={wallet.currency.symbol}
+                            width={40}
+                            height={40}
+                            className="rounded-full mr-3"
+                            unoptimized
+                            onError={(e) => {
+                              console.error('WalletPage: Ошибка загрузки иконки валюты:', iconUrl);
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const fallback = target.nextElementSibling as HTMLElement;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                          />
+                          <div 
+                            className="w-10 h-10 bg-gray-700 rounded-full mr-3 flex items-center justify-center font-bold text-gray-300"
+                            style={{ display: 'none' }}
+                          >
+                            {wallet.currency?.symbol?.slice(0, 2) || '??'}
+                          </div>
+                        </>
+                      );
+                    } catch (error) {
+                      console.error('WalletPage: Некорректный URL иконки валюты:', iconUrl, error);
+                      return (
+                        <div className="w-10 h-10 bg-gray-700 rounded-full mr-3 flex items-center justify-center font-bold text-gray-300">
+                          {wallet.currency?.symbol?.slice(0, 2) || '??'}
+                        </div>
+                      );
+                    }
+                  })() : (
                     <div className="w-10 h-10 bg-gray-700 rounded-full mr-3 flex items-center justify-center font-bold text-gray-300">
                       {wallet.currency?.symbol?.slice(0, 2) || '??'}
                     </div>

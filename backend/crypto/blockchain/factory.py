@@ -4,6 +4,7 @@ from .tron import TronService
 from .bitcoin import BitcoinService
 from .xrp import XRPService
 from .ethereum import EthereumService
+from .polygon import PolygonService
 
 def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainService:
     """
@@ -35,5 +36,7 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
         return EthereumService(network=eth_network)
     elif network_lower in ['xrp', 'ripple']:
         return XRPService(network='testnet')
+    elif network_lower in ['polygon', 'matic', 'pol']:
+        return PolygonService()  # Использует настройку из settings.py
     
     raise ValueError(f"Unsupported blockchain network: {network} or address format.")

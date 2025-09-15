@@ -1,0 +1,5 @@
+#!/bin/bash
+# Worker для фоновых задач (сканирование депозитов)
+cd /home/chaizer/projects/Cryptoobmen/backend
+source venv/bin/activate
+celery -A core worker -l info -Q low_priority -n low_priority_worker@%h --concurrency=4

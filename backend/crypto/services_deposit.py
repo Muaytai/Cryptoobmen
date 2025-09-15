@@ -29,7 +29,12 @@ class DepositService:
         Также возвращает qr_code (base64 PNG).
         """
         try:
-            currency = Cryptocurrency.objects.get(symbol__iexact=currency_symbol, network__iexact=network, is_active=True)
+            # 1. Найти валюту с учетом сети
+            currency = Cryptocurrency.objects.get(
+                symbol__iexact=currency_symbol, 
+                network__iexact=network,
+                is_active=True
+            )
 
             if currency.requires_memo:
                 # --- Логика для валют с MEMO ---

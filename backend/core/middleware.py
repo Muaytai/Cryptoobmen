@@ -80,6 +80,7 @@ class JWTCookieMiddleware:
         return response
 
     def _set_jwt_auth_header(self, request):
+        
         access_token_cookie_name = settings.SIMPLE_JWT['AUTH_COOKIE']
         access_token = request.COOKIES.get(access_token_cookie_name)
         if access_token:
