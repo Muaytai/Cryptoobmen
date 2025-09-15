@@ -100,7 +100,7 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
         
         # Возвращаем созданный вывод через основной сериализатор
         response_serializer = WithdrawalSerializer(withdrawal)
-        return Response({"message": "Запрос на вывод создан. Пожалуйста, проверьте свою электронную почту, чтобы подтвердить операцию."}, status=status.HTTP_201_CREATED)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):

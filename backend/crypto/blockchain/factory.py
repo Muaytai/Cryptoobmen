@@ -14,7 +14,7 @@ def get_blockchain_service(network: str) -> BaseBlockchainService:
     elif network_lower in ['btc', 'bitcoin']:
         return BitcoinService(network='mainnet') # or 'testnet'
     elif network_lower in ['sol', 'solana']:
-        return SolanaService(network='devnet')
+        return SolanaService(network='devnet')  # Возвращаем обратно на devnet
     # Add other services here, e.g., for Ethereum
     # elif network_lower in ['erc20', 'ethereum']:
     #     return EthereumService()
