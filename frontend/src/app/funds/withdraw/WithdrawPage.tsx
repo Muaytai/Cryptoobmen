@@ -162,9 +162,13 @@ export const WithdrawPage: React.FC = () => {
   // Безопасный поиск цены для выбранного кошелька
   let cryptoPrice = null;
   if (selectedWallet && selectedWallet.currency && Array.isArray(prices)) {
-    cryptoPrice = prices.find(
-      (p) => p.crypto_id === selectedWallet.currency.id
-    );
+    if (selectedWallet.currency.symbol === 'USDT') {
+      cryptoPrice = prices.find(p => p.symbol === 'USDT');
+    } else {
+      cryptoPrice = prices.find(
+        (p) => p.crypto_id === selectedWallet.currency.id
+      );
+    }
   }
 
   // Обновление расчета комиссии при изменении суммы или кошелька
@@ -172,7 +176,12 @@ export const WithdrawPage: React.FC = () => {
     if (selectedWalletId && amount && !isNaN(parseFloat(amount))) {
       const selectedWallet = wallets.find(w => w.id === selectedWalletId);
       if (selectedWallet) {
-        const cryptoPrice = prices.find(p => p.crypto_id === selectedWallet.currency.id);
+        let cryptoPrice = null;
+        if (selectedWallet.currency.symbol === 'USDT') {
+          cryptoPrice = prices.find(p => p.symbol === 'USDT');
+        } else {
+          cryptoPrice = prices.find(p => p.crypto_id === selectedWallet.currency.id);
+        }
         if (cryptoPrice) {
           // Расчет комиссии (примерно 0.1% от суммы вывода)
           const feePercentage = 0.1;

@@ -186,6 +186,9 @@ USDT_TRC20_CONTRACT_ADDRESS = os.getenv("USDT_TRC20_CONTRACT_ADDRESS", "TXLAQ63X
 # В реальном проекте этот ключ должен быть в .env файле
 BITCOIN_XPUB_KEY = os.getenv('BITCOIN_XPUB_KEY')
 
+# TRON HD Wallet Master Seed
+TRON_MASTER_SEED_HEX = os.getenv('TRON_MASTER_SEED_HEX')
+
 
 ROOT_URLCONF = 'core.urls'
 
@@ -524,6 +527,10 @@ CELERY_BEAT_SCHEDULE = {
     'process-pending-deposits-every-minute': {
         'task': 'crypto.tasks.process_pending_deposits',
         'schedule': 60.0,
+    },
+    'consolidate_funds_every_5_minutes': {
+        'task': 'crypto.tasks.consolidate_funds',
+        'schedule': 300.0,  # 300 секунд = 5 минут
     },
 }
 

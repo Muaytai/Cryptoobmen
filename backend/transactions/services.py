@@ -268,7 +268,8 @@ class WithdrawalService:
         with db_transaction.atomic():
             # Обновляем статус вывода и транзакции
             withdrawal.is_email_confirmed = True
-            withdrawal.save(update_fields=['is_email_confirmed'])
+            withdrawal.confirmed_by_admin = True  # АВТОМАТИЧЕСКИ подтверждаем без участия админа
+            withdrawal.save(update_fields=['is_email_confirmed', 'confirmed_by_admin'])
 
             withdrawal.transaction.status = 'pending' # Готов к обработке таском
             withdrawal.transaction.save(update_fields=['status'])
