@@ -6,9 +6,12 @@ from .blockchain.factory import get_blockchain_service
 import segno
 import io
 import base64
-from PIL import Image
+import logging
+
+logger = logging.getLogger(__name__)
 
 def generate_qr_code(data: str) -> str:
+    """Генерирует QR-код и возвращает его в виде base64 строки."""
     qr = segno.make(data)
     buf = io.BytesIO()
     qr.save(buf, kind='png', scale=6)
@@ -20,7 +23,9 @@ class DepositService:
     @staticmethod
     def get_deposit_info(user, currency_symbol, network):
         """
-        Возвращает адрес для пополнения: если требуется MEMO — системный адрес + memo, иначе уникальный адрес пользователя.
+        Возвращает адрес для пополнения.
+        - Для валют с MEMO: системный адрес + уникальный memo.
+        - Для валют без MEMO: уникальный адрес пользователя, который меняется после использования.
         Также возвращает qr_code (base64 PNG).
         """
         try:
@@ -32,11 +37,8 @@ class DepositService:
             )
 
             if currency.requires_memo:
-                # Логика для валют с MEMO
-                system_wallet = SystemWalletAddress.objects.select_related('currency').get(
-                    currency=currency,
-                    network__iexact=network
-                )
+                # --- Логика для валют с MEMO ---
+                system_wallet = SystemWalletAddress.objects.get(currency=currency)
                 address = system_wallet.address
                 if not address:
                     raise ValueError(f"Системный адрес для {currency_symbol} в сети {network} не настроен.")
@@ -44,63 +46,71 @@ class DepositService:
                 memo = DepositService._generate_unique_memo()
                 expires_at = timezone.now() + timedelta(hours=24)
                 UserDepositMemo.objects.create(
-                    user=user,
-                    currency=currency,
-                    network=network,
-                    memo=memo,
-                    expires_at=expires_at
+                    user=user, currency=currency, network=network, memo=memo, expires_at=expires_at
                 )
-                qr_data = f"{address}:{memo}"
+                
+                # Для некоторых сетей (например, XRP) QR-код может включать доп. параметры
+                qr_data = f"{address}?dt={memo}" if currency.symbol == 'XRP' else f"{address}:{memo}"
                 qr_code = generate_qr_code(qr_data)
                 return address, memo, qr_code
             else:
-                # Логика для валют без MEMO (например, Bitcoin)
+                # --- Логика для валют без MEMO (BTC, USDT TRC-20 и т.д.) ---
                 user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=currency)
-
-                # Проверяем, нужно ли пересоздать адрес
-                # Это нужно, если адреса нет, или если это testnet и адрес не в формате bech32 (не начинается с tb1)
-                is_testnet = network.lower() == 'testnet'
-                is_invalid_testnet_address = (
-                    is_testnet and
-                    currency.symbol == 'BTC' and
-                    user_wallet.deposit_address and
-                    not user_wallet.deposit_address.startswith('tb1')
-                )
-
-                if not user_wallet.deposit_address or is_invalid_testnet_address:
+                
+                blockchain_service = get_blockchain_service(currency.network or currency.symbol)
+                
+                # Проверяем, нужно ли генерировать новый адрес.
+                # Условия:
+                # 1. Адреса еще нет.
+                # 2. Адрес уже был использован (на него есть транзакции).
+                needs_new_address = False
+                if not user_wallet.deposit_address:
+                    needs_new_address = True
+                    logger.info(f"User {user.id} needs new {currency.symbol} address because none exists.")
+                else:
                     try:
-                        blockchain_service = get_blockchain_service(network)
-                        # Для BTC в testnet мы передаем специальный флаг, если это необходимо
+                        # Проверяем наличие транзакций на текущем адресе
+                        existing_txs = blockchain_service.get_transactions(address=user_wallet.deposit_address)
+                        if existing_txs:
+                            needs_new_address = True
+                            logger.info(f"User {user.id} needs new {currency.symbol} address because the old one has transactions.")
+                    except Exception as e:
+                        logger.error(f"Failed to check transactions for address {user_wallet.deposit_address}: {e}", exc_info=True)
+                        # В случае ошибки не генерируем новый адрес, чтобы избежать проблем
+                        needs_new_address = False
+
+                if needs_new_address:
+                    try:
                         new_address, private_key = blockchain_service.create_new_address(user_id=user.id)
                         if not new_address:
-                            raise ValueError(f"Сервис блокчейна для сети {network} не смог сгенерировать адрес.")
+                            raise ValueError(f"Blockchain service for {network} failed to generate an address.")
+                        
                         user_wallet.deposit_address = new_address
+                        # Мы должны шифровать приватный ключ перед сохранением!
+                        # Пока что сохраняем как есть, но это требует улучшения безопасности.
                         user_wallet.encrypted_private_key = private_key
                         user_wallet.save()
+                        logger.info(f"Successfully generated and saved new address for user {user.id}, currency {currency.symbol}.")
                     except Exception as e:
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.error(f"Критическая ошибка при генерации адреса для {currency.symbol} ({user.id}): {e}", exc_info=True)
-                        raise ValueError(f"Не удалось сгенерировать новый адрес. Ошибка: {e}")
+                        logger.error(f"Critical error generating address for {currency.symbol} (user {user.id}): {e}", exc_info=True)
+                        raise ValueError(f"Could not generate a new deposit address. Error: {e}")
                 
-                qr_code = generate_qr_code(user_wallet.deposit_address)
-                return user_wallet.deposit_address, None, qr_code
+                final_address = user_wallet.deposit_address
+                qr_code = generate_qr_code(final_address)
+                return final_address, None, qr_code
 
         except Cryptocurrency.DoesNotExist:
-            raise ValueError(f"Криптовалюта {currency_symbol} не найдена или неактивна.")
+            raise ValueError(f"Криптовалюта {currency_symbol} в сети {network} не найдена или неактивна.")
         except SystemWalletAddress.DoesNotExist:
-            raise ValueError(f"Системный кошелек для {currency_symbol} в сети {network} не найден или неактивен.")
+            raise ValueError(f"Системный кошелек для {currency_symbol} в сети {network} не найден.")
         except Exception as e:
-            return None, None, None
+            logger.error(f"Unexpected error in get_deposit_info for user {user.id}: {e}", exc_info=True)
+            raise
 
     @staticmethod
     def _generate_unique_memo():
-        """
-        Генерирует уникальный числовой Memo, которого еще нет в базе.
-        """
+        """Генерирует уникальный числовой Memo, которого еще нет в базе."""
         while True:
-            # Генерируем случайное 6-значное число
             memo = str(random.randint(100000, 999999))
-            # Проверяем, что такого Memo еще не существует
-            if not UserDepositMemo.objects.filter(memo=memo).exists():
+            if not UserDepositMemo.objects.filter(memo=memo, status='waiting').exists():
                 return memo

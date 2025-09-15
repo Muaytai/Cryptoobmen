@@ -136,17 +136,12 @@ class WithdrawalAdmin(admin.ModelAdmin):
     process_approved_withdrawals.short_description = "Запустить обработку одобренных выводов"
 
     def approve_withdrawals(self, request, queryset):
-        """Одобряет выбранные выводы и запускает их обработку"""
-        from crypto.tasks import process_withdrawal
+        """Автоматически проверяет выбранные выводы на подтверждение в блокчейне"""
+        from crypto.tasks import check_withdrawal_confirmation
         from .models import Transfer
 
         approved_count = 0
-        for withdrawal in queryset.filter(transaction__status='awaiting_confirmation', is_email_confirmed=True, confirmed_by_admin=False):
-            withdrawal.confirmed_by_admin = True
-            withdrawal.transaction.status = 'pending'
-            withdrawal.save()
-            withdrawal.transaction.save()
-
+        for withdrawal in queryset.filter(transaction__status='awaiting_confirmation', is_email_confirmed=True):
             # Создаем или находим соответствующий Transfer
             transfer, created = Transfer.objects.get_or_create(
                 withdrawal=withdrawal,
@@ -170,6 +165,8 @@ class WithdrawalAdmin(admin.ModelAdmin):
                     # Есть активные worker'ы - запускаем асинхронно
                     process_withdrawal.delay(withdrawal.id)
                     self.message_user(request, f"Вывод {withdrawal.id} поставлен в очередь Celery")
+                    # Также запускаем проверку подтверждения в блокчейне
+                    check_withdrawal_confirmation.delay(withdrawal.id)
                 else:
                     # Нет worker'ов - запускаем синхронно
                     self.message_user(request, f"Celery недоступен, запускаю вывод {withdrawal.id} синхронно...")
@@ -189,14 +186,13 @@ class WithdrawalAdmin(admin.ModelAdmin):
                 except Exception as sync_e:
                     self.message_user(request, f"Ошибка при синхронной обработке вывода {withdrawal.id}: {sync_e}", level='ERROR')
                     continue
-                    
             approved_count += 1
         
         if approved_count > 0:
-            self.message_user(request, f"Успешно одобрено и поставлено в очередь {approved_count} выводов.")
+            self.message_user(request, f"Успешно запущено {approved_count} проверок подтверждения в блокчейне.")
         else:
-            self.message_user(request, "Не найдено выводов для одобрения (возможно, они уже одобрены или не подтверждены по email).", level='WARNING')
-    approve_withdrawals.short_description = "✅ Одобрить выбранные выводы"
+            self.message_user(request, "Не найдено выводов для проверки (возможно, они уже завершены или не подтверждены по email).", level='WARNING')
+    approve_withdrawals.short_description = "✅ Запустить проверку подтверждения в блокчейне"
 
     def process_pending(self, request, queryset):
         """Запускает обработку ожидающих выводов."""

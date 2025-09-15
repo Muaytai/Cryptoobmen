@@ -259,37 +259,20 @@ class DepositViewSet(viewsets.ViewSet):
                     wallet.deposit_address = None
                     wallet.save()
 
-            if not wallet.deposit_address:
-                logger.info(f"get_deposit_address: generating new address for wallet {wallet.id}")
-                
-                # Генерируем адрес в зависимости от сети
-                if currency.network == 'TRC20':
-                    from crypto.blockchain.tron import TronService
-                    service = TronService()
-                    address, private_key = service.create_new_address()
-                    logger.info(f"get_deposit_address: generated TRC20 address {address} for wallet {wallet.id}")
-                elif currency.network == 'ERC20':
-                    from crypto.blockchain.ethereum import EthereumService
-                    service = EthereumService()
-                    address, private_key = service.create_new_address()
-                    logger.info(f"get_deposit_address: generated ERC20 address {address} for wallet {wallet.id}")
-                else:
-                    # Для других сетей используем TronService как fallback
-                    from crypto.blockchain.tron import TronService
-                    service = TronService()
-                    address, private_key = service.create_new_address()
-                    logger.info(f"get_deposit_address: generated fallback address {address} for wallet {wallet.id}")
-                
-                wallet.deposit_address = address
-                # Сохраняем приватный ключ (в продакшене здесь должно быть шифрование)
-                wallet.encrypted_private_key = private_key
-                wallet.save()
-                logger.info(f"get_deposit_address: saved new address {address} for wallet {wallet.id}")
-            else:
-                logger.info(f"get_deposit_address: using existing address {wallet.deposit_address} for wallet {wallet.id}")
+            # --- Новая унифицированная логика через DepositService ---
+            from crypto.services_deposit import DepositService
+
+            # DepositService сам обрабатывает создание/обновление адреса
+            address, memo, qr_code = DepositService.get_deposit_info(
+                user=user,
+                currency_symbol=currency.symbol,
+                network=currency.network
+            )
 
             return Response({
-                'address': wallet.deposit_address,
+                'address': address,
+                'memo': memo,
+                'qr_code': qr_code,
                 'currency_symbol': currency.symbol,
                 'network': currency.network
             }, status=status.HTTP_200_OK)
