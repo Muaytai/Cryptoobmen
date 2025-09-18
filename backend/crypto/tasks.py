@@ -275,6 +275,8 @@ def process_withdrawal(self, transfer_id: int) -> str:
             try:
                 network = withdrawal.transaction.crypto.network
                 currency = withdrawal.transaction.crypto
+                
+                logger.info(f"[process_withdrawal] Обработка вывода {currency.symbol} на сумму {transfer.amount}")
 
                 system_wallet = UserWallet.objects.filter(
                     currency=currency,
@@ -282,13 +284,27 @@ def process_withdrawal(self, transfer_id: int) -> str:
                     is_active=True
                 ).first()
 
-                if not system_wallet or not system_wallet.encrypted_private_key:
-                    raise Exception(f"Активный системный кошелек для {currency.symbol} ({network}) не найден или не имеет приватного ключа.")
+                if not system_wallet:
+                    raise Exception(f"Системный кошелек для {currency.symbol} ({network}) не найден")
+                    
+                if not system_wallet.encrypted_private_key:
+                    raise Exception(f"У системного кошелька {currency.symbol} ({network}) отсутствует приватный ключ")
+                    
+                logger.info(f"[process_withdrawal] Системный кошелек найден: баланс {system_wallet.balance} {currency.symbol}")
+
+                # Дополнительная проверка баланса системного кошелька для Solana
+                if currency.symbol.upper() == 'SOL':
+                    min_required = transfer.amount + Decimal('0.01')  # Запас на комиссии
+                    if system_wallet.balance < min_required:
+                        logger.error(f"[process_withdrawal] Недостаточно средств на системном кошельке SOL: нужно {min_required}, доступно {system_wallet.balance}")
+                        raise Exception(f"Недостаточно средств на системном кошельке SOL. Требуется пополнение.")
 
                 priv_key = system_wallet.encrypted_private_key
                 to_address = withdrawal.destination_address
                 amount = transfer.amount
                 memo = f"withdrawal_{withdrawal.id}_{transfer.id}"
+                
+                logger.info(f"[process_withdrawal] Отправка {amount} {currency.symbol} на адрес {to_address}")
 
                 service = get_blockchain_service(network)
                 tx_hash = service.send_transaction(priv_key, to_address, amount, memo)
@@ -308,6 +324,10 @@ def process_withdrawal(self, transfer_id: int) -> str:
                 status = Transfer.Status.FAILED
                 withdrawal.transaction.status = 'failed'
                 withdrawal.transaction.save(update_fields=["status"])
+                # Обновляем статус transfer тоже
+                transfer.status = Transfer.Status.FAILED
+                transfer.completed_at = timezone.now()
+                transfer.save(update_fields=["status", "completed_at"])
                 raise
 
             transfer.tx_hash = tx_hash
@@ -318,6 +338,15 @@ def process_withdrawal(self, transfer_id: int) -> str:
 
     except Exception as e:
         logger.error(f"Critical error in process_withdrawal for transfer {transfer_id}: {e}", exc_info=True)
+        # Убедимся, что статус transfer обновлен даже в случае критической ошибки
+        try:
+            transfer = Transfer.objects.get(id=transfer_id)
+            if transfer.status == Transfer.Status.PENDING:
+                transfer.status = Transfer.Status.FAILED
+                transfer.completed_at = timezone.now()
+                transfer.save(update_fields=["status", "completed_at"])
+        except Transfer.DoesNotExist:
+            pass
         return "error:transaction_failed"
 
     logger.info("[process_withdrawal] transfer %s completed -> %s", transfer.id, tx_hash)

@@ -24,7 +24,7 @@ from .base import BaseBlockchainService
 logger = logging.getLogger(__name__)
 
 # Получаем API ключ из переменной окружения
-HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '97e0bbe6-80d0-466d-88bc-049811db2bfb')
+HELIUS_API_KEY = os.getenv('HELIUS_API_KEY')
 
 RPC_ENDPOINTS = {
     "mainnet": "https://api.mainnet-beta.solana.com",
@@ -130,15 +130,38 @@ class SolanaService(BaseBlockchainService):
 
     def send_transaction(self, private_key_input: str, to_address: str, amount: Decimal, memo: str = "") -> str:
         try:
+            # Валидация адреса получателя
+            try:
+                recipient = Pubkey.from_string(to_address)
+            except Exception as e:
+                logger.error(f"[send_transaction] Неверный формат адреса получателя: {to_address}")
+                raise ValueError(f"Неверный адрес получателя: {to_address}")
+
             secret_key_bytes = self._parse_private_key(private_key_input)
             sender = Keypair.from_bytes(secret_key_bytes)
-            recipient = Pubkey.from_string(to_address)
+            sender_address = str(sender.pubkey())
             lamports = int(amount * 1_000_000_000)
+
+            logger.info(f"[send_transaction] Отправка {amount} SOL ({lamports} lamports) с {sender_address} на {to_address}")
+
+            # Проверяем баланс отправителя
+            sender_balance = self.get_balance(sender_address)
+            logger.info(f"[send_transaction] Баланс отправителя: {sender_balance} SOL")
+            
+            # Рассчитываем минимальную комиссию для транзакции (примерно 0.000005 SOL)
+            min_fee = Decimal('0.000005')
+            total_needed = amount + min_fee
+            
+            if sender_balance < total_needed:
+                error_msg = f"Недостаточно средств на системном кошельке Solana. Нужно: {total_needed} SOL, доступно: {sender_balance} SOL"
+                logger.error(f"[send_transaction] {error_msg}")
+                raise Exception(error_msg)
 
             # Получаем blockhash один раз
             try:
                 recent_blockhash_resp = self.client.get_latest_blockhash()
                 recent_blockhash = recent_blockhash_resp.value.blockhash
+                logger.info(f"[send_transaction] Получен blockhash: {recent_blockhash}")
             except (Timeout, ConnectionError, RPCException) as e:
                 logger.error(f"[send_transaction] Не удалось получить blockhash: {e}")
                 raise Exception("RPC timeout: не удалось подключиться к Solana сети")
@@ -152,14 +175,6 @@ class SolanaService(BaseBlockchainService):
                 )
             )
 
-
-            # # 2. Собираем message (позиционно!)
-            # message = Message.new_with_blockhash(
-            #     [transfer_instruction],  # ✅ Список инструкций
-            #     sender.pubkey(),  # ✅ Payer
-            #     recent_blockhash  # ✅ Blockhash
-            # )
-
             # 2. Собираем message
             message = MessageV0.try_compile(
                 payer=sender.pubkey(),
@@ -169,24 +184,94 @@ class SolanaService(BaseBlockchainService):
             )
 
             # 3. Создаём транзакцию и подписываем
-            # txn = txn = Transaction(message=message, recent_blockhash=recent_blockhash, from_keypairs=sender.pubkey())
-            # txn.sign(*[sender])  # Подписываем приватным ключом отправителя
-
             transaction = VersionedTransaction(message, [sender])
+            logger.info(f"[send_transaction] Транзакция создана и подписана")
 
-            # Отправляем
+            # Отправляем с дополнительными опциями для повышения надёжности
             try:
-                response = self.client.send_transaction(transaction)
+                # Используем TxOpts для настройки параметров отправки
+                opts = TxOpts(
+                    skip_preflight=False,
+                    preflight_commitment="processed",
+                    max_retries=5
+                )
+                
+                response = self.client.send_transaction(transaction, opts)
                 tx_hash = str(response.value)
-                logger.info(f"[send_transaction] Успешно отправлено: {tx_hash}")
+                logger.info(f"[send_transaction] Транзакция отправлена: {tx_hash}")
+                
+                # Ожидаем подтверждения транзакции с увеличенным таймаутом
+                confirmation = self._wait_for_confirmation(tx_hash, max_retries=45, retry_delay=3)
+                if not confirmation:
+                    logger.error(f"[send_transaction] Транзакция не подтверждена: {tx_hash}")
+                    # Проверяем ещё раз через некоторое время
+                    from time import sleep
+                    sleep(10)
+                    final_confirmation = self._wait_for_confirmation(tx_hash, max_retries=10, retry_delay=2)
+                    if not final_confirmation:
+                        raise Exception(f"Транзакция {tx_hash} не подтверждена в сети Solana в течение 3 минут")
+                
+                logger.info(f"[send_transaction] Транзакция успешно подтверждена: {tx_hash}")
                 return tx_hash
             except (Timeout, ConnectionError) as e:
-                logger.error(f"[send_transaction] Отправка транзакции не удалась: {e}")
-                raise Exception("Таймаут при отправке транзакции")
+                logger.error(f"[send_transaction] Отправка транзакции не удалась (таймаут): {e}")
+                raise Exception(f"Таймаут при отправке транзакции Solana: {e}")
+            except Exception as e:
+                logger.error(f"[send_transaction] Ошибка при отправке транзакции: {e}")
+                raise Exception(f"Ошибка отправки транзакции Solana: {e}")
 
         except Exception as e:
             logger.error(f"[send_transaction] Ошибка: {e}", exc_info=True)
             raise
+
+    def _wait_for_confirmation(self, tx_hash: str, max_retries: int = 30, retry_delay: int = 2) -> bool:
+        """
+        Ожидает подтверждения транзакции в сети Solana
+        """
+        try:
+            from time import sleep
+            from solders.signature import Signature
+            
+            signature = Signature.from_string(tx_hash)
+            
+            for attempt in range(max_retries):
+                try:
+                    # Получаем статус транзакции с поддержкой версий транзакций
+                    tx_response = self.client.get_transaction(
+                        signature, 
+                        max_supported_transaction_version=0,
+                        encoding="jsonParsed"
+                    )
+                    if tx_response.value is not None:
+                        # Проверяем статус транзакции
+                        meta = getattr(tx_response.value.transaction, "meta", None)
+                        if meta is not None:
+                            if hasattr(meta, 'err') and meta.err is not None:
+                                logger.error(f"[wait_for_confirmation] Транзакция завершена с ошибкой: {meta.err}")
+                                return False
+                        return True  # Транзакция найдена и не имеет ошибок
+                    
+                    sleep(retry_delay)
+                except Exception as e:
+                    logger.warning(f"[wait_for_confirmation] Попытка {attempt + 1}: Ошибка при проверке статуса: {e}")
+                    sleep(retry_delay)
+            
+            logger.error(f"[wait_for_confirmation] Транзакция не подтверждена после {max_retries} попыток")
+            return False
+            
+        except Exception as e:
+            logger.error(f"[wait_for_confirmation] Ошибка при ожидании подтверждения: {e}")
+            return False
+
+    def validate_address(self, address: str) -> bool:
+        """
+        Проверяет валидность Solana адреса
+        """
+        try:
+            Pubkey.from_string(address)
+            return True
+        except Exception:
+            return False
 
     def _parse_private_key(self, key_str: str) -> bytes:
         """

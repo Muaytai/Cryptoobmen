@@ -162,6 +162,9 @@ REST_FRAMEWORK = {
 # TRONGrid API Key
 TRONGRID_API_KEY = os.getenv('TRONGRID_API_KEY')
 
+# Helius API Key
+HELIUS_API_KEY = os.getenv('HELIUS_API_KEY')
+
 # TRON Network configuration
 TRON_NETWORK = os.getenv('TRON_NETWORK', 'mainnet') # По умолчанию mainnet
 
