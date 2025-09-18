@@ -184,10 +184,27 @@ class WithdrawalCreateSerializer(serializers.Serializer):
     Сериализатор для создания запроса на вывод средств.
     Использует WithdrawalService для основной логики.
     """
-    crypto_id = serializers.IntegerField()
+    wallet = serializers.IntegerField(required=False)  # ID кошелька
+    crypto_id = serializers.IntegerField(required=False)  # ID криптовалюты
     amount = serializers.DecimalField(max_digits=24, decimal_places=8)
     destination_address = serializers.CharField(max_length=255)
     memo = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate(self, data):
+        """Валидация данных"""
+        user = self.context['request'].user
+        
+        # Определяем crypto_id из wallet или напрямую
+        if 'wallet' in data and data['wallet']:
+            try:
+                wallet = UserWallet.objects.get(id=data['wallet'], user=user, is_active=True)
+                data['crypto_id'] = wallet.currency.id
+            except UserWallet.DoesNotExist:
+                raise serializers.ValidationError("Кошелек не найден или неактивен")
+        elif 'crypto_id' not in data or not data['crypto_id']:
+            raise serializers.ValidationError("Необходимо указать wallet или crypto_id")
+        
+        return data
 
     def create(self, validated_data):
         """

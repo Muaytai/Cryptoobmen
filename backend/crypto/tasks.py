@@ -170,6 +170,9 @@ def check_blockchain_deposits():
     # 2. Теперь обрабатываем валюты без MEMO/tag по уникальным адресам пользователей
     currencies_no_memo = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
     for currency in currencies_no_memo:
+        # Явно логируем поддержку Solana
+        if currency.symbol.lower() in ["sol", "solana"]:
+            logger.info(f"[Solana][DEPOSIT] Обработка депозитов для Solana: network={currency.network}, symbol={currency.symbol}")
         user_wallets = UserWallet.objects.filter(currency=currency, is_system_wallet=False, deposit_address__isnull=False).exclude(deposit_address='')
         for user_wallet in user_wallets:
             address = user_wallet.deposit_address
@@ -317,6 +320,7 @@ def check_blockchain_deposits():
                 except Exception as e:
                     logger.error(f"[no-memo] Failed to send WebSocket signal for address {address}: {e}")
 
+
                 # Ротация депозитного адреса после успешного зачисления
                 try:
                     new_address, new_private_key = service.create_new_address(user_id=user_wallet.user.id)
@@ -344,6 +348,7 @@ def check_blockchain_deposits():
                     logger.info(f"[no-memo] Rotated deposit address for user {user_wallet.user_id}: {address} -> {new_address}")
                 except Exception as e:
                     logger.error(f"[no-memo] Failed to rotate deposit address for user {user_wallet.user_id}: {e}")
+
 
     # --- XRP Ledger ---
     xrp_wallets = SystemWalletAddress.objects.filter(network__iexact="XRP", currency__is_active=True)
@@ -445,6 +450,7 @@ def check_blockchain_deposits():
         except Exception as e:
             logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 
+
     logger.info(f"Finished deposit check. Processed {processed} transactions.")
     
     # Всегда запускаем консолидацию средств (даже если новых депозитов нет)
@@ -480,6 +486,8 @@ def check_blockchain_deposits():
     return f"Готово, обработано: {processed}"
 
 
+
+
 @shared_task(bind=True, name='crypto.tasks.process_withdrawal')
 def process_withdrawal(self, withdrawal_id: int) -> str:
     logger.info(f"--- Starting processing for withdrawal_id: {withdrawal_id} ---")
@@ -493,6 +501,7 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
     except Withdrawal.DoesNotExist:
         logger.error(f"Withdrawal with id {withdrawal_id} not found. The task will not be executed.")
         return f"error:not_found"
+
 
     try:
         # Используем одну транзакцию БД для всех проверок и начальных изменений
@@ -523,6 +532,7 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
             user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
             if user_wallet.balance < total_amount:
                 withdrawal.transaction.status = 'failed'
+
                 withdrawal.transaction.notes = "Insufficient funds at the time of processing."
                 withdrawal.transaction.save()
                 logger.error(f"Insufficient funds for withdrawal {withdrawal.id}. Balance: {user_wallet.balance}, required: {total_amount}")
@@ -557,6 +567,7 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
         
         if not system_wallet.encrypted_private_key:
             raise Exception(f"System wallet for {crypto.symbol} has no private key.")
+
 
         service = get_blockchain_service(network)
         
@@ -600,6 +611,7 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
         return f"success:sent_to_network:{tx_hash}"
 
     except Exception as e:
+
         logger.error(f"!!! Caught exception for withdrawal {withdrawal_id} !!!", exc_info=True)
         logger.error(f"Transaction failed for withdrawal {withdrawal_id}: {e}", exc_info=True)
         if withdrawal:
@@ -624,6 +636,7 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
                     withdrawal_to_fail.transaction.status = 'failed'
                     withdrawal_to_fail.transaction.notes = f"Transaction error: {str(e)}. Refund failed due to inconsistent locked balance."
                     withdrawal_to_fail.transaction.save()
+
 
         return f"error:transaction_failed - {str(e)}"
 

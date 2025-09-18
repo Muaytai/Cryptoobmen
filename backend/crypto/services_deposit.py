@@ -57,6 +57,7 @@ class DepositService:
                 # --- Логика для валют без MEMO (BTC, USDT TRC-20 и т.д.) ---
                 user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=currency)
                 
+
                 blockchain_service = get_blockchain_service(currency.network or currency.symbol)
                 
                 # Проверяем, нужно ли генерировать новый адрес.
@@ -64,6 +65,7 @@ class DepositService:
                 # 1. Адреса еще нет.
                 # 2. Адрес уже был использован (на него есть транзакции).
                 needs_new_address = False
+
                 if not user_wallet.deposit_address:
                     needs_new_address = True
                     logger.info(f"User {user.id} needs new {currency.symbol} address because none exists.")
