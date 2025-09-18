@@ -8,6 +8,7 @@ import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
 import styles from './Register.module.css';
 import {Input} from "@/components/ui/Input";
 import InputCheckbox from "@/components/modalWindows/InputCheckbox";
+import ReCaptcha from '@/components/ReCaptcha';
 
 export default function RegisterForm() {
     const router = useRouter();
@@ -24,6 +25,7 @@ export default function RegisterForm() {
     const [passwordError, setPasswordError] = useState('');
     const [networkError, setNetworkError] = useState('');
     const [registrationMessage, setRegistrationMessage] = useState('');
+    const [recaptchaToken, setRecaptchaToken] = useState('');
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const {name, value, type, checked} = e.target;
@@ -56,6 +58,12 @@ export default function RegisterForm() {
             setPasswordError('Необходимо согласиться с условиями');
             return;
         }
+        
+        // Проверяем наличие токена reCAPTCHA
+        if (!recaptchaToken) {
+            setPasswordError('Пожалуйста, дождитесь проверки reCAPTCHA');
+            return;
+        }
 
         // Сбрасываем все ошибки перед отправкой
         setPasswordError('');
@@ -69,6 +77,7 @@ export default function RegisterForm() {
                 username: formData.username,
                 password1: formData.password,
                 password2: formData.confirmPassword,
+                recaptcha_token: recaptchaToken,
             });
 
             setRegistrationMessage('Регистрация успешно завершена! Пожалуйста, проверьте вашу почту для подтверждения email. После подтверждения вы сможете войти в систему.');
@@ -206,6 +215,16 @@ export default function RegisterForm() {
                                     {showConfirm ? <FaEyeSlash/> : <FaEye/>}
                                 </button>
                             </div>
+                            
+                            {/* Компонент reCAPTCHA */}
+                            <div className="mb-4">
+                                <ReCaptcha
+                                    siteKey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}
+                                    onVerify={setRecaptchaToken}
+                                    action="register"
+                                />
+                            </div>
+                            
                             <div className={styles.checkboxRow}>
                                 <InputCheckbox
                                     idInput="agree"
@@ -233,7 +252,7 @@ export default function RegisterForm() {
                             <button
                                 type="submit"
                                 className={styles.submitBtn}
-                                disabled={isLoading}
+                                disabled={isLoading || !recaptchaToken}
                             >
                                 {isLoading ? 'Загрузка...' : 'Зарегистрироваться'}
                             </button>

@@ -11,6 +11,8 @@ export const Profile = () => {
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const router = useRouter();
 
+
+
   useEffect(() => {
     console.log(`[Profile useEffect] Running. authLoading: ${authLoading}, isAuthenticated: ${isAuthenticated}`);
     if (!authLoading) {
@@ -19,11 +21,19 @@ export const Profile = () => {
         router.push('/login?from=profile');
       } else {
         console.log(`[Profile useEffect] Condition met: !authLoading (${!authLoading}) && isAuthenticated (${isAuthenticated}). User is authenticated. No redirect.`);
+        console.log('[Profile useEffect] Данные пользователя:', { 
+          email: user?.email, 
+          firstName: user?.first_name, 
+          lastName: user?.last_name,
+          address: user?.address,
+          birthDate: user?.date_of_birth,
+          fullName: user?.full_name
+        });
       }
     } else {
       console.log(`[Profile useEffect] authLoading is true. Waiting for auth check to complete.`);
     }
-  }, [isAuthenticated, authLoading, router]);
+  }, [isAuthenticated, authLoading, router, user]);
 
   console.log(`[Profile Render] authLoading: ${authLoading}, isAuthenticated: ${isAuthenticated}, user: ${user ? user.email : 'null'}`);
 
@@ -42,6 +52,13 @@ export const Profile = () => {
   }
 
   console.log("[Profile Render] Proceeding to render profile content.");
+  console.log("[Profile Render] Данные для карточек:", {
+    firstName: user?.first_name,
+    lastName: user?.last_name,
+    address: user?.address,
+    birthDate: user?.date_of_birth,
+    fullName: user?.full_name
+  });
 
   const userEmail = user.email || "N/A";
   const userName = user.username || user.first_name || "Пользователь";
@@ -203,6 +220,70 @@ export const Profile = () => {
               <div className="flex items-center gap-3">
                 <span className="text-xl font-bold">0</span>
                 <span className="text-sm text-gray-400">Заработано: 0.00 USDT</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Дополнительная информация о пользователе */}
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="bg-black/30 rounded-lg p-5">
+            <h3 className="text-lg font-medium mb-4">Личные данные</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Имя</span>
+                <span>{user.first_name || 'Не указано'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Фамилия</span>
+                <span>{user.last_name || 'Не указано'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Полное имя</span>
+                <span>{user.full_name || 'Не указано'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Телефон</span>
+                <span>{user.phone_number || 'Не указано'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-black/30 rounded-lg p-5">
+            <h3 className="text-lg font-medium mb-4">Адрес</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Адрес проживания</span>
+                <span>{user.address || 'Не указано'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-black/30 rounded-lg p-5">
+            <h3 className="text-lg font-medium mb-4">Дата рождения</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Дата рождения</span>
+                <span>{user.date_of_birth ? new Date(user.date_of_birth).toLocaleDateString('ru-RU') : 'Не указано'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Возраст</span>
+                <span>
+                  {user.date_of_birth ? 
+                    `${Math.floor((new Date().getTime() - new Date(user.date_of_birth).getTime()) / (1000 * 60 * 60 * 24 * 365.25))} лет` : 
+                    'Не указано'
+                  }
+                </span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-gray-400">День недели</span>
+                <span>
+                  {user.date_of_birth ? 
+                    new Date(user.date_of_birth).toLocaleDateString('ru-RU', { weekday: 'long' }) : 
+                    'Не указано'
+                  }
+                </span>
               </div>
             </div>
           </div>

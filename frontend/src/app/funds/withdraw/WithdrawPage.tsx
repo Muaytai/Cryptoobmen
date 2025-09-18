@@ -187,18 +187,15 @@ export const WithdrawPage: React.FC = () => {
   // Безопасный поиск цены для выбранного кошелька
   let cryptoPrice = null;
   if (selectedWallet && selectedWallet.currency && Array.isArray(prices)) {
-    cryptoPrice = prices.find(
-      (p) => p.crypto_id === selectedWallet.currency.id
-    );
 
-    // Отладочная информация
-    console.log("WithdrawPage Debug:", {
-      selectedWallet: selectedWallet?.currency,
-      selectedWalletId: selectedWallet?.currency?.id,
-      prices: prices,
-      cryptoPrice: cryptoPrice,
-      loading: loading,
-    });
+    if (selectedWallet.currency.symbol === 'USDT') {
+      cryptoPrice = prices.find(p => p.symbol === 'USDT');
+    } else {
+      cryptoPrice = prices.find(
+        (p) => p.crypto_id === selectedWallet.currency.id
+      );
+    }
+
   }
 
   // Обновление расчета комиссии при изменении суммы или кошелька
@@ -206,9 +203,14 @@ export const WithdrawPage: React.FC = () => {
     if (selectedWalletId && amount && !isNaN(parseFloat(amount))) {
       const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
       if (selectedWallet) {
-        const cryptoPrice = prices.find(
-          (p) => p.crypto_id === selectedWallet.currency.id
-        );
+
+        let cryptoPrice = null;
+        if (selectedWallet.currency.symbol === 'USDT') {
+          cryptoPrice = prices.find(p => p.symbol === 'USDT');
+        } else {
+          cryptoPrice = prices.find(p => p.crypto_id === selectedWallet.currency.id);
+        }
+
         if (cryptoPrice) {
           // Расчет комиссии (примерно 0.1% от суммы вывода)
           const feePercentage = 0.1;
@@ -276,10 +278,8 @@ export const WithdrawPage: React.FC = () => {
         });
 
         // Запрашиваем у API адрес для пополнения, чтобы узнать requires_memo (используем тот же эндпоинт, что и для депозита)
-        const resp = await api.get(
-          `/crypto/deposit-info/?currency=${selectedWallet.currency.symbol}&network=${selectedWallet.currency.network}`
-        );
-        console.log("Deposit info response:", resp);
+        const resp = await api.get(`/crypto/withdraw-info/?currency=${selectedWallet.currency.symbol}&network=${selectedWallet.currency.network}`);
+
         setRequiresMemo(!!resp.requires_memo);
       } catch (error) {
         console.error("Error fetching requires_memo:", error);
@@ -421,14 +421,11 @@ export const WithdrawPage: React.FC = () => {
               d="M5 13l4 4L19 7"
             />
           </svg>
-          <h2 className="text-2xl font-bold mb-4">
-            Запрос на вывод успешно создан!
-          </h2>
-          <p className="mb-6">Идентификатор операции: {withdrawalId}</p>
+
+          <h2 className="text-2xl font-bold mb-4">Запрос на вывод успешно создан!</h2>
           <p className="mb-6 text-sm text-gray-400">
-            Ваш запрос на вывод средств принят в обработку. Обычно вывод
-            занимает от 15 минут до нескольких часов. Вы можете отслеживать
-            статус операции в разделе "История транзакций".
+            зайдите на почту email вашего пользователя для подтверждения транзакции вывода
+
           </p>
           <div className="flex flex-col space-y-3">
             <Link
@@ -554,24 +551,50 @@ export const WithdrawPage: React.FC = () => {
                     } transition`}
                   >
                     <div className="flex-shrink-0 mr-3">
-                      {wallet.currency.icon ? (
-                        <Image
-                          src={
-                            wallet.currency.icon.startsWith("http")
-                              ? wallet.currency.icon
-                              : `${(
-                                  process.env.NEXT_PUBLIC_API_URL || ""
-                                ).replace(/\/api\/?$/, "")}${
-                                  wallet.currency.icon
-                                }`
-                          }
-                          alt={wallet.currency.symbol}
-                          width={32}
-                          height={32}
-                          className="rounded-full"
-                          unoptimized
-                        />
-                      ) : (
+
+                      {wallet.currency.icon && wallet.currency.icon.trim() !== '' ? (() => {
+                        const iconUrl = wallet.currency.icon.startsWith('http') 
+                          ? wallet.currency.icon 
+                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`;
+                        
+                        // Проверяем валидность URL
+                        try {
+                          new URL(iconUrl);
+                          return (
+                            <>
+                              <Image
+                                src={iconUrl}
+                                alt={wallet.currency.symbol}
+                                width={32}
+                                height={32}
+                                className="rounded-full"
+                                unoptimized
+                                onError={(e) => {
+                                  console.error('WithdrawPage: Ошибка загрузки иконки валюты:', iconUrl);
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const fallback = target.nextElementSibling as HTMLElement;
+                                  if (fallback) fallback.style.display = 'flex';
+                                }}
+                              />
+                              <div 
+                                className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold"
+                                style={{ display: 'none' }}
+                              >
+                                {wallet.currency.symbol.slice(0, 2)}
+                              </div>
+                            </>
+                          );
+                        } catch (error) {
+                          console.error('WithdrawPage: Некорректный URL иконки валюты:', iconUrl, error);
+                          return (
+                            <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
+                              {wallet.currency.symbol.slice(0, 2)}
+                            </div>
+                          );
+                        }
+                      })() : (
+
                         <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
                           {wallet.currency.symbol.slice(0, 2)}
                         </div>

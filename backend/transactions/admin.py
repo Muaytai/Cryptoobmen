@@ -59,11 +59,11 @@ class DepositAdmin(admin.ModelAdmin):
 
 @admin.register(Withdrawal)
 class WithdrawalAdmin(admin.ModelAdmin):
-    list_display = ('transaction', 'user', 'wallet_currency_display', 'destination_address', 'get_status', 'is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin')
-    list_filter = ('is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin', 'wallet__currency__symbol', 'transaction__status')
+    list_display = ('transaction', 'user', 'wallet_currency_display', 'destination_address', 'get_status', 'is_email_confirmed', 'confirmed_by_admin')
+    list_filter = ('is_email_confirmed', 'confirmed_by_admin', 'wallet__currency__symbol', 'transaction__status')
     search_fields = ('user__email', 'user__username', 'transaction__transaction_id', 'destination_address', 'wallet__currency__symbol')
-    readonly_fields = ('transaction', 'user', 'wallet', 'destination_address', 'is_2fa_confirmed', 'is_email_confirmed', 'get_transaction_status', 'change_status')
-    actions = ['cancel_withdrawals']
+    readonly_fields = ('transaction', 'user', 'wallet', 'destination_address', 'is_email_confirmed', 'get_transaction_status', 'change_status')
+    actions = ['approve_withdrawals', 'cancel_withdrawals', 'process_approved_withdrawals']
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -85,7 +85,7 @@ class WithdrawalAdmin(admin.ModelAdmin):
                     'fields': ('change_status',),
                 }),
                 ('Confirmation', {
-                    'fields': ('is_2fa_confirmed', 'is_email_confirmed', 'confirmed_by_admin', 'rejected_reason', 'confirmation_date')
+                    'fields': ('is_email_confirmed', 'confirmed_by_admin', 'rejected_reason', 'confirmation_date')
                 }),
             )
         return super().get_fieldsets(request, obj)
@@ -106,6 +106,100 @@ class WithdrawalAdmin(admin.ModelAdmin):
                 withdrawal.transaction.status = 'cancelled'
                 withdrawal.transaction.save()
     cancel_withdrawals.short_description = "Отменить выбранные выводы средств"
+
+    def process_approved_withdrawals(self, request, queryset):
+        """Запускает обработку уже одобренных выводов"""
+        from crypto.tasks import process_withdrawal
+        
+        processed_count = 0
+        for withdrawal in queryset.filter(
+            transaction__status='pending', 
+            is_email_confirmed=True, 
+            confirmed_by_admin=True
+        ):
+            # Для уже одобренных выводов всегда запускаем синхронно из админки
+            self.message_user(request, f"Запускаю обработку вывода {withdrawal.id} синхронно из админки...")
+            try:
+                result = process_withdrawal(withdrawal.id)
+                self.message_user(request, f"Вывод {withdrawal.id} обработан: {result}")
+            except Exception as e:
+                self.message_user(request, f"Ошибка при обработке вывода {withdrawal.id}: {e}", level='ERROR')
+                continue
+                    
+            processed_count += 1
+            
+        if processed_count > 0:
+            self.message_user(request, f"Запущена обработка {processed_count} выводов.")
+        else:
+            self.message_user(request, "Не найдено выводов для обработки (должны быть: pending, email_confirmed=True, confirmed_by_admin=True).", level='WARNING')
+    
+    process_approved_withdrawals.short_description = "Запустить обработку одобренных выводов"
+
+    def approve_withdrawals(self, request, queryset):
+        """Автоматически проверяет выбранные выводы на подтверждение в блокчейне"""
+        from crypto.tasks import check_withdrawal_confirmation
+        from .models import Transfer
+
+        approved_count = 0
+        for withdrawal in queryset.filter(transaction__status='awaiting_confirmation', is_email_confirmed=True):
+            # Создаем или находим соответствующий Transfer
+            transfer, created = Transfer.objects.get_or_create(
+                withdrawal=withdrawal,
+                defaults={
+                    'user': withdrawal.user,
+                    'amount': withdrawal.transaction.amount,
+                    'status': Transfer.Status.PENDING,
+                    'type': 'out'
+                }
+            )
+            if created:
+                self.message_user(request, f"Создан новый Transfer {transfer.id} для вывода {withdrawal.id}")
+
+            # Проверяем доступность Celery worker'ов перед запуском
+            try:
+                from celery import current_app
+                inspect = current_app.control.inspect()
+                active_workers = inspect.active()
+                
+                if active_workers and any(active_workers.values()):
+                    # Есть активные worker'ы - запускаем асинхронно
+                    process_withdrawal.delay(withdrawal.id)
+                    self.message_user(request, f"Вывод {withdrawal.id} поставлен в очередь Celery")
+                    # Также запускаем проверку подтверждения в блокчейне
+                    check_withdrawal_confirmation.delay(withdrawal.id)
+                else:
+                    # Нет worker'ов - запускаем синхронно
+                    self.message_user(request, f"Celery недоступен, запускаю вывод {withdrawal.id} синхронно...")
+                    try:
+                        result = process_withdrawal(withdrawal.id)
+                        self.message_user(request, f"Вывод {withdrawal.id} обработан синхронно: {result}")
+                    except Exception as e:
+                        self.message_user(request, f"Ошибка при обработке вывода {withdrawal.id}: {e}", level='ERROR')
+                        continue
+                        
+            except Exception as e:
+                # Если проблемы с Celery, запускаем синхронно
+                self.message_user(request, f"Ошибка Celery ({e}), запускаю вывод {withdrawal.id} синхронно...")
+                try:
+                    result = process_withdrawal(withdrawal.id)
+                    self.message_user(request, f"Вывод {withdrawal.id} обработан синхронно: {result}")
+                except Exception as sync_e:
+                    self.message_user(request, f"Ошибка при синхронной обработке вывода {withdrawal.id}: {sync_e}", level='ERROR')
+                    continue
+            approved_count += 1
+        
+        if approved_count > 0:
+            self.message_user(request, f"Успешно запущено {approved_count} проверок подтверждения в блокчейне.")
+        else:
+            self.message_user(request, "Не найдено выводов для проверки (возможно, они уже завершены или не подтверждены по email).", level='WARNING')
+    approve_withdrawals.short_description = "✅ Запустить проверку подтверждения в блокчейне"
+
+    def process_pending(self, request, queryset):
+        """Запускает обработку ожидающих выводов."""
+        from crypto.tasks import process_pending_withdrawals
+        process_pending_withdrawals.delay()
+        self.message_user(request, "Запущена задача обработки ожидающих выводов.")
+    process_pending.short_description = "⚙️ Обработать ожидающие выводы"
 
     def get_status(self, obj):
         return obj.transaction.get_status_display()
@@ -336,3 +430,4 @@ class ReviewAdmin(admin.ModelAdmin):
         """Добавить отзывы в избранное"""
         queryset.update(is_featured=True, is_published=True, is_verified=True)
     mark_featured.short_description = "Добавить в избранное"
+

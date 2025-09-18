@@ -15,11 +15,18 @@ interface ApiResponse<T = any> {
 }
 
 // Функция для получения заголовков с авторизацией
-const getAuthHeaders = () => {
-  const token = getCookie('access_token');
+const getAuthHeaders = (isFormData = false, customHeaders: Record<string, string> = {}) => {
+  // Для HttpOnly куки не нужно устанавливать Authorization заголовок вручную
+  // Браузер автоматически отправляет HttpOnly куки с credentials: 'include'
+  const baseHeaders = {
+    // Для FormData не устанавливаем Content-Type, браузер сам установит правильную границу
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' })
+  };
+  
+  // Объединяем базовые заголовки с пользовательскими
   return {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    ...baseHeaders,
+    ...customHeaders
   };
 };
 
@@ -29,11 +36,22 @@ const fetcher = async (url: string, options: RequestInit = {}) => {
     // Формируем полный URL для запроса
     const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
 
+    // Определяем, является ли тело запроса FormData
+    const isFormData = options.body instanceof FormData;
+    
+    // Получаем пользовательские заголовки из options
+    const customHeaders = options.headers as Record<string, string> || {};
+    
     // Объединяем заголовки по умолчанию и переданные пользователем
     const headers = {
-      ...getAuthHeaders(),
+      ...getAuthHeaders(isFormData, customHeaders),
       ...(options.headers || {})
     };
+    
+    // Логируем заголовки для отладки
+    console.log('[fetch.ts] Заголовки запроса:', headers);
+    console.log('[fetch.ts] URL:', fullUrl);
+    console.log('[fetch.ts] Метод:', options.method || 'GET');
 
     // Выполняем запрос с учетом всех параметров
     const response = await fetch(fullUrl, {
@@ -90,10 +108,12 @@ const api = {
   },
   
   patch: async (url: string, data: any, options: RequestInit = {}) => {
+    // Для FormData не сериализуем в JSON
+    const body = data instanceof FormData ? data : JSON.stringify(data);
     return fetcher(url, {
       ...options,
       method: 'PATCH',
-      body: JSON.stringify(data)
+      body
     });
   },
   

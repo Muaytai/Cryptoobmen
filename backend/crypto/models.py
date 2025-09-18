@@ -7,6 +7,7 @@ import uuid
 import logging
 from django.core.files.base import ContentFile
 import base64
+from .blockchain.factory import get_blockchain_service # Используем фабрику
 
 logger = logging.getLogger(__name__)
 
@@ -160,26 +161,29 @@ class UserWallet(models.Model):
         # Убедимся, что системный кошелек не привязан к пользователю
         if self.is_system_wallet:
             self.user = None
-        
+
+        # Генерация адреса для криптовалют, если он пуст
+        if self.currency.currency_type == 'crypto' and not self.deposit_address and not self.is_system_wallet:
+            try:
+                # Используем фабрику для получения нужного сервиса
+                service = get_blockchain_service(self.currency.network)
+                # create_new_address теперь может возвращать кортеж (адрес, приватный ключ)
+                new_address, private_key = service.create_new_address()
+                self.deposit_address = new_address
+                # В проде здесь должно быть шифрование
+                self.encrypted_private_key = private_key 
+                logger.info(f"Generated new {self.currency.symbol} address {new_address} for user {self.user.email}")
+            except Exception as e:
+                logger.error(f"Could not generate address for {self.currency.symbol}: {e}")
+
         # При создании кошелька или если available_balance не был установлен вручную
         if self.pk is None or self.available_balance == Decimal('0.0') and self.locked_balance == Decimal('0.0'):
              self.available_balance = self.balance - self.locked_balance
         else:
             # Общий баланс всегда сумма доступного и заблокированного
-            # Это условие может быть избыточным если available_balance и locked_balance управляются отдельно
-            # и balance вычисляется как их сумма при чтении (через property например).
-            # Для упрощения пока оставим как есть, но обычно меняется available/locked, а balance - их сумма.
-            # Если же balance меняется напрямую, то available_balance должен быть пересчитан, если нет locked_balance.
-            # Логика здесь может быть сложнее в зависимости от операций.
-            # Пока предположим, что balance - это основное поле, а available_balance - это balance минус locked_balance.
             self.available_balance = self.balance - self.locked_balance
             if self.available_balance < 0:
-                # Этого не должно происходить, нужна валидация или другая логика
-                # Для примера, можно вызвать исключение или установить available_balance в 0
-                # raise ValueError("Available balance cannot be negative.")
-                self.available_balance = Decimal('0.0') 
-                # И, возможно, скорректировать locked_balance или balance
-                # self.balance = self.locked_balance # Если available_balance не может быть отрицательным
+                self.available_balance = Decimal('0.0')
 
         super().save(*args, **kwargs)
 
@@ -350,22 +354,35 @@ class CommissionTransaction(models.Model):
 def create_default_cryptocurrencies():
     # Примеры: BTC, ETH, USDT-ERC20, USDT-TRC20, BNB, XRP, LTC, SOL, MATIC
     default_cryptos = [
-        {"name": "Bitcoin", "symbol": "BTC", "network": "BTC", "icon_b64": None},
-        {"name": "Ethereum", "symbol": "ETH", "network": "ERC20", "icon_b64": None},
-        {"name": "Tether USD", "symbol": "USDT", "network": "ERC20", "icon_b64": None},
-        {"name": "Tether USD", "symbol": "USDT", "network": "TRC20", "icon_b64": None},
-        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "icon_b64": None},
-        {"name": "Ripple", "symbol": "XRP", "network": "XRP", "icon_b64": None},
-        {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "icon_b64": None},
-        {"name": "Solana", "symbol": "SOL", "network": "SOL", "icon_b64": None},
-        {"name": "Polygon", "symbol": "MATIC", "network": "Polygon", "icon_b64": None},
+        {"name": "Bitcoin", "symbol": "BTC", "network": "BTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
+        {"name": "Ethereum", "symbol": "ETH", "network": "ERC20", "decimals": 18, "requires_memo": False, "icon_b64": None},
+        {"name": "Tether USD", "symbol": "USDT", "network": "ERC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
+        {"name": "Tether USD", "symbol": "USDT", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
+        {"name": "Tron", "symbol": "TRX", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
+        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "decimals": 18, "requires_memo": True, "icon_b64": None},
+        {"name": "Ripple", "symbol": "XRP", "network": "XRP", "decimals": 6, "requires_memo": True, "icon_b64": None},
+        {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
+        {"name": "Solana", "symbol": "SOL", "network": "SOL", "decimals": 9, "requires_memo": False, "icon_b64": None},
+        {"name": "Polygon", "symbol": "POL", "network": "Polygon", "decimals": 18, "requires_memo": False, "icon_b64": None},
     ]
-    for crypto in default_cryptos:
+    for crypto_data in default_cryptos:
         obj, created = Cryptocurrency.objects.get_or_create(
-            symbol=crypto["symbol"], network=crypto["network"], defaults={"name": crypto["name"]}
+            symbol=crypto_data["symbol"], 
+            network=crypto_data["network"], 
+            defaults={
+                "name": crypto_data["name"],
+                "decimals": crypto_data["decimals"],
+                "requires_memo": crypto_data["requires_memo"]
+            }
         )
-        if created and crypto["icon_b64"]:
-            obj.icon.save(f"{crypto['symbol']}.png", ContentFile(base64.b64decode(crypto["icon_b64"])), save=True)
+        if created:
+            if crypto_data["icon_b64"]:
+                obj.icon.save(f"{crypto_data['symbol']}.png", ContentFile(base64.b64decode(crypto_data["icon_b64"])), save=True)
+        else:
+            # Update existing records if needed
+            obj.decimals = crypto_data["decimals"]
+            obj.requires_memo = crypto_data["requires_memo"]
+        
         obj.is_active = True
         obj.save()
 

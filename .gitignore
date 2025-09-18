@@ -45,6 +45,9 @@ db.sqlite3-journal
 media/
 static/
 
+# Celery
+celerybeat-schedule*
+
 # Редакторы
 .idea/
 .vscode/

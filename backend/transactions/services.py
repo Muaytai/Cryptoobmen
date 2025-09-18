@@ -175,10 +175,9 @@ class WithdrawalService:
             # Рассчитываем комиссию
             fee_percentage = crypto.fee_percentage
             fee_amount = (amount * fee_percentage) / 100
-            logger.info(f"Комиссия: {fee_percentage}%, сумма={fee_amount}")
-            
-            if amount - fee_amount <= 0:
-                logger.error(f"Сумма после комиссии неположительная: {amount - fee_amount}")
+
+            amount_after_fee = amount - fee_amount
+            if amount_after_fee <= 0:
                 raise serializers.ValidationError("Сумма к выводу после комиссии должна быть положительной")
 
             # Проверяем MEMO
@@ -202,11 +201,11 @@ class WithdrawalService:
                 user=user,
                 type='withdrawal',
                 status='awaiting_confirmation',
-                amount=amount,
+                amount=amount_after_fee,
                 fee=fee_amount,
                 crypto=crypto,
                 ip_address=ip_address,
-                notes=f"Withdrawal request for {amount} {crypto.symbol} to {destination_address}"
+                notes=f"Withdrawal request for {amount} {crypto.symbol} to {destination_address} (net: {amount_after_fee})"
             )
             logger.info(f"Создана транзакция: ID={transaction_obj.id}")
 
@@ -291,46 +290,20 @@ class WithdrawalService:
             withdrawal.transaction.save()
             raise serializers.ValidationError("Срок действия ссылки для подтверждения истек.")
 
-        # TODO: Добавить проверку 2FA здесь, если она включена у пользователя
-
         with db_transaction.atomic():
-            # Блокируем кошелек для безопасного обновления
-            wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
-            
-            amount_to_withdraw = withdrawal.transaction.amount
-            
-            if wallet.balance < amount_to_withdraw:
-                withdrawal.transaction.status = 'failed'
-                withdrawal.transaction.notes = "Insufficient funds at the time of confirmation."
-                withdrawal.transaction.save()
-                raise serializers.ValidationError("На момент подтверждения на балансе недостаточно средств.")
-
-            # Списываем средства
-            wallet.balance -= amount_to_withdraw
-            wallet.save()
-
             # Обновляем статус вывода и транзакции
             withdrawal.is_email_confirmed = True
-            withdrawal.confirmation_date = timezone.now()
-            withdrawal.save()
+            withdrawal.confirmed_by_admin = True  # АВТОМАТИЧЕСКИ подтверждаем без участия админа
+            withdrawal.save(update_fields=['is_email_confirmed', 'confirmed_by_admin'])
 
-            withdrawal.transaction.status = 'pending' # Теперь он готов к обработке таском
-            withdrawal.transaction.save()
+            withdrawal.transaction.status = 'pending' # Готов к обработке таском
+            withdrawal.transaction.save(update_fields=['status'])
 
-            # Создаем Transfer и ставим задачу на отправку
-            transfer = Transfer.objects.create(
-                user=withdrawal.user,
-                type='out',
-                amount=amount_to_withdraw,
-                status=Transfer.Status.PENDING,
+            # Ставим задачу на обработку вывода ПОСЛЕ коммита транзакции,
+            # чтобы избежать состояния гонки, когда воркер пытается получить
+            # еще не сохраненный в БД объект.
+            db_transaction.on_commit(
+                lambda: process_withdrawal.delay(withdrawal.id)
             )
-            # Создаем Transfer и ставим задачу на отправку
-            transfer = Transfer.objects.create(
-                user=withdrawal.user,
-                type='out',
-                amount=amount_to_withdraw,
-                status=Transfer.Status.PENDING,
-            )
-            process_withdrawal.delay(transfer.id)
         
         return withdrawal

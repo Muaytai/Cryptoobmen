@@ -6,6 +6,7 @@ from .views import (
     ExchangeCurrencyView, ExchangeOrderViewSet
 )
 from .views_deposit import DepositInfoView
+from .views_withdraw import WithdrawInfoView
 
 router = DefaultRouter()
 router.register(r'cryptocurrencies', CryptocurrencyViewSet, basename='cryptocurrency')
@@ -23,6 +24,7 @@ urlpatterns = [
     path('exchange-rates/', ExchangeRatesView.as_view(), name='exchange-rates'),
     path('exchange-rate/', ExchangeRateView.as_view(), name='exchange-rate'),
     path('prices/latest/', LatestCryptoPricesView.as_view(), name='latest-crypto-prices'),
-    path('deposit/info/', DepositInfoView.as_view(), name='deposit-info'),
+    path('deposit-info/', DepositInfoView.as_view(), name='deposit-info'),
+    path('withdraw-info/', WithdrawInfoView.as_view(), name='withdraw-info'),
     # path('deposit/status/<str:memo>/', DepositStatusView.as_view(), name='deposit-status'),
 ]

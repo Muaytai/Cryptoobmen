@@ -1,0 +1,24 @@
+#!/bin/bash
+# Запуск всех Celery workers для разных приоритетов
+cd /home/chaizer/projects/Cryptoobmen/backend
+source venv/bin/activate
+
+echo "🚀 Запуск Celery workers..."
+
+# Worker для критически важных задач
+echo "Starting high priority worker..."
+celery -A core worker -l info -Q high_priority -n high_priority_worker@%h --concurrency=2 &
+
+# Worker для средней важности
+echo "Starting medium priority worker..."
+celery -A core worker -l info -Q medium_priority -n medium_priority_worker@%h --concurrency=2 &
+
+# Worker для фоновых задач
+echo "Starting low priority worker..."
+celery -A core worker -l info -Q low_priority -n low_priority_worker@%h --concurrency=4 &
+
+echo "✅ Все workers запущены!"
+echo "Для остановки используйте: pkill -f celery"
+
+# Ожидание завершения всех процессов
+wait

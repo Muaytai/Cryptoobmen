@@ -12,6 +12,7 @@ from rest_framework import serializers
 from .services import WithdrawalService
 import uuid
 
+from crypto.models import Cryptocurrency, UserWallet
 from .models import Transaction, Exchange, Deposit, Withdrawal, Review
 from .serializers import (
     TransactionSerializer, ExchangeSerializer, DepositSerializer,
@@ -161,15 +162,127 @@ def confirm_withdrawal_view(request, token):
         return Response({"error": error_message}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class DepositViewSet(viewsets.ReadOnlyModelViewSet):
-    """API для просмотра депозитов"""
-    serializer_class = DepositSerializer
+class DepositViewSet(viewsets.ViewSet):
+    """API для депозитов"""
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
         """Пользователь может видеть только свои депозиты"""
         user = self.request.user
         return Deposit.objects.filter(user=user).order_by('-transaction__timestamp')
+
+    def list(self, request):
+        """Возвращает список депозитов пользователя"""
+        queryset = self.get_queryset()
+        serializer = DepositSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='address')
+    def get_deposit_address(self, request):
+        """
+        Возвращает или создает адрес для пополнения.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        user = request.user
+        currency_id = request.data.get('currency_id')
+        network = request.data.get('network')  # Добавляем поддержку network
+        
+        logger.info(f"get_deposit_address: user={user.email}, currency_id={currency_id}, network={network}")
+        logger.info(f"get_deposit_address: request.data={request.data}")
+        logger.info(f"get_deposit_address: request.user.id={user.id}")
+
+        if not currency_id:
+            return Response({"error": "currency_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Если указана сеть, ищем валюту по символу и сети
+            if network:
+                # Ищем валюту по символу и сети (не только USDT)
+                currency = Cryptocurrency.objects.get(symbol__iexact=currency_id, network=network)
+                logger.info(f"get_deposit_address: found currency by symbol and network: {currency.symbol} (id={currency.id}, network={currency.network})")
+            else:
+                # Иначе ищем по ID (для обратной совместимости)
+                try:
+                    # Сначала пытаемся найти по ID (число)
+                    currency_id_int = int(currency_id)
+                    currency = Cryptocurrency.objects.get(id=currency_id_int)
+                    logger.info(f"get_deposit_address: found currency by id: {currency.symbol} (id={currency.id}, network={currency.network})")
+                except (ValueError, TypeError):
+                    # Если не число, ищем по символу
+                    currency = Cryptocurrency.objects.get(symbol__iexact=currency_id)
+                    logger.info(f"get_deposit_address: found currency by symbol: {currency.symbol} (id={currency.id}, network={currency.network})")
+            
+            # Проверяем существующие кошельки пользователя для этой валюты
+            existing_wallets = UserWallet.objects.filter(user=user, currency=currency)
+            logger.info(f"get_deposit_address: found {existing_wallets.count()} existing wallets for user {user.email} and currency {currency.symbol} ({currency.network})")
+            
+            for wallet in existing_wallets:
+                logger.info(f"get_deposit_address: wallet id={wallet.id}, address={wallet.deposit_address}, is_system={wallet.is_system_wallet}")
+            
+            # Если у пользователя несколько кошельков для одной валюты, выбираем тот, у которого есть адрес
+            wallet = None
+            created = False
+            
+            if existing_wallets.count() > 1:
+                # Выбираем кошелек с адресом, если есть
+                wallet_with_address = existing_wallets.filter(deposit_address__isnull=False).exclude(deposit_address='').first()
+                if wallet_with_address:
+                    wallet = wallet_with_address
+                    logger.info(f"get_deposit_address: selected wallet with address id={wallet.id}, address={wallet.deposit_address}")
+                else:
+                    # Если нет кошелька с адресом, берем первый
+                    wallet = existing_wallets.first()
+                    logger.info(f"get_deposit_address: selected first wallet id={wallet.id}, address={wallet.deposit_address}")
+            elif existing_wallets.count() == 1:
+                wallet = existing_wallets.first()
+                logger.info(f"get_deposit_address: found single wallet id={wallet.id}, address={wallet.deposit_address}")
+            else:
+                # Создаем новый кошелек только если не нашли существующий
+                wallet = UserWallet.objects.create(user=user, currency=currency)
+                created = True
+                logger.info(f"get_deposit_address: created new wallet id={wallet.id}")
+
+            # Проверяем, что адрес соответствует выбранной сети
+            if wallet.deposit_address and not created:
+                # Проверяем формат адреса для соответствия сети
+                address = wallet.deposit_address
+                if currency.network == 'ERC20' and not address.startswith('0x'):
+                    logger.warning(f"get_deposit_address: wallet {wallet.id} has non-ERC20 address {address} for ERC20 currency {currency.symbol}")
+                    # Сбрасываем неправильный адрес
+                    wallet.deposit_address = None
+                    wallet.save()
+                elif currency.network == 'TRC20' and not address.startswith('T'):
+                    logger.warning(f"get_deposit_address: wallet {wallet.id} has non-TRC20 address {address} for TRC20 currency {currency.symbol}")
+                    # Сбрасываем неправильный адрес
+                    wallet.deposit_address = None
+                    wallet.save()
+
+            # --- Новая унифицированная логика через DepositService ---
+            from crypto.services_deposit import DepositService
+
+            # DepositService сам обрабатывает создание/обновление адреса
+            address, memo, qr_code = DepositService.get_deposit_info(
+                user=user,
+                currency_symbol=currency.symbol,
+                network=currency.network
+            )
+
+            return Response({
+                'address': address,
+                'memo': memo,
+                'qr_code': qr_code,
+                'currency_symbol': currency.symbol,
+                'network': currency.network
+            }, status=status.HTTP_200_OK)
+
+        except Cryptocurrency.DoesNotExist:
+            logger.error(f"get_deposit_address: currency with id {currency_id} and network {network} not found")
+            return Response({"error": "Currency not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"get_deposit_address: unexpected error: {e}", exc_info=True)
+            return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ReviewFilter(FilterSet):
@@ -310,8 +423,7 @@ class TransactionHistoryView(generics.ListAPIView):
         return Transaction.objects.filter(user=user).select_related(
             'crypto'
         ).prefetch_related(
-            'exchange_transaction__from_currency',
-            'exchange_transaction__to_currency',
-            'deposit_transaction',
-            'withdrawal_transaction'
+            'exchange',
+            'deposit',
+            'withdrawal'
         ).order_by('-timestamp')

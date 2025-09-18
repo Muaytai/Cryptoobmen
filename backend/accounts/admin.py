@@ -13,7 +13,7 @@ class UserProfileInline(admin.StackedInline):
 class CustomUserAdmin(UserAdmin):
     inlines = (UserProfileInline,)
     list_display = ('email', 'username', 'first_name', 'last_name', 'is_verified', 'kyc_verified', 'is_staff')
-    list_filter = ('is_verified', 'kyc_verified', 'is_staff', 'is_superuser', 'has_2fa')
+    list_filter = ('is_verified', 'kyc_verified', 'is_staff', 'is_superuser')
     search_fields = ('email', 'username', 'first_name', 'last_name', 'phone_number')
     fieldsets = (
         (None, {'fields': ('email', 'username', 'password')}),
@@ -21,7 +21,7 @@ class CustomUserAdmin(UserAdmin):
         (_('KYC info'), {'fields': ('kyc_verified', 'full_name', 'date_of_birth', 'address')}),
         (_('Permissions'), {'fields': ('is_active', 'is_verified', 'is_staff', 'is_superuser', 
                                       'groups', 'user_permissions')}),
-        (_('Security'), {'fields': ('has_2fa',)}),
+        (_('Security'), {'fields': ()}),
         (_('Notifications'), {'fields': ('notify_via_email', 'notify_via_telegram')}),
         (_('Important dates'), {'fields': ('last_login', 'date_joined', 'last_login_ip')}),
     )

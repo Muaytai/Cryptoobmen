@@ -1,152 +1,118 @@
-"""Service for interacting with the Bitcoin blockchain."""
-from __future__ import annotations
-
 import logging
 from decimal import Decimal
-from typing import List, Dict, Any
-
+from typing import List, Dict, Any, Tuple
 import requests
 from django.conf import settings
+from bit import PrivateKeyTestnet, PrivateKey
+from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
 
 from .base import BaseBlockchainService
-from bitcoinlib.keys import Key
-from bitcoinlib.transactions import Transaction
+
 logger = logging.getLogger(__name__)
 
-# Using a public API for blockchain data. For production, a dedicated node or paid service is recommended.
-MEMPOOL_SPACE_API_URL = "https://mempool.space/api"
-
 class BitcoinService(BaseBlockchainService):
-    """
-    Service for interacting with the Bitcoin blockchain.
-    Implements the BaseBlockchainService interface.
-    """
-
-    def __init__(self, network: str = 'mainnet'):
+    def __init__(self, network='testnet'):
         super().__init__(network)
-        if self.network not in ['mainnet', 'testnet']:
-            raise ValueError("Network must be 'mainnet' or 'testnet'")
-        self.mempool_url = MEMPOOL_SPACE_API_URL if network == 'mainnet' else "https://mempool.space/testnet/api"
+        self.coin_symbol = 'btc-testnet' if network == 'testnet' else 'btc'
+        
+        if network == 'testnet':
+            self.api_url = 'https://blockstream.info/testnet/api'
+            self.bip44_coin = Bip44Coins.BITCOIN_TESTNET
+        else:
+            self.api_url = 'https://blockstream.info/api'
+            self.bip44_coin = Bip44Coins.BITCOIN
 
     def get_transactions(self, address: str, min_timestamp: int = 0) -> List[Dict[str, Any]]:
-        """Fetches transactions for a given Bitcoin address from mempool.space."""
+        """Получает транзакции для адреса используя Blockstream API."""
         try:
-            response = requests.get(f"{self.mempool_url}/address/{address}/txs")
+            url = f"{self.api_url}/address/{address}/txs"
+            response = requests.get(url, timeout=10)
             response.raise_for_status()
-            txs = response.json()
-
-            parsed_txs = []
-            for transaction in txs:
-                # We are interested in incoming transactions
-                for vout in transaction.get('vout', []):
+            
+            transactions = response.json()
+            txs = []
+            
+            for tx in transactions:
+                for vout in tx.get('vout', []):
                     if vout.get('scriptpubkey_address') == address:
-                        parsed_txs.append({
-                            'transaction_id': transaction.get('txid'),
-                            'from_address': transaction.get('vin')[0].get('prevout', {}).get('scriptpubkey_address', 'unknown'),
-                            'to_address': address,
-                            'value': str(vout.get('value', 0)),  # Value in satoshis
-                            'memo': None
+                        confirmed = tx.get('status', {}).get('confirmed', False)
+                        if not confirmed:
+                            continue # Пропускаем неподтвержденные
+                        
+                        txs.append({
+                            'transaction_id': tx['txid'],
+                            'value': str(vout['value']),  # В сатоши
+                            'memo': None,
                         })
-            return parsed_txs
-        except requests.RequestException as e:
-            logger.error(f"Error fetching Bitcoin transactions for {address}: {e}")
+            return txs
+        except Exception as e:
+            logger.error(f"Error getting Bitcoin transactions for {address}: {e}")
             return []
 
-    def get_balance(self, address: str) -> Decimal:
-        """Gets the balance for a given Bitcoin address from mempool.space."""
+    def send_transaction(self, private_key: str, to_address: str, amount: Decimal, **kwargs) -> str:
+        """Отправляет транзакцию Bitcoin. Умеет отправлять всю сумму (sweep)."""
         try:
-            response = requests.get(f"{self.mempool_url}/address/{address}")
+            if self.network == 'testnet':
+                key = PrivateKeyTestnet(private_key)
+            else:
+                key = PrivateKey(private_key)
+            
+            # Если amount указан как 0, отправляем все средства (sweep)
+            if amount == Decimal('0.0'):
+                # Получаем все неистраченные выходы
+                unspents = key.get_unspents()
+                if not unspents:
+                    logger.warning(f"No unspents to sweep from {key.address}")
+                    return None
+                
+                # Отправляем все, комиссия будет вычтена автоматически
+                tx_hash = key.send([], unspents=unspents, to=[(to_address, key.balance_as('satoshi'), 'satoshi')])
+            else:
+                amount_satoshi = int(amount * Decimal('100000000'))
+                tx_hash = key.send([(to_address, amount_satoshi, 'satoshi')])
+            
+            logger.info(f"Bitcoin transaction sent from {key.address}: {tx_hash}")
+            return tx_hash
+            
+        except Exception as e:
+            logger.error(f"Error sending Bitcoin transaction: {e}", exc_info=True)
+            raise Exception(f"Failed to send Bitcoin transaction: {e}")
+
+    def get_balance(self, address: str) -> Decimal:
+        """Получает баланс адреса."""
+        try:
+            url = f"{self.api_url}/address/{address}"
+            response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
             balance_satoshi = data.get('chain_stats', {}).get('funded_txo_sum', 0) - \
-                              data.get('chain_stats', {}).get('spent_txo_sum', 0)
-            return self.from_atomic_unit(balance_satoshi, 8)
-        except requests.RequestException as e:
-            logger.error(f"Error fetching Bitcoin balance for {address}: {e}")
+                             data.get('chain_stats', {}).get('spent_txo_sum', 0)
+            return Decimal(balance_satoshi) / Decimal('100000000')
+        except Exception as e:
+            logger.error(f"Error getting balance for {address}: {e}")
             return Decimal('0.0')
 
-    def send_transaction(self, private_key_wif: str, to_address: str, amount: Decimal, memo: str = "") -> str:
-        """
-        Создает и отправляет транзакцию в сети Bitcoin.
-        Использует mempool.space для получения UTXO и комиссий.
-        """
+    def create_new_address(self, user_id: int, **kwargs) -> Tuple[str, str]:
+        """Создает новый адрес и приватный ключ для пользователя, используя HD-генерацию."""
         try:
-            key = Key(private_key_wif, network=self.network)
-            from_address = key.address
+            master_seed_hex = getattr(settings, 'BITCOIN_MASTER_SEED_HEX', None)
+            if not master_seed_hex:
+                raise ValueError("BITCOIN_MASTER_SEED_HEX is not configured in settings.")
 
-            utxos_response = requests.get(f"{self.mempool_url}/address/{from_address}/utxo")
-            utxos_response.raise_for_status()
-            utxos = utxos_response.json()
-
-            if not utxos:
-                raise ValueError("No UTXOs found for the address.")
-
-            tx = Transaction(network=self.network)
+            seed_bytes = bytes.fromhex(master_seed_hex)
+            bip44_mst = Bip44.FromSeed(seed_bytes, self.bip44_coin)
             
-            amount_satoshi = self.to_atomic_unit(amount, 8)
+            # Путь: m/44'/<coin_type>'/0'/0/<user_id>
+            bip44_acc = bip44_mst.Purpose().Coin().Account(0)
+            bip44_chg = bip44_acc.Change(Bip44Changes.CHAIN_EXT)
+            bip44_addr = bip44_chg.AddressIndex(user_id)
+
+            address = bip44_addr.Address()
+            private_key_wif = bip44_addr.PrivateKey().ToWif()
             
-            input_total = 0
-            # Простая стратегия выбора UTXO: берем входы, пока не покроем сумму
-            for utxo in utxos:
-                tx.add_input(prev_txid=utxo['txid'], output_n=utxo['vout'], value=utxo['value'])
-                input_total += utxo['value']
-                if input_total > amount_satoshi:
-                    break
+            logger.info(f"Generated new Bitcoin address for user {user_id}: {address}")
+            return address, private_key_wif
             
-            # Получаем рекомендованную комиссию
-            fees_response = requests.get(f"{self.mempool_url}/v1/fees/recommended")
-            fees_response.raise_for_status()
-            fees = fees_response.json()
-            fee_rate = Decimal(fees.get('halfHourFee', 20))  # sat/vB
-
-            # Приблизительный расчет размера и комиссии
-            estimated_size = 10 + len(tx.inputs) * 148 + 2 * 34 
-            fee = int(Decimal(estimated_size) * fee_rate)
-
-            if input_total < amount_satoshi + fee:
-                raise ValueError(f"Insufficient funds. Have {input_total}, need {amount_satoshi + fee}")
-
-            # Добавляем выходы
-            tx.add_output(value=amount_satoshi, address=to_address)
-            change = input_total - amount_satoshi - fee
-            if change > 546:  # Порог для "пыли"
-                tx.add_output(value=change, address=from_address)
-
-            # Подписываем транзакцию
-            tx.sign(key)
-
-            # Сериализуем и отправляем
-            tx_hex = tx.serialize()
-            broadcast_response = requests.post(f"{self.mempool_url}/tx", data=tx_hex)
-            broadcast_response.raise_for_status()
-            
-            return broadcast_response.text
-
-        except requests.RequestException as e:
-            logger.error(f"Network error during Bitcoin transaction: {e}")
-            raise
         except Exception as e:
-            logger.error(f"Error sending Bitcoin transaction: {e}")
-            raise
-
-    def create_new_address(self, **kwargs) -> str:
-        """
-        Generates a new Bitcoin address from the system's HD wallet xpub.
-        Uses user_id for the derivation path to ensure uniqueness.
-        """
-        user_id = kwargs.get('user_id')
-        if user_id is None:
-            raise ValueError("user_id is required for Bitcoin address generation.")
-
-        xpub = getattr(settings, 'BITCOIN_XPUB_KEY', None)
-        if not xpub:
-            raise ValueError("BITCOIN_XPUB_KEY is not configured in settings.")
-
-        # Create a key from the master public key
-        master_key = Key(xpub, is_extended=True, network=self.network)
-
-        # Derive a child key for the user. Using a non-hardened path.
-        # m/0/user_id is a common scheme for public-facing addresses.
-        user_key = master_key.derive_path(f"m/0/{user_id}")
-
-        return user_key.address
+            logger.error(f"Error creating HD Bitcoin address for user {user_id}: {e}", exc_info=True)
+            raise Exception(f"Failed to create HD Bitcoin address: {e}")

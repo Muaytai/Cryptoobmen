@@ -5,6 +5,7 @@ import {useRouter, useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
+import ReCaptcha from '@/components/ReCaptcha';
 import styles from './Login.module.css';
 import {FaEye, FaEyeSlash, FaGoogle} from 'react-icons/fa';
 import {TbBrandYandex} from 'react-icons/tb';
@@ -15,11 +16,12 @@ import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 const LoginFormWithSearchParams = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const {login, isLoading, error, setDisableAutoLogin, setTokens} = useAuthStore();
+    const {login, isLoading, error, setDisableAutoLogin, setTokens, checkAuthStatus, isAuthenticated} = useAuthStore();
     const [credentials, setCredentials] = useState({email: '', password: ''});
     const [showPassword, setShowPassword] = useState(false);
     const [loginAttempted, setLoginAttempted] = useState(false);
     const [verificationSuccess, setVerificationSuccess] = useState(false);
+    const [recaptchaToken, setRecaptchaToken] = useState('');
     const modalManagerChangePassword = useModal(false);
 
     // Функция для очистки всех данных аутентификации
@@ -74,14 +76,41 @@ const LoginFormWithSearchParams = () => {
                 setVerificationSuccess(false);
             }, 5000);
         }
+        // Попытка подтянуть сессию после социальной авторизации: куки уже выставлены бэкендом
+        // Запрашиваем профиль без очистки данных, чтобы сразу показать пользователя
+        // Обязательно указываем isLoginProcess=true, чтобы обойти disableAutoLogin
+        checkAuthStatus(true).catch(() => {});
     }, [searchParams, setDisableAutoLogin]);
+
+    // Если пользователь уже аутентифицирован (например, вернулись с соц-логина), уводим со страницы логина
+    useEffect(() => {
+        if (isAuthenticated) {
+            const redirectParam = searchParams.get('redirect');
+            const target = redirectParam ? decodeURIComponent(redirectParam) : '/';
+            router.replace(target);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // Проверяем наличие токена reCAPTCHA
+        if (!recaptchaToken) {
+            console.error('Отсутствует токен reCAPTCHA');
+            return;
+        }
+        
         try {
             setLoginAttempted(true);
-            await login(credentials);
+            // Добавляем токен reCAPTCHA к учетным данным
+            await login({...credentials, recaptcha_token: recaptchaToken});
             console.log('Вход выполнен успешно');
+            // Определяем куда редиректить после успешного входа
+            const redirectParam = searchParams.get('redirect');
+            const target = redirectParam ? decodeURIComponent(redirectParam) : '/';
+            // Используем replace, чтобы не оставлять страницу логина в истории
+            router.replace(target);
         } catch (err) {
             console.error('Ошибка входа:', err);
             setLoginAttempted(false);
@@ -99,23 +128,23 @@ const LoginFormWithSearchParams = () => {
     const handleGoogleLogin = () => {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
         const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
-        const next = `${frontendUrl}/login`;
-        
-        // Очищаем все данные перед авторизацией
+        const finalNext = `${frontendUrl}/login`;
+        const callback = `${backendUrl}/auth/callback/?next=${encodeURIComponent(finalNext)}`;
+
         clearAllAuthData();
-        
-        window.location.href = `${backendUrl}/accounts/google/login/?process=login&next=${encodeURIComponent(next)}`;
+
+        window.location.href = `${backendUrl}/accounts/google/login/?process=login&next=${encodeURIComponent(callback)}`;
     };
 
     const handleYandexLogin = () => {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
         const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
-        const next = `${frontendUrl}/login`;
-        
-        // Очищаем все данные перед авторизацией
+        const finalNext = `${frontendUrl}/login`;
+        const callback = `${backendUrl}/auth/callback/?next=${encodeURIComponent(finalNext)}`;
+
         clearAllAuthData();
-        
-        window.location.href = `${backendUrl}/accounts/yandex/login/?process=login&next=${encodeURIComponent(next)}`;
+
+        window.location.href = `${backendUrl}/accounts/yandex/login/?process=login&next=${encodeURIComponent(callback)}`;
     };
 
     // Проверяем наличие ошибок в URL при загрузке страницы
@@ -182,6 +211,25 @@ const LoginFormWithSearchParams = () => {
                                     {showPassword ? <FaEyeSlash/> : <FaEye/>}
                                 </button>
                             </div>
+                            
+                            {/* Компонент reCAPTCHA */}
+                            <div className="mb-4">
+                                <p className="text-xs text-gray-400 mb-2">
+                                    reCAPTCHA Site Key: {process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ? 'Настроен' : 'НЕ НАСТРОЕН'}
+                                </p>
+                                <ReCaptcha
+                                    siteKey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}
+                                    onVerify={(token) => {
+                                        console.log('reCAPTCHA токен получен:', token ? 'Да' : 'Нет');
+                                        setRecaptchaToken(token);
+                                    }}
+                                    action="login"
+                                />
+                                {recaptchaToken && (
+                                    <p className="text-xs text-green-400 mt-1">✓ reCAPTCHA пройдена</p>
+                                )}
+                            </div>
+                            
                             <div className={styles.linkForgotPassword}>
                                 <a className="text-sm  hover:underline">Забыли
                                     пароль?</a>
@@ -189,7 +237,7 @@ const LoginFormWithSearchParams = () => {
                             <button
                                 type="submit"
                                 className={styles.submitBtn}
-                                disabled={isLoading}
+                                disabled={isLoading || !recaptchaToken}
                             >
                                 {isLoading ? 'Загрузка...' : 'Войти'}
                             </button>

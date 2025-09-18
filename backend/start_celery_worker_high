@@ -1,0 +1,5 @@
+#!/bin/bash
+# Worker для критически важных задач (выводы, подтверждения)
+cd /home/chaizer/projects/Cryptoobmen/backend
+source venv/bin/activate
+celery -A core worker -l info -Q high_priority -n high_priority_worker@%h --concurrency=2

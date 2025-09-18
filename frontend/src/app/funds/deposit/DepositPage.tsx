@@ -14,7 +14,9 @@ console.log('--- Файл DepositPage.tsx ЗАГРУЖЕН (v2) ---');
 interface Wallet {
   id: string;
   network?: string;
+  deposit_address?: string;
   currency: {
+    id: string;
     symbol: string;
     name: string;
     icon?: string;
@@ -155,6 +157,15 @@ export const DepositPage: React.FC = () => {
       
       const aggregatedCurrencies = Array.from(cryptoMap.values());
       console.log('DepositPage: Агрегированные валюты:', aggregatedCurrencies);
+      
+      // Отладочные логи для icon
+      aggregatedCurrencies.forEach(currency => {
+        console.log(`DepositPage: Валюта ${currency.symbol} - icon: "${currency.icon}"`);
+        if (!currency.icon || currency.icon.trim() === '') {
+          console.warn(`DepositPage: У валюты ${currency.symbol} отсутствует или пуста иконка`);
+        }
+      });
+      
       setAvailableCurrencies(aggregatedCurrencies);
       
       const walletIdParam = searchParams.get('wallet_id');
@@ -228,20 +239,22 @@ export const DepositPage: React.FC = () => {
 
     const netsArr = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
     console.log('DepositPage: доступные сети для валюты:', netsArr);
+    console.log('DepositPage: сети из кошельков пользователя:', walletNetworks);
+    console.log('DepositPage: справочные сети:', referenceNetworks);
     setNetworkOptions(netsArr);
       
-      if (netsArr.length === 1) {
-        console.log('DepositPage: автоматический выбор единственной сети:', netsArr[0]);
-        setSelectedNetwork(netsArr[0]);
-        
-        // Если только одна сеть, можно автоматически запросить адрес после небольшой задержки
-        // setTimeout(() => {
-        //   if (currency.symbol === selectedCurrency) {
-        //     handleRequestDeposit(new MouseEvent('click') as any);
-        //   }
-        // }, 500);
+    if (netsArr.length === 1) {
+      console.log('DepositPage: автоматический выбор единственной сети:', netsArr[0]);
+      setSelectedNetwork(netsArr[0]);
+    } else if (netsArr.length > 1) {
+      console.log('DepositPage: доступно несколько сетей, пользователь должен выбрать');
+      // Если есть несколько сетей, попробуем автоматически выбрать ту, которая соответствует кошельку пользователя
+      if (walletNetworks.length === 1) {
+        console.log('DepositPage: автоматический выбор сети из кошелька пользователя:', walletNetworks[0]);
+        setSelectedNetwork(walletNetworks[0]);
       }
-    }, [availableCurrencies, userWallets]);
+    }
+  }, [availableCurrencies, userWallets]);
 
   const handleNetworkSelection = useCallback((network: string) => {
     console.log('DepositPage: выбрана сеть:', network);
@@ -261,7 +274,10 @@ export const DepositPage: React.FC = () => {
     const referenceNetworks = currencyObj ? currencyObj.networks || [] : [];
     const allNetworks = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
 
-    const networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[0] : null);
+    let networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[0] : null);
+    if (selectedCurrency && selectedCurrency.toLowerCase() === 'btc') {
+      networkToUse = 'bitcoin';
+    }
     if (!selectedCurrency || !networkToUse) {
       setError('Пожалуйста, выберите криптовалюту и сеть.');
       toast.error('Выберите криптовалюту и сеть', {
@@ -276,48 +292,115 @@ export const DepositPage: React.FC = () => {
     setError(null);
     
     try {
-      // Получение токена для авторизации
-      const cookies = document.cookie.split('; ');
-      const accessToken = cookies.find(row => row.startsWith('access_token='));
-      const token = accessToken ? accessToken.split('=')[1] : '';
-
-      // Формируем URL с query string
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-      const url = `${apiBaseUrl}/crypto/deposit/info/?currency_symbol=${encodeURIComponent(selectedCurrency)}&network=${encodeURIComponent(networkToUse)}`;
+      // Находим валюту, которая соответствует и символу, и сети
+      let currency = null;
       
-      console.log(`DepositPage: прямой GET-запрос на URL = ${url}`);
-      toast.loading('Получение адреса для пополнения...', {
-        duration: 5000,
-        position: 'top-center',
-      });
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-        credentials: 'include',
-      });
-      
-      toast.dismiss();
-      
-      console.log('DepositPage: получен ответ от сервера:', response.status, response.statusText);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('DepositPage: ошибка от сервера:', errorText);
+      // Сначала пытаемся найти валюту по символу и сети
+      if (selectedNetwork) {
+        // Ищем валюту, которая поддерживает выбранную сеть
+        currency = availableCurrencies.find(c => 
+          c.symbol === selectedCurrency && 
+          c.networks && 
+          c.networks.includes(selectedNetwork)
+        );
         
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch (e) {
-          errorData = { error: errorText || `Ошибка ${response.status}: ${response.statusText}` };
+        // Если не нашли, попробуем найти валюту, которая соответствует сети из кошельков пользователя
+        if (!currency) {
+          const userWalletForNetwork = userWallets.find(w => 
+            w.currency.symbol === selectedCurrency && 
+            w.network === selectedNetwork
+          );
+          
+          if (userWalletForNetwork) {
+            // Ищем валюту с тем же ID, что и в кошельке пользователя
+            currency = availableCurrencies.find(c => c.id === userWalletForNetwork.currency.id);
+            console.log('DepositPage: найдена валюта по кошельку пользователя:', {
+              walletCurrencyId: userWalletForNetwork.currency.id,
+              foundCurrency: currency
+            });
+          }
         }
         
-        throw new Error(errorData.error || `Ошибка ${response.status}: ${response.statusText}`);
+        // Если все еще не нашли, попробуем найти валюту, которая точно соответствует сети
+        if (!currency) {
+          console.log('DepositPage: пытаемся найти валюту по точному соответствию сети:', selectedNetwork);
+          // Ищем валюту, которая точно соответствует выбранной сети
+          const exactMatchCurrency = availableCurrencies.find(c => 
+            c.symbol === selectedCurrency && 
+            c.networks && 
+            c.networks.some(network => 
+              network.toLowerCase() === selectedNetwork.toLowerCase() ||
+              network.toLowerCase().includes(selectedNetwork.toLowerCase()) ||
+              selectedNetwork.toLowerCase().includes(network.toLowerCase())
+            )
+          );
+          
+          if (exactMatchCurrency) {
+            currency = exactMatchCurrency;
+            console.log('DepositPage: найдена валюта по точному соответствию сети:', {
+              symbol: exactMatchCurrency.symbol,
+              id: exactMatchCurrency.id,
+              networks: exactMatchCurrency.networks,
+              selectedNetwork
+            });
+          }
+        }
       }
       
-      const data = await response.json();
+      // Если не нашли по сети, ищем только по символу (fallback)
+      if (!currency) {
+        currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
+        console.log('DepositPage: fallback - найдена валюта только по символу:', {
+          symbol: currency?.symbol,
+          id: currency?.id,
+          networks: currency?.networks
+        });
+      }
+      
+      if (!currency) {
+          throw new Error("Selected currency not found");
+      }
+
+      console.log('DepositPage: выбрана валюта для запроса:', {
+        symbol: currency.symbol,
+        id: currency.id,
+        networks: currency.networks,
+        selectedNetwork
+      });
+      
+      console.log('DepositPage: доступные валюты для отладки:', availableCurrencies.map(c => ({
+        id: c.id,
+        symbol: c.symbol,
+        networks: c.networks
+      })));
+      
+      console.log('DepositPage: кошельки пользователя для отладки:', userWallets.map(w => ({
+        id: w.id,
+        currencyId: w.currency.id,
+        symbol: w.currency.symbol,
+        network: w.network,
+        address: w.deposit_address
+      })));
+
+      // Определяем параметры для запроса
+      let requestParams: any = {};
+      
+      if (selectedNetwork || networkToUse) {
+        // Если указана сеть, передаем symbol и network
+        requestParams = {
+          currency_id: selectedCurrency,  // Передаем symbol валюты
+          network: selectedNetwork || networkToUse
+        };
+      } else {
+        // Если сеть не указана, передаем currency_id
+        requestParams = {
+          currency_id: currency.id
+        };
+      }
+
+      const response = await api.post('/transactions/deposits/address/', requestParams);
+      
+      const data = response;
       console.log('DepositPage: успешно получена информация для депозита:', data);
       
       if (!data || !data.address) {
@@ -502,20 +585,20 @@ export const DepositPage: React.FC = () => {
     }
 
     const connect = () => {
+      // Используем базовый адрес из env или по умолчанию
+      const wsBase = process.env.NEXT_PUBLIC_WS_URL || `ws://${window.location.hostname}:8000`;
       let wsUrl = '';
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = process.env.NEXT_PUBLIC_WS_BASE_URL 
-        ? process.env.NEXT_PUBLIC_WS_BASE_URL 
-        : `${protocol}//${window.location.hostname}:8000`;
       if (depositInfo.memo) {
-        wsUrl = `${host}/ws/deposit_status/${depositInfo.memo}/`;
-        console.log(`DepositPage: подключение к WebSocket по memo: ${wsUrl}`);
+        wsUrl = `${wsBase}/ws/deposit_status/${depositInfo.memo}/`;
       } else if (depositInfo.address) {
-        wsUrl = `${host}/ws/deposit_status/address/${depositInfo.address}/`;
-        console.log(`DepositPage: подключение к WebSocket по адресу: ${wsUrl}`);
+        wsUrl = `${wsBase}/ws/deposit_status/address/${depositInfo.address}/`;
       } else {
         return;
       }
+      console.log('Финальный wsUrl:', wsUrl);
+      
+      console.log(`DepositPage: Попытка подключения к WebSocket: ${wsUrl}`);
+
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
       try {
         const ws = new WebSocket(wsUrl);
@@ -711,16 +794,48 @@ export const DepositPage: React.FC = () => {
                           : 'bg-gray-700 hover:bg-gray-650'
                       }`}
                     >
-                      {currency.icon ? (
-                        <Image
-                          src={currency.icon.startsWith('http') ? currency.icon : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${currency.icon}`}
-                          alt={currency.symbol}
-                          width={32}
-                          height={32}
-                          className="rounded-full mb-2"
-                          unoptimized
-                        />
-                      ) : (
+                      {currency.icon && currency.icon.trim() !== '' ? (() => {
+                        const iconUrl = currency.icon.startsWith('http') 
+                          ? currency.icon 
+                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${currency.icon}`;
+                        
+                        // Проверяем валидность URL
+                        try {
+                          new URL(iconUrl);
+                          return (
+                            <>
+                              <Image
+                                src={iconUrl}
+                                alt={currency.symbol}
+                                width={32}
+                                height={32}
+                                className="rounded-full mb-2"
+                                unoptimized
+                                onError={(e) => {
+                                  console.error('DepositPage: Ошибка загрузки иконки валюты:', iconUrl);
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const fallback = target.nextElementSibling as HTMLElement;
+                                  if (fallback) fallback.style.display = 'flex';
+                                }}
+                              />
+                              <div 
+                                className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold"
+                                style={{ display: 'none' }}
+                              >
+                                {currency.symbol.slice(0, 2)}
+                              </div>
+                            </>
+                          );
+                        } catch (error) {
+                          console.error('DepositPage: Некорректный URL иконки валюты:', iconUrl, error);
+                          return (
+                            <div className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold">
+                              {currency.symbol.slice(0, 2)}
+                            </div>
+                          );
+                        }
+                      })() : (
                         <div className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold">
                           {currency.symbol.slice(0, 2)}
                         </div>
@@ -801,16 +916,74 @@ export const DepositPage: React.FC = () => {
         return (
           <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
             <div className="flex items-center justify-center mb-6">
-              {selectedCurrency && (
-                <Image
-                  src={`${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${availableCurrencies.find(c => c.symbol === selectedCurrency)?.icon || ''}`}
-                  alt={selectedCurrency}
-                  width={48}
-                  height={48}
-                  className="rounded-full mr-3"
-                  unoptimized
-                />
-              )}
+              {selectedCurrency && (() => {
+                const currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
+                const iconPath = currency?.icon;
+                const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '');
+                
+                // Отладочные логи
+                const proposedUrl = iconPath && iconPath.startsWith('http') ? iconPath : `${baseUrl}${iconPath || ''}`;
+                console.log('DepositPage: Данные для изображения:', {
+                  selectedCurrency,
+                  currency,
+                  iconPath,
+                  baseUrl,
+                  isFullUrl: iconPath?.startsWith('http') || false,
+                  finalUrl: proposedUrl
+                });
+                
+                // Проверяем корректность URL
+                if (!iconPath || iconPath.trim() === '') {
+                  console.warn('DepositPage: Пустой путь к иконке для валюты:', selectedCurrency);
+                  return (
+                    <div className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center">
+                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                    </div>
+                  );
+                }
+                
+                // Определяем финальный URL: если iconPath уже содержит http, используем его как есть
+                const fullImageUrl = iconPath && iconPath.startsWith('http') ? iconPath : `${baseUrl}${iconPath || ''}`;
+                
+                // Проверяем валидность URL
+                try {
+                  new URL(fullImageUrl);
+                } catch (error) {
+                  console.error('DepositPage: Некорректный URL для изображения:', fullImageUrl, error);
+                  return (
+                    <div className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center">
+                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                    </div>
+                  );
+                }
+                
+                return (
+                  <>
+                    <Image
+                      src={fullImageUrl}
+                      alt={selectedCurrency}
+                      width={48}
+                      height={48}
+                      className="rounded-full mr-3"
+                      unoptimized
+                      onError={(e) => {
+                        console.error('DepositPage: Ошибка загрузки изображения:', fullImageUrl);
+                        // Заменяем на fallback
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const fallback = target.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
+                    />
+                    <div 
+                      className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center"
+                      style={{ display: 'none' }}
+                    >
+                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                    </div>
+                  </>
+                );
+              })()}
               <div>
                 <h2 className="text-xl font-bold">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.name}</h2>
                 <p className="text-gray-400">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol} ({selectedNetwork})</p>

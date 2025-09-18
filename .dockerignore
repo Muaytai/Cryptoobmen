@@ -1,18 +1,32 @@
-# Исключаем каталоги, которые не нужны для создания Docker-образов
+# Git
+.git
+.gitignore
 
-# Фронтенд: кэш сборки Next.js и установленные зависимости
-frontend/.next
-frontend/node_modules
+# Docker
+.dockerignore
+Dockerfile
 
-# Бэкенд: каталоги виртуальных окружений Python
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
 venv/
-venv_main/
 .venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.eggs/
+.egg-info/
+dist/
+build/
 
-# Служебные каталоги IDE и сборки
+# Django
+*.log
+db.sqlite3
+celerybeat-schedule*
+
+# IDE
 .idea/
 .vscode/
-
-# Прочее
-__pycache__/
-.git/ 

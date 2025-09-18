@@ -112,6 +112,8 @@ class LatestCryptoPricesView(APIView):
                     "crypto_id": crypto_obj.id,
                     "name": crypto_obj.name,
                     "symbol": crypto_obj.symbol,
+                    "coingecko_id": crypto_obj.coingecko_id,
+                    "currency_type": crypto_obj.currency_type,
                     "prices": price_data, # {'usd': 123, 'eur': 456}
                 })
 
@@ -176,7 +178,20 @@ class UserWalletViewSet(viewsets.ModelViewSet):
         
         for wallet in wallets:
             # Получаем последнюю цену для криптовалюты
-            latest_price = CryptoPrice.objects.filter(crypto=wallet.currency).order_by('-timestamp').first()
+            # Получаем последнюю цену для криптовалюты
+            crypto = wallet.currency
+            if crypto.symbol == 'USDT':
+                try:
+                    # Пробуем найти криптовалюту Tether для получения корректной цены
+                    tether_crypto = Cryptocurrency.objects.filter(coingecko_id='tether').first()
+                    if tether_crypto:
+                        latest_price = CryptoPrice.objects.filter(crypto=tether_crypto).order_by('-timestamp').first()
+                    else:
+                        latest_price = None
+                except Cryptocurrency.DoesNotExist: # Этот блок теперь можно убрать, но оставим для безопасности
+                    latest_price = None
+            else:
+                latest_price = CryptoPrice.objects.filter(crypto=crypto).order_by('-timestamp').first()
             if latest_price:
                 total_usd_balance += wallet.balance * latest_price.price_usd
         
@@ -308,8 +323,10 @@ class ExchangeCurrencyView(APIView):
 
         try:
             from_wallet = get_object_or_404(UserWallet, user=user, currency__symbol=from_symbol)
-            to_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=get_object_or_404(Cryptocurrency,
-                                                                                                    symbol=to_symbol))
+            to_currency = Cryptocurrency.objects.filter(symbol=to_symbol).first()
+            if not to_currency:
+                return Response({'error': f'Валюта {to_symbol} не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+            to_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=to_currency)
         except Cryptocurrency.DoesNotExist:
             return Response({'error': 'Одна из указанных валют не найдена.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -317,7 +334,15 @@ class ExchangeCurrencyView(APIView):
             return Response({'error': 'Недостаточно средств на балансе для обмена.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        live_rates = get_exchange_rates([from_wallet.currency.coingecko_id], [to_wallet.currency.coingecko_id])
+        from_crypto_coingecko_id = from_wallet.currency.coingecko_id
+        if from_wallet.currency.symbol == 'USDT':
+            from_crypto_coingecko_id = 'tether'
+        
+        to_crypto_coingecko_id = to_wallet.currency.coingecko_id
+        if to_wallet.currency.symbol == 'USDT':
+            to_crypto_coingecko_id = 'tether'
+
+        live_rates = get_exchange_rates([from_crypto_coingecko_id], [to_crypto_coingecko_id])
 
         if not live_rates or from_wallet.currency.coingecko_id not in live_rates or to_wallet.currency.coingecko_id not in live_rates[from_wallet.currency.coingecko_id]:
             return Response({"error": "Не удалось получить актуальный курс для указанной пары."},
@@ -407,8 +432,11 @@ class ExchangeRateView(APIView):
             )
 
         try:
-            source_currency = Cryptocurrency.objects.get(symbol__iexact=source_symbol)
-            target_currency = Cryptocurrency.objects.get(symbol__iexact=target_symbol)
+            source_currency = Cryptocurrency.objects.filter(symbol__iexact=source_symbol).first()
+            target_currency = Cryptocurrency.objects.filter(symbol__iexact=target_symbol).first()
+
+            if not source_currency or not target_currency:
+                return Response({"error": "One or both of the specified currency symbols do not exist."}, status=status.HTTP_404_NOT_FOUND)
 
             # The service function fetches all available rates against USD.
             all_rates = get_exchange_rates() 
@@ -420,13 +448,19 @@ class ExchangeRateView(APIView):
                 )
             
             # Get the USD rate for the source currency
-            source_rate_data = all_rates.get(source_currency.coingecko_id)
+            source_coingecko_id = source_currency.coingecko_id
+            if source_currency.symbol == 'USDT':
+                source_coingecko_id = 'tether'
+            source_rate_data = all_rates.get(source_coingecko_id)
             if not source_rate_data or 'usd' not in source_rate_data:
                 return Response({"error": f"Rate for source currency {source_symbol} not available."}, status=status.HTTP_404_NOT_FOUND)
             source_rate_usd = Decimal(str(source_rate_data['usd']))
 
             # Get the USD rate for the target currency
-            target_rate_data = all_rates.get(target_currency.coingecko_id)
+            target_coingecko_id = target_currency.coingecko_id
+            if target_currency.symbol == 'USDT':
+                target_coingecko_id = 'tether'
+            target_rate_data = all_rates.get(target_coingecko_id)
             if not target_rate_data or 'usd' not in target_rate_data:
                 return Response({"error": f"Rate for target currency {target_symbol} not available."}, status=status.HTTP_404_NOT_FOUND)
             target_rate_usd = Decimal(str(target_rate_data['usd']))

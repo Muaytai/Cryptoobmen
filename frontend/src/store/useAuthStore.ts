@@ -1,15 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api from '@/lib/api/fetch';
+import { useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
-interface User {
+export interface User {
   id: string | number;
   username: string;
   email: string;
   first_name?: string;
   last_name?: string;
+  full_name?: string; // Полное имя пользователя
   avatar?: string;
   phone_number?: string;
+  date_of_birth?: string; // Дата рождения в формате YYYY-MM-DD
+  address?: string; // Адрес проживания
   is_verified?: boolean;
   kyc_verified?: boolean;
   telegram_id?: string;
@@ -17,11 +21,16 @@ interface User {
   has_2fa?: boolean;
   notify_via_email?: boolean;
   notify_via_telegram?: boolean;
+  profile?: {
+    website?: string;
+    bio?: string; // Информация о себе
+  };
 }
 
 interface Credentials {
   email: string;
   password: string;
+  recaptcha_token: string;
 }
 
 interface RegistrationData {
@@ -29,6 +38,7 @@ interface RegistrationData {
   email: string;
   password1: string;
   password2: string;
+  recaptcha_token: string;
 }
 
 interface Tokens {
@@ -57,6 +67,7 @@ interface AuthState {
   showEmailConfirmedModal: boolean;
   disableAutoLogin: boolean;
   tokens: Tokens | null;
+  shouldPlayAnimation: boolean; // Флаг для анимации успеха
   
   login: (credentials: Credentials) => Promise<void>;
   register: (data: RegistrationData) => Promise<void>;
@@ -66,6 +77,10 @@ interface AuthState {
   setShowEmailConfirmedModal: (show: boolean) => void;
   setDisableAutoLogin: (disable: boolean) => void;
   setTokens: (tokens: Tokens | null) => void;
+  updateProfile: (profileData: Partial<User>, skipRefresh?: boolean) => Promise<void>;
+  updateAvatar: (file: File) => Promise<void>;
+  getAuthHeaders: () => Record<string, string>;
+  setShouldPlayAnimation: (value: boolean) => void; // Функция для установки флага анимации
 }
 
 const handleApiError = (error: any, defaultMessage: string): string => {
@@ -117,6 +132,7 @@ export const useAuthStore = create<AuthState>()(
       showEmailConfirmedModal: false,
       disableAutoLogin: true,
       tokens: null,
+      shouldPlayAnimation: false,
       
       setTokens: (tokens: Tokens | null) => {
         set({ tokens, isAuthenticated: !!(tokens && tokens.access), user: null }); 
@@ -126,37 +142,64 @@ export const useAuthStore = create<AuthState>()(
         console.log('[AuthStore] login: Начало входа');
         set({ isLoading: true, error: null });
         try {
-          await api.post('/auth/login/', credentials); 
-          console.log('[AuthStore] login: api.auth.login успешно выполнен. Вызов checkAuthStatus(true)...');
-          await get().checkAuthStatus(true);
-          console.log(
-            '[AuthStore] login: checkAuthStatus завершен. Текущее состояние: user: ',
-            get().user,
-            ', isAuthenticated: ',
-            get().isAuthenticated
-          );
+          // Используем токен reCAPTCHA, переданный из формы
+          let payload: any = { ...credentials };
+          
+          // Проверяем, что токен reCAPTCHA присутствует
+          if (!payload.recaptcha_token) {
+            throw new Error('Отсутствует токен reCAPTCHA');
+          }
+
+          // Шаг 1: Выполняем вход и получаем токены (предполагается, что бэкенд устанавливает HttpOnly куки)
+          await api.post('/auth/login/', payload);
+          console.log('[AuthStore] login: api.post(/auth/login/) успешно выполнен.');
+
+          // Шаг 2: Сразу после успешного входа обновляем состояние
+          set({
+            isAuthenticated: true,
+            isLoading: false, // Можно установить в false, т.к. основная операция завершена
+            disableAutoLogin: false,
+            error: null
+          });
+          localStorage.removeItem('disableAutoLogin');
+          console.log('[AuthStore] login: Состояние обновлено, isAuthenticated: true.');
+
+          // Шаг 3: Асинхронно и без блокировки получаем данные пользователя
+          get().checkAuthStatus(true).then(() => {
+            console.log(
+              '[AuthStore] login: checkAuthStatus в then() завершен. Текущее состояние: user: ',
+              get().user,
+              ', isAuthenticated: ',
+              get().isAuthenticated
+            );
+          }).catch(error => {
+            // Если checkAuthStatus не удался, это не отменяет успешный вход,
+            // но логируем ошибку, чтобы понимать, почему данные пользователя не загрузились.
+            console.error('[AuthStore] login: Ошибка в фоновом checkAuthStatus после входа:', error);
+            // Можно установить какое-то некритичное сообщение об ошибке, не сбрасывая аутентификацию
+            // set({ error: 'Не удалось загрузить данные профиля, но вы вошли в систему.' });
+          });
         } catch (error: any) {
-          console.error('[useAuthStore login] Ошибка входа или проверки статуса:', error);
-          clearAuthData();
+          console.error('[useAuthStore login] Ошибка входа:', error);
+          clearAuthData(); // Очищаем все данные при ошибке входа
           set({
             error: handleApiError(error, 'Ошибка входа. Проверьте email и пароль или попробуйте позже.'),
-            isLoading: false, 
+            isLoading: false,
             isAuthenticated: false,
             user: null,
-            tokens: null, 
+            tokens: null,
             disableAutoLogin: true,
           });
           console.log('[AuthStore] login: Ошибка, состояние сброшено.');
-        } finally {
-          console.log('[AuthStore] login: Блок finally, установка isLoading: false.');
-          set({ isLoading: false });
+          throw error; // Пробрасываем ошибку, чтобы компонент мог на нее среагировать
         }
+        
       },
       
       register: async (data: RegistrationData) => {
         set({ isLoading: true, error: null });
         try {
-          await api.post('/auth/login/', { email: data.email, password: data.password1 });
+          await api.post('/auth/registration/', data);
           set({ isLoading: false });
         } catch (error) {
           console.error('Ошибка регистрации:', error);
@@ -170,6 +213,7 @@ export const useAuthStore = create<AuthState>()(
       
       logout: async () => {
         console.log('[AuthStore] logout: Начало выхода.');
+
         set({ isLoading: true, error: null });
         try {
           await api.post('/auth/logout/', {});
@@ -197,11 +241,19 @@ export const useAuthStore = create<AuthState>()(
 
         console.log(`[AuthStore] checkAuthStatus: Начало проверки. isLoginProcess: ${isLoginProcess}, disableAutoLogin в сторе: ${store.disableAutoLogin}`);
         set({ isLoading: true, error: null });
+        
+        
 
         try {
           console.log('[AuthStore] checkAuthStatus: Попытка загрузить профиль пользователя (api.auth.getUser).');
-          const response = await api.get('/auth/user/'); 
-          const userData = (response as any)?.data ?? response;
+          
+          // Получаем все доступные заголовки аутентификации
+          const headers = get().getAuthHeaders();
+          
+          const response = await api.get('/accounts/users/me/', { headers }); 
+          const userData = (response as any)?.data 
+            ? {...(response as any)?.data, pk: (response as any)?.data?.id} 
+            : response;
 
           if (userData) {
             console.log('[AuthStore] checkAuthStatus: Профиль пользователя успешно загружен:', userData);
@@ -226,6 +278,7 @@ export const useAuthStore = create<AuthState>()(
                 localStorage.removeItem('disableAutoLogin');
                 console.log('[AuthStore] checkAuthStatus: Флаг disableAutoLogin удален из localStorage.');
               }
+
               return;
             } else {
               console.error('[AuthStore] checkAuthStatus: Отсутствуют обязательные поля в данных пользователя:', 
@@ -286,6 +339,144 @@ export const useAuthStore = create<AuthState>()(
             console.log('[AuthStore] setDisableAutoLogin: localStorage.disableAutoLogin удален');
           }
         }
+      },
+
+      // Функция для получения всех доступных заголовков аутентификации
+      getAuthHeaders: () => {
+        if (typeof window === 'undefined') return {};
+        
+        const cookies = document.cookie;
+        const headers: Record<string, string> = {};
+        
+        // Извлекаем CSRF токен
+        const csrfToken = cookies.split(';').find(c => c.trim().startsWith('csrftoken='))?.split('=')[1];
+        if (csrfToken) {
+          headers['X-CSRFToken'] = csrfToken;
+        }
+        
+        // Извлекаем другие важные куки
+        const sessionId = cookies.split(';').find(c => c.trim().startsWith('sessionid='))?.split('=')[1];
+        if (sessionId) {
+          headers['X-Session-ID'] = sessionId;
+        }
+        
+        // Логируем все доступные куки для отладки
+        console.log('[AuthStore] getAuthHeaders: Все доступные куки:', cookies);
+        console.log('[AuthStore] getAuthHeaders: Сформированы заголовки:', headers);
+        
+        return headers;
+      },
+
+      updateProfile: async (profileData: Partial<User>, skipRefresh: boolean = false) => {
+        console.log('[AuthStore] updateProfile: Начало обновления профиля', { skipRefresh });
+        set({ isLoading: true, error: null });
+        
+        try {
+          // Получаем все доступные заголовки аутентификации
+          const headers = get().getAuthHeaders();
+          
+          const response = await api.patch('/accounts/users/update_profile/', profileData, { headers });
+          const updatedUserData = (response as any)?.data;
+          
+          // Всегда устанавливаем isLoading в false после успешного запроса
+          if (updatedUserData && !skipRefresh) {
+            const currentUser = get().user;
+            const updatedUser = currentUser ? { ...currentUser, ...updatedUserData } as User : null;
+            set({ user: updatedUser, isLoading: false, error: null });
+            console.log('[AuthStore] updateProfile: Профиль успешно обновлен с данными от сервера');
+          } else if (!skipRefresh) {
+            // Если нет данных в ответе, но нужно обновить store, используем отправленные данные
+            const currentUser = get().user;
+            const updatedUser = currentUser ? { ...currentUser, ...profileData } as User : null;
+            set({ user: updatedUser, isLoading: false, error: null });
+            console.log('[AuthStore] updateProfile: Профиль обновлен с отправленными данными');
+          } else {
+            // Если skipRefresh = true, не обновляем store
+            set({ isLoading: false, error: null });
+            console.log('[AuthStore] updateProfile: Профиль обновлен (пропущен refresh)');
+          }
+        } catch (error: any) {
+          console.error('[AuthStore] updateProfile: Ошибка обновления профиля:', error);
+          set({
+            isLoading: false,
+            error: handleApiError(error, 'Ошибка обновления профиля'),
+          });
+          throw error;
+        }
+      },
+
+
+
+
+
+      updateAvatar: async (file: File) => {
+        console.log('[AuthStore] updateAvatar: Начало обновления аватара');
+        set({ isLoading: true, error: null });
+        
+        try {
+          const formData = new FormData();
+          formData.append('avatar', file);
+          
+          // Получаем все доступные заголовки аутентификации
+          const headers = get().getAuthHeaders();
+          
+          // Для FormData не указываем Content-Type, браузер сам установит правильную границу
+          const response = await api.patch('/accounts/users/update_profile/', formData, { headers });
+          
+          const updatedUserData = (response as any)?.data;
+          if (updatedUserData) {
+            const currentUser = get().user;
+            const updatedUser = currentUser ? { ...currentUser, avatar: updatedUserData.avatar } as User : null;
+            set({ user: updatedUser, isLoading: false, error: null });
+            console.log('[AuthStore] updateAvatar: Аватар успешно обновлен с данными от сервера');
+          } else {
+            // Если нет данных в ответе, принудительно обновляем аватар в сторе
+            const currentUser = get().user;
+            if (currentUser) {
+              // Создаем временный URL для файла и обновляем аватар
+              const tempAvatarUrl = URL.createObjectURL(file);
+              const updatedUser = { ...currentUser, avatar: tempAvatarUrl } as User;
+              set({ user: updatedUser, isLoading: false, error: null });
+              console.log('[AuthStore] updateAvatar: Аватар обновлен с временным URL (без данных от сервера)');
+              
+              // Сохраняем временный URL в localStorage для кэширования
+              try {
+                localStorage.setItem('temp_avatar_url', tempAvatarUrl);
+                localStorage.setItem('temp_avatar_timestamp', Date.now().toString());
+                console.log('[AuthStore] updateAvatar: Временный URL сохранен в localStorage');
+              } catch (error) {
+                console.log('[AuthStore] updateAvatar: Не удалось сохранить временный URL в localStorage:', error);
+              }
+              
+              // Очищаем временный URL через большее время для надежности
+              setTimeout(() => {
+                URL.revokeObjectURL(tempAvatarUrl);
+                // Удаляем из localStorage
+                try {
+                  localStorage.removeItem('temp_avatar_url');
+                  localStorage.removeItem('temp_avatar_timestamp');
+                } catch (error) {
+                  console.log('[AuthStore] updateAvatar: Не удалось удалить временный URL из localStorage:', error);
+                }
+                console.log('[AuthStore] updateAvatar: Временный URL очищен');
+              }, 10000); // Увеличили до 10 секунд
+            } else {
+              set({ isLoading: false, error: null });
+              console.log('[AuthStore] updateAvatar: Аватар обновлен (без данных от сервера, пользователь не найден)');
+            }
+          }
+        } catch (error: any) {
+          console.error('[AuthStore] updateAvatar: Ошибка обновления аватара:', error);
+          set({
+            isLoading: false,
+            error: handleApiError(error, 'Ошибка обновления аватара'),
+          });
+          throw error;
+        }
+      },
+
+      setShouldPlayAnimation: (value: boolean) => {
+        set({ shouldPlayAnimation: value });
       },
     }),
     {

@@ -4,6 +4,12 @@ import sys
 from datetime import timedelta
 from django.core.exceptions import ImproperlyConfigured
 
+# Применяем патч для совместимости channels-redis 4.x
+try:
+    import core.channel_layer_patch
+except ImportError:
+    pass
+
 # Загрузка переменных окружения из .env файла
 from dotenv import load_dotenv
 
@@ -41,6 +47,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'drf_spectacular', 
 
     # Установленные приложения
     'channels',
@@ -56,6 +63,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.yandex',
+    
     
     # Приложения для безопасности
     'django_recaptcha',  # django-recaptcha
@@ -138,6 +146,9 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Важно для безопаснос
 
 # Настройки REST Framework
 REST_FRAMEWORK = {
+    # Явное указание использовать drf-spectacular для генерации схемы API
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'dj_rest_auth.jwt_auth.JWTCookieAuthentication',
     ),
@@ -165,6 +176,9 @@ TRONGRID_API_KEY = os.getenv('TRONGRID_API_KEY')
 # Helius API Key
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY')
 
+# Blockcypher API Key for Bitcoin
+BLOCKCYPHER_API_KEY = os.getenv('BLOCKCYPHER_API_KEY', '')
+
 # TRON Network configuration
 TRON_NETWORK = os.getenv('TRON_NETWORK', 'mainnet') # По умолчанию mainnet
 
@@ -181,6 +195,9 @@ USDT_TRC20_CONTRACT_ADDRESS = os.getenv("USDT_TRC20_CONTRACT_ADDRESS", "TXLAQ63X
 # В реальном проекте этот ключ должен быть в .env файле
 BITCOIN_XPUB_KEY = os.getenv('BITCOIN_XPUB_KEY')
 
+# TRON HD Wallet Master Seed
+TRON_MASTER_SEED_HEX = os.getenv('TRON_MASTER_SEED_HEX')
+
 
 ROOT_URLCONF = 'core.urls'
 
@@ -188,7 +205,7 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [BASE_DIR / 'templates'],
-        'APP_DIRS': False,
+       
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.debug',
@@ -219,7 +236,7 @@ DATABASES = {
         'NAME': os.getenv('POSTGRES_DB'),
         'USER': os.getenv('POSTGRES_USER'),
         'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
-        'HOST': os.getenv('POSTGRES_HOST', '127.0.0.1'),
+        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
         'OPTIONS': {
             'client_encoding': 'UTF8',
@@ -269,7 +286,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Настройки аутентификации
 AUTHENTICATION_BACKENDS = (
-    # 'axes.backends.AxesStandaloneBackend', # временно отключено
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
 )
@@ -421,9 +437,11 @@ REST_AUTH = {
     'JWT_AUTH_SAMESITE': SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
     'JWT_AUTH_SECURE': SIMPLE_JWT['AUTH_COOKIE_SECURE'],
     'SESSION_LOGIN': False,
+    'LOGIN_SERIALIZER': 'accounts.serializers.CustomLoginSerializer',
+    'REGISTER_SERIALIZER': 'accounts.serializers.CustomRegisterSerializer',
 }
 
-# AllAuth настройки
+# AllAuth настройки (обновлены для версии 65.11.0)
 ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'http'
@@ -433,10 +451,17 @@ ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
 ACCOUNT_EMAIL_SUBJECT_PREFIX = 'Cryptoobmen - '
 ACCOUNT_EMAIL_CONFIRMATION_HMAC = True
+
+# Новые настройки для allauth 65.11.0+
 ACCOUNT_LOGIN_METHODS = ['email']
-ACCOUNT_SIGNUP_FIELDS = ['email*', 'password']
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None
-ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1']
+ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
+
+# Устаревшие настройки заменены на новые
+# ACCOUNT_USERNAME_REQUIRED = False  # Убрано
+# ACCOUNT_AUTHENTICATION_METHOD = 'email'  # Убрано  
+# ACCOUNT_EMAIL_REQUIRED = True  # Убрано
+
 ACCOUNT_RATE_LIMITS = {
     'confirm_email': '5/m',
 }
@@ -476,6 +501,16 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Cryptoobmen API',  # Название вашего проекта
+    'DESCRIPTION': 'Документация для API проекта Cryptoobmen', # Описание
+    'VERSION': '1.0.0',
+    # Указываем, что UI должен быть доступен через HTTPS в продакшене
+    'SERVE_PUBLIC': True,
+    'SERVE_INCLUDE_SCHEMA': False,  # Не показывать голую схему по умолчанию
+}
+
+
 ADMIN_URL = 'admin/'
 
 # ----------------- Celery -----------------
@@ -485,6 +520,31 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+
+# Настройка очередей для разделения задач
+CELERY_TASK_ROUTES = {
+    # Критически важные задачи - высокий приоритет
+    'crypto.tasks.process_withdrawal': {'queue': 'high_priority'},
+    'crypto.tasks.check_withdrawal_confirmation': {'queue': 'high_priority'},
+    
+    # Консолидация - средний приоритет
+    'crypto.tasks_consolidation.consolidate_user_deposits': {'queue': 'medium_priority'},
+    'crypto.tasks_consolidation.check_consolidation_confirmations': {'queue': 'medium_priority'},
+    
+    # Фоновое сканирование - низкий приоритет
+    'crypto.tasks.check_blockchain_deposits': {'queue': 'low_priority'},
+    'crypto.tasks.process_pending_deposits': {'queue': 'low_priority'},
+    'crypto.tasks.process_pending_withdrawals': {'queue': 'low_priority'},
+}
+
+# Настройка приоритетов очередей
+CELERY_TASK_DEFAULT_QUEUE = 'medium_priority'
+CELERY_TASK_QUEUE_MAX_PRIORITY = 10
+CELERY_TASK_DEFAULT_PRIORITY = 5
+
+# Настройки производительности
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Обрабатывать по одной задаче за раз
+CELERY_TASK_ACKS_LATE = True  # Подтверждать выполнение только после завершения
 
 # Периодические задачи
 from celery.schedules import crontab
@@ -502,6 +562,18 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'crypto.tasks.process_pending_deposits',
         'schedule': 60.0,
     },
+    'consolidate-user-deposits-every-5-minutes': {
+        'task': 'crypto.tasks_consolidation.consolidate_user_deposits',
+        'schedule': 300.0,  # 5 минут
+    },
+    'check-consolidation-confirmations-every-minute': {
+        'task': 'crypto.tasks_consolidation.check_consolidation_confirmations',
+        'schedule': 60.0,
+    },
+    'consolidate_funds_every_5_minutes': {
+        'task': 'crypto.tasks.consolidate_funds',
+        'schedule': 300.0,  # 300 секунд = 5 минут
+    },
 }
 
 
@@ -514,9 +586,47 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [("localhost", 6379)],
         },
     },
 }
 
 TRON_PLATFORM_PRIVATE_KEY = os.getenv('TRON_PLATFORM_PRIVATE_KEY')
+
+# XUMM (Xaman) API ключи для интеграции с XRP Ledger через XUMM
+XAMAN_API_KEY = os.getenv('XAMAN_API_KEY', '')
+XAMAN_API_SECRET = os.getenv('XAMAN_API_SECRET', '')
+
+# Ethereum настройки
+ETHEREUM_NETWORK = os.getenv('ETHEREUM_NETWORK', 'mainnet')  # mainnet, goerli, sepolia
+ETHEREUM_RPC_URL = os.getenv('ETHEREUM_RPC_URL', 'https://mainnet.infura.io/v3/YOUR_PROJECT_ID')
+ETHEREUM_BACKUP_RPC_URL = os.getenv('ETHEREUM_BACKUP_RPC_URL', '')  # Резервный RPC
+INFURA_PROJECT_ID = os.getenv('INFURA_PROJECT_ID', '')
+ALCHEMY_API_KEY = os.getenv('ALCHEMY_API_KEY', '')
+
+# Ethereum контракты
+USDT_ERC20_CONTRACT_ADDRESS = os.getenv('USDT_ERC20_CONTRACT_ADDRESS', '0xdAC17F958D2ee523a2206206994597C13D831ec7')
+USDC_ERC20_CONTRACT_ADDRESS = os.getenv('USDC_ERC20_CONTRACT_ADDRESS', '0xA0b86a33E6441b8C4505B8C4505B8C4505B8C4505')
+DAI_ERC20_CONTRACT_ADDRESS = os.getenv('DAI_ERC20_CONTRACT_ADDRESS', '0x6B175474E89094C44Da98b954EedeAC495271d0F')
+
+# Gas настройки
+ETHEREUM_GAS_PRICE_MULTIPLIER = float(os.getenv('ETHEREUM_GAS_PRICE_MULTIPLIER', '1.1'))  # 10% надбавка к базовой цене
+ETHEREUM_MAX_GAS_PRICE = int(os.getenv('ETHEREUM_MAX_GAS_PRICE', '100'))  # Максимальная цена газа в Gwei
+ETHEREUM_GAS_LIMIT_ETH = int(os.getenv('ETHEREUM_GAS_LIMIT_ETH', '21000'))  # Лимит газа для ETH
+ETHEREUM_GAS_LIMIT_ERC20 = int(os.getenv('ETHEREUM_GAS_LIMIT_ERC20', '65000'))  # Лимит газа для ERC-20
+
+# Polygon настройки (только нативная валюта POL)
+POLYGON_NETWORK = os.getenv('POLYGON_NETWORK', 'testnet')  # mainnet, amoy (testnet)
+
+# Выбираем правильный RPC URL в зависимости от сети
+if POLYGON_NETWORK == 'mainnet':
+    POLYGON_RPC_URL = os.getenv('POLYGON_RPC_URL', 'https://polygon-rpc.com')
+    POLYGON_BACKUP_RPC_URL = os.getenv('POLYGON_BACKUP_RPC_URL', 'https://rpc-mainnet.maticvigil.com')
+else:  # testnet/amoy
+    POLYGON_RPC_URL = os.getenv('POLYGON_TESTNET_RPC_URL', 'https://rpc-amoy.polygon.technology')
+    POLYGON_BACKUP_RPC_URL = os.getenv('POLYGON_TESTNET_RPC_URL', 'https://polygon-amoy.blockpi.network/v1/rpc/public')
+
+# Gas настройки для Polygon (POL)
+POLYGON_GAS_PRICE_MULTIPLIER = float(os.getenv('POLYGON_GAS_PRICE_MULTIPLIER', '1.1'))
+POLYGON_MAX_GAS_PRICE = int(os.getenv('POLYGON_MAX_GAS_PRICE', '50'))  # В Gwei
+POLYGON_GAS_LIMIT = int(os.getenv('POLYGON_GAS_LIMIT', '21000'))  # Для POL транзакций
