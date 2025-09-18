@@ -32,13 +32,10 @@ def check_blockchain_deposits():
     processed = 0
     logger.info("[check_blockchain_deposits] Starting deposit check...")
 
-    # 1. Сначала обрабатываем валюты с MEMO (как раньше)
+    # Обрабатываем все системные кошельки
     for wallet in SystemWalletAddress.objects.select_related('currency').all():
         currency = wallet.currency
         if not currency.is_active:
-            continue
-        if not getattr(currency, 'requires_memo', False):
-            logger.info(f"Skipping {currency.symbol} in {wallet.network}: MEMO not required (per official docs)")
             continue
 
         logger.info(f"[check_blockchain_deposits] Checking wallet: {wallet.address} for currency {wallet.currency.symbol} in network {wallet.network}")
@@ -62,7 +59,7 @@ def check_blockchain_deposits():
             continue
 
         for ev in raw_transactions:
-            memo = ev.get("memo")
+            memo = ev.get("memo", "")
             tx_hash = ev.get("transaction_id")
             amount_str = ev.get("value")
 
@@ -89,6 +86,30 @@ def check_blockchain_deposits():
                 # Если memo обязательно, но его нет, пропускаем
                 logger.warning(f"Skipping event for {wallet.currency.symbol} because it requires a memo, but none was provided.")
                 continue
+            
+            else:
+                # Для валют без memo (как BNB) - ищем пользователя по адресу депозита
+                # В BSC/BEP20 нет memo, поэтому нужно найти пользователя по адресу кошелька
+                try:
+                    # Ищем пользователя, у которого deposit_address совпадает с адресом отправителя
+                    from_address = ev.get("from_address", "")
+                    if from_address:
+                        user_wallet = UserWallet.objects.filter(
+                            deposit_address__iexact=from_address,
+                            currency=wallet.currency
+                        ).first()
+                        if user_wallet and user_wallet.user:
+                            user = user_wallet.user
+                            logger.info(f"Found user {user.id} by deposit address {from_address}")
+                        else:
+                            logger.warning(f"No user found for deposit address {from_address}. Skipping.")
+                            continue
+                    else:
+                        logger.warning(f"No from_address in transaction {tx_hash}. Skipping.")
+                        continue
+                except Exception as e:
+                    logger.error(f"Error while finding user by deposit address: {e}", exc_info=True)
+                    continue
             
             if not user:
                 logger.warning(f"User not found for transaction {tx_hash}. Skipping.")

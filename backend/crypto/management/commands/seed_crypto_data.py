@@ -38,6 +38,16 @@ class Command(BaseCommand):
                 'name': 'Binance Coin', 'symbol': 'BNB', 'network': 'BEP20', 'coingecko_id': 'binancecoin',
                 'contract_address': '', 'decimals': 18
             },
+            # В список currencies добавить:
+            {
+                 'name': 'Binance Coin (Testnet)', 
+                'symbol': 'BNB', 
+        'network': 'BSC_TESTNET', 
+         'coingecko_id': 'binancecoin',
+    'contract_address': '', 
+    'decimals': 18,
+    'requires_memo': False
+}
         ]
 
         # Сначала проверяем существующие валюты и обновляем их поля network, если они null

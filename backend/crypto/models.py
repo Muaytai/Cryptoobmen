@@ -359,7 +359,7 @@ def create_default_cryptocurrencies():
         {"name": "Tether USD", "symbol": "USDT", "network": "ERC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
         {"name": "Tether USD", "symbol": "USDT", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
         {"name": "Tron", "symbol": "TRX", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
-        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "decimals": 18, "requires_memo": True, "icon_b64": None},
+        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "decimals": 18, "requires_memo": False, "icon_b64": None},
         {"name": "Ripple", "symbol": "XRP", "network": "XRP", "decimals": 6, "requires_memo": True, "icon_b64": None},
         {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
         {"name": "Solana", "symbol": "SOL", "network": "SOL", "decimals": 9, "requires_memo": False, "icon_b64": None},

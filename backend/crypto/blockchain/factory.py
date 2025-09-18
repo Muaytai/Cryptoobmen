@@ -4,6 +4,7 @@ from .tron import TronService
 from .bitcoin import BitcoinService
 from .xrp import XRPService
 from .ethereum import EthereumService
+from .bnb import BNBService  # Добавляем импорт
 
 def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainService:
     """
@@ -15,12 +16,16 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
         if address.startswith('T') and len(address) == 34:
             return TronService()
         elif address.startswith('0x') and len(address) == 42:
-            eth_network = getattr(settings, 'ETHEREUM_NETWORK', 'goerli')
-            return EthereumService(network=eth_network)
+            # Определяем сеть по настройкам или другим параметрам
+            if network and network.upper() in ['BEP20', 'BSC']:
+                return BNBService(network='testnet')
+            else:
+                eth_network = getattr(settings, 'ETHEREUM_NETWORK', 'goerli')
+                return EthereumService(network=eth_network)
         elif address.startswith('bc1') or address.startswith('tb1'):
              return BitcoinService(network='testnet' if address.startswith('tb1') else 'mainnet')
         elif address.startswith('r') and len(address) > 25:
-            return XRPService(network='mainnet') # Упрощено для примера
+            return XRPService(network='mainnet')
 
     # Определение по имени сети (как было раньше)
     network_lower = network.lower() if network else ''
@@ -33,5 +38,7 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
         return EthereumService(network=eth_network)
     elif network_lower in ['xrp', 'ripple']:
         return XRPService(network='testnet')
+    elif network_lower in ['bep20', 'bsc', 'bnb']:  # Добавляем поддержку BSC
+        return BNBService(network='testnet')
     
     raise ValueError(f"Unsupported blockchain network: {network} or address format.")

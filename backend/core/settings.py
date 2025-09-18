@@ -433,7 +433,7 @@ REST_AUTH = {
 ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'http'
-ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
+ACCOUNT_EMAIL_VERIFICATION = 'optional'
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
@@ -442,7 +442,12 @@ ACCOUNT_EMAIL_CONFIRMATION_HMAC = True
 
 # Новые настройки для allauth 65.11.0+
 ACCOUNT_LOGIN_METHODS = ['email']
-ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1']
+ACCOUNT_SIGNUP_FIELDS = {
+    'email': {'required': True},
+    'username': {'required': False},
+    'first_name': {'required': False},
+    'last_name': {'required': False},
+}
 ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 
 # Устаревшие настройки заменены на новые
@@ -565,3 +570,7 @@ ETHEREUM_GAS_PRICE_MULTIPLIER = float(os.getenv('ETHEREUM_GAS_PRICE_MULTIPLIER',
 ETHEREUM_MAX_GAS_PRICE = int(os.getenv('ETHEREUM_MAX_GAS_PRICE', '100'))  # Максимальная цена газа в Gwei
 ETHEREUM_GAS_LIMIT_ETH = int(os.getenv('ETHEREUM_GAS_LIMIT_ETH', '21000'))  # Лимит газа для ETH
 ETHEREUM_GAS_LIMIT_ERC20 = int(os.getenv('ETHEREUM_GAS_LIMIT_ERC20', '65000'))  # Лимит газа для ERC-20
+
+
+BSC_TESTNET_RPC_URL = os.getenv('BSC_TESTNET_RPC_URL', 'https://data-seed-prebsc-1-s1.binance.org:8545/')
+BSCSCAN_API_KEY = os.getenv('BSCSCAN_API_KEY', '')  # Получить на https://bscscan.com/apis
