@@ -16,7 +16,7 @@ const navItems = [
     icon: "/images/profile/vector-5.svg",
     alt: "Profile",
     title: "Главня",
-    path: "/profile2",
+    path: "/me",
   },
   {
     icon: "/images/profile/vector-9.svg",

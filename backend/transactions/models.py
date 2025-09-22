@@ -16,6 +16,7 @@ class Transaction(models.Model):
         ('exchange', _('Обмен')),
         ('transfer', _('Перевод')),
         ('fee', _('Комиссия')),
+        ('consolidation', _('Консолидация')),
     )
     
     STATUS_CHOICES = (

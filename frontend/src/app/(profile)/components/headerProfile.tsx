@@ -2,10 +2,21 @@
 
 import React, { JSX } from "react";
 import styles from "./headerProfile.module.css";
-import { Button } from "../profile2/components/ui/button";
-import { Avatar, AvatarImage, AvatarFallback } from "../profile2/components/ui/avatar";
+import { Button } from "../me/components/ui/button";
+import { Avatar, AvatarImage, AvatarFallback } from "../me/components/ui/avatar";
+import { User } from "@/store/useAuthStore";
+import { useRouter } from "next/navigation";
 
-export const HeaderProfile = (): JSX.Element => {
+interface HeaderProfileProps {
+  user: User;
+}
+
+export const HeaderProfile = ({ user }: HeaderProfileProps): JSX.Element => {
+  const userName = user?.first_name || user?.username || "Пользователь";
+  const userInitials = userName.substring(0, 2).toUpperCase();
+  const userAvatar = user?.avatar || "/images/profile/rectangle-12960.png";
+  const router = useRouter();
+
   return (
     <>
       <div className={styles.header}>
@@ -19,19 +30,19 @@ export const HeaderProfile = (): JSX.Element => {
 
         <div className={styles.userProfile}>
           <Avatar className={styles.avatar}>
-            <AvatarImage src="/images/profile/rectangle-12960.png" alt="User" />
+            <AvatarImage src={userAvatar} alt="User" />
             <AvatarFallback className={styles.avatarFallback}>
-              КР
+              {userInitials}
             </AvatarFallback>
           </Avatar>
-          <span className={styles.userName}>Кристина</span>
+          <span className={styles.userName}>{userName}</span>
         </div>
 
-        <Button className={styles.actionButton}>
+        <Button className={styles.actionButton} onClick={() => router.push("/me/edit")}>
           <img
-            className={styles.iconMedium}
-            alt="Settings"
-            src="/images/profile/vector-3.svg"
+            className={styles.iconSmall}
+            alt="Edit"
+            src="/images/profile/settings.svg"
           />
         </Button>
       </div>

@@ -162,9 +162,13 @@ export const WithdrawPage: React.FC = () => {
   // Безопасный поиск цены для выбранного кошелька
   let cryptoPrice = null;
   if (selectedWallet && selectedWallet.currency && Array.isArray(prices)) {
-    cryptoPrice = prices.find(
-      (p) => p.crypto_id === selectedWallet.currency.id
-    );
+    if (selectedWallet.currency.symbol === 'USDT') {
+      cryptoPrice = prices.find(p => p.symbol === 'USDT');
+    } else {
+      cryptoPrice = prices.find(
+        (p) => p.crypto_id === selectedWallet.currency.id
+      );
+    }
   }
 
   // Обновление расчета комиссии при изменении суммы или кошелька
@@ -172,7 +176,12 @@ export const WithdrawPage: React.FC = () => {
     if (selectedWalletId && amount && !isNaN(parseFloat(amount))) {
       const selectedWallet = wallets.find(w => w.id === selectedWalletId);
       if (selectedWallet) {
-        const cryptoPrice = prices.find(p => p.crypto_id === selectedWallet.currency.id);
+        let cryptoPrice = null;
+        if (selectedWallet.currency.symbol === 'USDT') {
+          cryptoPrice = prices.find(p => p.symbol === 'USDT');
+        } else {
+          cryptoPrice = prices.find(p => p.crypto_id === selectedWallet.currency.id);
+        }
         if (cryptoPrice) {
           // Расчет комиссии (примерно 0.1% от суммы вывода)
           const feePercentage = 0.1;
@@ -428,16 +437,48 @@ export const WithdrawPage: React.FC = () => {
                     } transition`}
                   >
                     <div className="flex-shrink-0 mr-3">
-                      {wallet.currency.icon ? (
-                        <Image
-                          src={wallet.currency.icon.startsWith('http') ? wallet.currency.icon : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`}
-                          alt={wallet.currency.symbol}
-                          width={32}
-                          height={32}
-                          className="rounded-full"
-                          unoptimized
-                        />
-                      ) : (
+                      {wallet.currency.icon && wallet.currency.icon.trim() !== '' ? (() => {
+                        const iconUrl = wallet.currency.icon.startsWith('http') 
+                          ? wallet.currency.icon 
+                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`;
+                        
+                        // Проверяем валидность URL
+                        try {
+                          new URL(iconUrl);
+                          return (
+                            <>
+                              <Image
+                                src={iconUrl}
+                                alt={wallet.currency.symbol}
+                                width={32}
+                                height={32}
+                                className="rounded-full"
+                                unoptimized
+                                onError={(e) => {
+                                  console.error('WithdrawPage: Ошибка загрузки иконки валюты:', iconUrl);
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const fallback = target.nextElementSibling as HTMLElement;
+                                  if (fallback) fallback.style.display = 'flex';
+                                }}
+                              />
+                              <div 
+                                className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold"
+                                style={{ display: 'none' }}
+                              >
+                                {wallet.currency.symbol.slice(0, 2)}
+                              </div>
+                            </>
+                          );
+                        } catch (error) {
+                          console.error('WithdrawPage: Некорректный URL иконки валюты:', iconUrl, error);
+                          return (
+                            <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
+                              {wallet.currency.symbol.slice(0, 2)}
+                            </div>
+                          );
+                        }
+                      })() : (
                         <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
                           {wallet.currency.symbol.slice(0, 2)}
                         </div>

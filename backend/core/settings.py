@@ -4,6 +4,12 @@ import sys
 from datetime import timedelta
 from django.core.exceptions import ImproperlyConfigured
 
+# Применяем патч для совместимости channels-redis 4.x
+try:
+    import core.channel_layer_patch
+except ImportError:
+    pass
+
 # Загрузка переменных окружения из .env файла
 from dotenv import load_dotenv
 
@@ -185,6 +191,9 @@ USDT_TRC20_CONTRACT_ADDRESS = os.getenv("USDT_TRC20_CONTRACT_ADDRESS", "TXLAQ63X
 # Bitcoin HD Wallet xpub key (testnet)
 # В реальном проекте этот ключ должен быть в .env файле
 BITCOIN_XPUB_KEY = os.getenv('BITCOIN_XPUB_KEY')
+
+# TRON HD Wallet Master Seed
+TRON_MASTER_SEED_HEX = os.getenv('TRON_MASTER_SEED_HEX')
 
 
 ROOT_URLCONF = 'core.urls'
@@ -514,6 +523,31 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
+# Настройка очередей для разделения задач
+CELERY_TASK_ROUTES = {
+    # Критически важные задачи - высокий приоритет
+    'crypto.tasks.process_withdrawal': {'queue': 'high_priority'},
+    'crypto.tasks.check_withdrawal_confirmation': {'queue': 'high_priority'},
+    
+    # Консолидация - средний приоритет
+    'crypto.tasks_consolidation.consolidate_user_deposits': {'queue': 'medium_priority'},
+    'crypto.tasks_consolidation.check_consolidation_confirmations': {'queue': 'medium_priority'},
+    
+    # Фоновое сканирование - низкий приоритет
+    'crypto.tasks.check_blockchain_deposits': {'queue': 'low_priority'},
+    'crypto.tasks.process_pending_deposits': {'queue': 'low_priority'},
+    'crypto.tasks.process_pending_withdrawals': {'queue': 'low_priority'},
+}
+
+# Настройка приоритетов очередей
+CELERY_TASK_DEFAULT_QUEUE = 'medium_priority'
+CELERY_TASK_QUEUE_MAX_PRIORITY = 10
+CELERY_TASK_DEFAULT_PRIORITY = 5
+
+# Настройки производительности
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Обрабатывать по одной задаче за раз
+CELERY_TASK_ACKS_LATE = True  # Подтверждать выполнение только после завершения
+
 # Периодические задачи
 from celery.schedules import crontab
 
@@ -529,6 +563,18 @@ CELERY_BEAT_SCHEDULE = {
     'process-pending-deposits-every-minute': {
         'task': 'crypto.tasks.process_pending_deposits',
         'schedule': 60.0,
+    },
+    'consolidate-user-deposits-every-5-minutes': {
+        'task': 'crypto.tasks_consolidation.consolidate_user_deposits',
+        'schedule': 300.0,  # 5 минут
+    },
+    'check-consolidation-confirmations-every-minute': {
+        'task': 'crypto.tasks_consolidation.check_consolidation_confirmations',
+        'schedule': 60.0,
+    },
+    'consolidate_funds_every_5_minutes': {
+        'task': 'crypto.tasks.consolidate_funds',
+        'schedule': 300.0,  # 300 секунд = 5 минут
     },
 }
 
@@ -571,6 +617,21 @@ ETHEREUM_MAX_GAS_PRICE = int(os.getenv('ETHEREUM_MAX_GAS_PRICE', '100'))  # Ма
 ETHEREUM_GAS_LIMIT_ETH = int(os.getenv('ETHEREUM_GAS_LIMIT_ETH', '21000'))  # Лимит газа для ETH
 ETHEREUM_GAS_LIMIT_ERC20 = int(os.getenv('ETHEREUM_GAS_LIMIT_ERC20', '65000'))  # Лимит газа для ERC-20
 
-
 BSC_TESTNET_RPC_URL = os.getenv('BSC_TESTNET_RPC_URL', 'https://data-seed-prebsc-1-s1.binance.org:8545/')
 BSCSCAN_API_KEY = os.getenv('BSCSCAN_API_KEY', '')  # Получить на https://bscscan.com/apis
+
+# Polygon настройки (только нативная валюта POL)
+POLYGON_NETWORK = os.getenv('POLYGON_NETWORK', 'testnet')  # mainnet, amoy (testnet)
+
+# Выбираем правильный RPC URL в зависимости от сети
+if POLYGON_NETWORK == 'mainnet':
+    POLYGON_RPC_URL = os.getenv('POLYGON_RPC_URL', 'https://polygon-rpc.com')
+    POLYGON_BACKUP_RPC_URL = os.getenv('POLYGON_BACKUP_RPC_URL', 'https://rpc-mainnet.maticvigil.com')
+else:  # testnet/amoy
+    POLYGON_RPC_URL = os.getenv('POLYGON_TESTNET_RPC_URL', 'https://rpc-amoy.polygon.technology')
+    POLYGON_BACKUP_RPC_URL = os.getenv('POLYGON_TESTNET_RPC_URL', 'https://polygon-amoy.blockpi.network/v1/rpc/public')
+
+# Gas настройки для Polygon (POL)
+POLYGON_GAS_PRICE_MULTIPLIER = float(os.getenv('POLYGON_GAS_PRICE_MULTIPLIER', '1.1'))
+POLYGON_MAX_GAS_PRICE = int(os.getenv('POLYGON_MAX_GAS_PRICE', '50'))  # В Gwei
+POLYGON_GAS_LIMIT = int(os.getenv('POLYGON_GAS_LIMIT', '21000'))  # Для POL транзакций

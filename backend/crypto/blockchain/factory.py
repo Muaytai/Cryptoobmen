@@ -5,6 +5,7 @@ from .bitcoin import BitcoinService
 from .xrp import XRPService
 from .ethereum import EthereumService
 from .bnb import BNBService  # Добавляем импорт
+from .polygon import PolygonService
 
 def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainService:
     """
@@ -14,7 +15,8 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
     # Определение по формату адреса, если он предоставлен
     if address:
         if address.startswith('T') and len(address) == 34:
-            return TronService()
+            tron_network = getattr(settings, 'TRON_NETWORK', 'nile')
+            return TronService(network=tron_network)
         elif address.startswith('0x') and len(address) == 42:
             # Определяем сеть по настройкам или другим параметрам
             if network and network.upper() in ['BEP20', 'BSC']:
@@ -30,7 +32,8 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
     # Определение по имени сети (как было раньше)
     network_lower = network.lower() if network else ''
     if network_lower in ['trc20', 'tron']:
-        return TronService()
+        tron_network = getattr(settings, 'TRON_NETWORK', 'nile')
+        return TronService(network=tron_network)
     elif network_lower in ['btc', 'bitcoin']:
         return BitcoinService(network='testnet')
     elif network_lower in ['erc20', 'ethereum', 'eth']:
@@ -40,5 +43,7 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
         return XRPService(network='testnet')
     elif network_lower in ['bep20', 'bsc', 'bnb']:  # Добавляем поддержку BSC
         return BNBService(network='testnet')
+    elif network_lower in ['polygon', 'matic', 'pol']:
+        return PolygonService()  # Использует настройку из settings.py
     
     raise ValueError(f"Unsupported blockchain network: {network} or address format.")

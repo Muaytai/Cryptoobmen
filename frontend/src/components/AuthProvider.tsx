@@ -68,35 +68,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     // Выполняем логику только если не идет загрузка из useAuthStore и другие условия соблюдены
     if (!isLoading && !['/login', '/register'].includes(pathname) && isInitialized && !disableAutoLogin) {
-      // Проверяем наличие JWT токенов (это упрощенная проверка, т.к. HttpOnly куки не видны)
-      const hasSession = document.cookie.includes('auth-token=') || 
-                        document.cookie.includes('refresh-token=') ||
-                        document.cookie.includes('access_token=') || // Для обратной совместимости или не-HttpOnly токенов
-                        document.cookie.includes('refresh_token='); // Для обратной совместимости
+      // Проверяем наличие токенов в куках (HttpOnly куки не видны в document.cookie)
+      // Поэтому полагаемся на состояние аутентификации из store
+      const hasSession = isAuthenticated && useAuthStore.getState().user;
 
       console.log('AuthProvider (isInitialized, !isLoading, !disableAutoLogin): Проверка сессии:', { hasSession, pathname, isAuthenticated });
       
-      // Если есть токены (по мнению document.cookie), но не авторизованы в состоянии - проверяем статус
-      if (hasSession && !isAuthenticated) {
-        console.log('AuthProvider: Есть JWT токены в куках (клиентских), но isAuthenticated false. Проверяем статус.');
-        localStorage.removeItem('disableAutoLogin'); // Разрешаем автовход для этой проверки
-        setDisableAutoLogin(false);
+      // Если пользователь аутентифицирован в store, но нет данных пользователя - проверяем статус
+      if (isAuthenticated && !useAuthStore.getState().user) {
+        console.log('AuthProvider: isAuthenticated true, но user null. Проверяем статус.');
         checkAuthStatus();
       }
-      // Если нет токенов (по мнению document.cookie), но статус авторизации true в состоянии
-      else if (!hasSession && isAuthenticated) {
-        // Проверяем, есть ли данные пользователя в сторе.
-        if (!useAuthStore.getState().user) { 
-          // Если данных пользователя нет, это может быть "зависшее" состояние isAuthenticated. Сбрасываем.
-          console.log('AuthProvider: Нет JWT токенов в куках (клиентских), isAuthenticated был true, НО user is null. Принудительный сброс.');
-          useAuthStore.setState({ isAuthenticated: false, user: null, tokens: null, isLoading: false });
-          localStorage.setItem('disableAutoLogin', 'true'); // Блокируем автовход после сброса
-          setDisableAutoLogin(true);
-        } else {
-          // Данные пользователя есть. Это, скорее всего, ситуация сразу после логина (HttpOnly куки)
-          // или успешного checkAuthStatus. Доверяем состоянию стора.
-          console.log('AuthProvider: Нет JWT токенов в куках (клиентских), но isAuthenticated true И user существует. Доверяем состоянию из store (возможно, HttpOnly куки).');
-        }
+      // Если пользователь не аутентифицирован, но автовход не отключен - проверяем статус
+      else if (!isAuthenticated && !disableAutoLogin) {
+        console.log('AuthProvider: Пользователь не аутентифицирован, автовход не отключен. Проверяем статус.');
+        checkAuthStatus();
       }
     } else if (isLoading) {
       console.log('AuthProvider: Проверка сессии пропущена, так как isLoading is true.');
