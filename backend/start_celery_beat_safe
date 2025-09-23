@@ -1,0 +1,40 @@
+#!/bin/bash
+# Безопасный запуск Celery Beat с остановкой существующих процессов
+cd /home/chaizer/projects/Cryptoobmen/backend
+source venv/bin/activate
+
+echo "🛑 Остановка существующего Celery Beat..."
+
+# Останавливаем Celery beat
+pkill -f "celery.*beat" && echo "   ✓ Beat остановлен" || echo "   - Beat не был запущен"
+
+# Ждем завершения процесса
+sleep 2
+
+# Проверяем что процесс действительно остановлен
+REMAINING=$(ps aux | grep -E "celery.*beat" | grep -v grep | wc -l)
+if [ $REMAINING -gt 0 ]; then
+    echo "⚠️  Принудительное завершение оставшегося Beat процесса..."
+    pkill -9 -f "celery.*beat"
+    sleep 1
+fi
+
+echo "🚀 Запуск Celery Beat..."
+
+# Запускаем Celery Beat
+celery -A core beat --loglevel=info &
+
+# Ожидание запуска
+sleep 2
+
+echo "✅ Celery Beat запущен!"
+echo "📊 Запущенные процессы:"
+ps aux | grep -E "celery.*beat" | grep -v grep | awk '{print "   " $2, $11, $12, $13}'
+
+echo ""
+echo "🔧 Команды управления:"
+echo "   Остановка: pkill -f 'celery.*beat'"
+echo "   Проверка: ps aux | grep 'celery.*beat'"
+
+# Ожидание завершения процесса
+wait

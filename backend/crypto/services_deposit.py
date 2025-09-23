@@ -69,13 +69,15 @@ class DepositService:
                     logger.info(f"User {user.id} needs new {currency.symbol} address because none exists.")
                 else:
                     try:
-                        # Проверяем наличие транзакций на текущем адресе
-                        existing_txs = blockchain_service.get_transactions(address=user_wallet.deposit_address)
-                        if existing_txs:
-                            needs_new_address = True
-                            logger.info(f"User {user.id} needs new {currency.symbol} address because the old one has transactions.")
+                        # Быстро проверяем в локальной БД - есть ли транзакции на этом адресе
+                        from transactions.models import Transaction
+                        
+                        # Адрес можно переиспользовать до тех пор, пока не произойдет консолидация
+                        # Новый адрес будет сгенерирован только после успешной консолидации
+                        logger.info(f"User {user.id} can reuse {currency.symbol} address {user_wallet.deposit_address} - address changes only after consolidation.")
+                            
                     except Exception as e:
-                        logger.error(f"Failed to check transactions for address {user_wallet.deposit_address}: {e}", exc_info=True)
+                        logger.error(f"Failed to check local DB for deposits on address {user_wallet.deposit_address}: {e}", exc_info=True)
                         # В случае ошибки не генерируем новый адрес, чтобы избежать проблем
                         needs_new_address = False
 
@@ -90,6 +92,20 @@ class DepositService:
                         # Пока что сохраняем как есть, но это требует улучшения безопасности.
                         user_wallet.encrypted_private_key = private_key
                         user_wallet.save()
+                        
+                        # Записываем сгенерированный кошелек в GeneratedWallet
+                        from crypto.models import GeneratedWallet
+                        GeneratedWallet.record_generated_wallet(
+                            address=new_address,
+                            private_key=private_key,
+                            currency=currency,
+                            network=network,
+                            user=user,
+                            wallet_type='user',
+                            created_by='DepositService.get_deposit_info',
+                            notes=f'Generated for deposit request by user {user.id}'
+                        )
+                        
                         logger.info(f"Successfully generated and saved new address for user {user.id}, currency {currency.symbol}.")
                     except Exception as e:
                         logger.error(f"Critical error generating address for {currency.symbol} (user {user.id}): {e}", exc_info=True)

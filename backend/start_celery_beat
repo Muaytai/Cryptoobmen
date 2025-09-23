@@ -1,1 +1,20 @@
-celery -A core beat -l info
+#!/bin/bash
+# Запуск Celery Beat с автоматической остановкой старых процессов
+
+cd /home/chaizer/projects/Cryptoobmen/backend
+source venv/bin/activate
+
+echo "🛑 Останавливаем старый Beat..."
+pkill -f "celery.*beat" 2>/dev/null
+sleep 2
+
+echo "🚀 Запускаем Celery Beat..."
+celery -A core beat --loglevel=info &
+BEAT_PID=$!
+
+sleep 3
+echo "✅ Celery Beat запущен (PID: $BEAT_PID)"
+echo "📄 Для просмотра логов в реальном времени:"
+echo "   tail -f /home/chaizer/projects/Cryptoobmen/backend/celerybeat.log"
+echo ""
+echo "🔧 Для остановки: pkill -f 'celery.*beat'"

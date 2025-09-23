@@ -9,6 +9,7 @@ from django.utils import timezone as django_timezone
 
 from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
+from .optimized_scanner import OptimizedBlockchainScanner, OptimizedScanConfig
 from eth_account import Account
 from eth_utils import to_checksum_address, is_address
 from django.conf import settings
@@ -37,6 +38,17 @@ class PolygonService(BaseBlockchainService):
         self.gas_price_multiplier = settings.POLYGON_GAS_PRICE_MULTIPLIER
         self.max_gas_price = Web3.to_wei(settings.POLYGON_MAX_GAS_PRICE, 'gwei')
         self.gas_limit = settings.POLYGON_GAS_LIMIT
+        
+        # Инициализируем оптимизированный сканер
+        scan_config = OptimizedScanConfig(
+            max_workers=15,     # Больше потоков для Polygon
+            batch_size=100,     # Больше блоков в батче
+            max_blocks_per_scan=2000,  # Увеличенный лимит для testnet
+            cache_duration=600, # 10 минут кэширования
+            retry_attempts=3,
+            timeout_per_block=20.0
+        )
+        self.optimized_scanner = OptimizedBlockchainScanner(self, scan_config)
 
     def _initialize_web3(self) -> Web3:
         """Initialize Web3 connection to Polygon network."""
@@ -115,6 +127,68 @@ class PolygonService(BaseBlockchainService):
             logger.error(f"Failed to create new Polygon address: {e}")
             raise PolygonError(f"Address generation failed: {e}")
 
+    def estimate_gas_cost(self, from_address: str, to_address: str, amount_wei: int) -> Decimal:
+        """
+        Оценивает стоимость газа для транзакции в POL
+        """
+        try:
+            # Получаем текущую цену газа
+            gas_price = self.w3.eth.gas_price
+            
+            # Оцениваем количество газа для транзакции
+            gas_estimate = self.w3.eth.estimate_gas({
+                'from': self.w3.to_checksum_address(from_address),
+                'to': self.w3.to_checksum_address(to_address),
+                'value': amount_wei
+            })
+            
+            # Рассчитываем общую стоимость газа в wei
+            gas_cost_wei = gas_price * gas_estimate
+            
+            # Применяем коэффициент безопасности 1.1
+            gas_cost_wei_with_buffer = int(gas_cost_wei * 1.1)
+            
+            # Конвертируем в POL
+            gas_cost_pol = Web3.from_wei(gas_cost_wei_with_buffer, 'ether')
+            
+            logger.info(f"Gas estimation: price={gas_price}, estimate={gas_estimate}, cost={gas_cost_pol} POL (with 1.1x buffer)")
+            
+            return Decimal(str(gas_cost_pol))
+            
+        except Exception as e:
+            logger.error(f"Failed to estimate gas cost: {e}")
+            # Fallback к фиксированному значению
+            return Decimal('0.01')
+    
+    def get_max_sendable_amount(self, address: str, to_address: str) -> Decimal:
+        """
+        Рассчитывает максимальную сумму, которую можно отправить с адреса (баланс - газ)
+        """
+        try:
+            balance = self.get_balance(address)
+            if balance <= 0:
+                return Decimal('0')
+            
+            # Конвертируем баланс в wei для оценки газа
+            balance_wei = Web3.to_wei(balance, 'ether')
+            
+            # Оцениваем стоимость газа
+            gas_cost = self.estimate_gas_cost(address, to_address, balance_wei)
+            
+            # Максимальная отправляемая сумма = баланс - газ
+            max_sendable = balance - gas_cost
+            
+            if max_sendable <= 0:
+                logger.warning(f"Cannot send from {address}: balance {balance} POL, gas cost {gas_cost} POL")
+                return Decimal('0')
+            
+            logger.info(f"Max sendable from {address}: {max_sendable} POL (balance: {balance}, gas: {gas_cost})")
+            return max_sendable
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate max sendable amount: {e}")
+            return Decimal('0')
+
     def get_balance(self, address: str) -> Decimal:
         """
         Get POL balance for the specified address.
@@ -136,6 +210,33 @@ class PolygonService(BaseBlockchainService):
         except Exception as e:
             logger.error(f"Failed to get Polygon balance for {address}: {e}")
             return Decimal('0')
+
+    def get_transactions_optimized(self, addresses: List[str], from_block: int = None, to_block: int = None) -> List[Dict[str, Any]]:
+        """
+        Оптимизированное сканирование транзакций для нескольких адресов
+        """
+        try:
+            logger.info(f"Starting optimized scan for {len(addresses)} addresses")
+            transactions = self.optimized_scanner.scan_optimized(addresses, from_block, to_block)
+            
+            logger.info(f"Optimized scan completed: {len(transactions)} transactions found")
+            return transactions
+            
+        except Exception as e:
+            logger.error(f"Optimized scan failed: {e}")
+            # Fallback to regular scanning
+            return self._fallback_scan(addresses, from_block, to_block)
+    
+    def _fallback_scan(self, addresses: List[str], from_block: int = None, to_block: int = None) -> List[Dict[str, Any]]:
+        """Резервное сканирование если оптимизированное не работает"""
+        all_transactions = []
+        for address in addresses:
+            try:
+                transactions = self.get_transactions(address, from_block=from_block, to_block=to_block)
+                all_transactions.extend(transactions)
+            except Exception as e:
+                logger.error(f"Fallback scan failed for {address}: {e}")
+        return all_transactions
 
     def get_transactions(self, address: str, min_timestamp: int = 0, from_block: int = None, to_block: int = None) -> List[Dict[str, Any]]:
         """
