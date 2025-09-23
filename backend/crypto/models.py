@@ -168,7 +168,7 @@ class UserWallet(models.Model):
                 # Используем фабрику для получения нужного сервиса
                 service = get_blockchain_service(self.currency.network)
                 # create_new_address теперь может возвращать кортеж (адрес, приватный ключ)
-                new_address, private_key = service.create_new_address()
+                new_address, private_key = service.create_new_address(user_id=self.user.id)
                 self.deposit_address = new_address
                 # В проде здесь должно быть шифрование
                 self.encrypted_private_key = private_key 

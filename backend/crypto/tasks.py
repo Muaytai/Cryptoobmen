@@ -96,17 +96,8 @@ def check_blockchain_deposits():
 
             # Проверяем на дубликат ДО основной логики
             if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                logger.warning(f"Duplicate transaction found: tx_hash={tx_hash}. Re-sending signal just in case.")
-                # Отправляем сигнал повторно, на случай если фронтенд его пропустил
-                if deposit_memo:
-                    channel_layer = get_channel_layer()
-                    async_to_sync(channel_layer.group_send)(
-                        f"deposit_memo_{deposit_memo.memo}",
-                        {
-                            "type": "deposit_status_update",
-                            "data": {'memo': deposit_memo.memo, 'status': 'used', 'message': 'Deposit completed'}
-                        }
-                    )
+                logger.info(f"Duplicate transaction found: tx_hash={tx_hash}. Skipping re-processing.")
+                # НЕ отправляем повторные сигналы для старых транзакций, чтобы избежать ложных уведомлений
                 continue
 
             try:
@@ -211,6 +202,13 @@ def check_blockchain_deposits():
                     min_timestamp=min_ts,
                     contract_address=currency.contract_address
                 )
+            # Для TRC20 токенов всегда передаем contract_address (даже если пустой для TRX)
+            elif currency.network and currency.network.upper() == 'TRC20':
+                raw_transactions = service.get_transactions(
+                    address=address,
+                    min_timestamp=min_ts,
+                    contract_address=currency.contract_address
+                )
             else:
                 raw_transactions = service.get_transactions(address=address, min_timestamp=min_ts)
             
@@ -221,26 +219,8 @@ def check_blockchain_deposits():
                 logger.info(f"[no-memo] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
                 existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).first()
                 if existing_tx:
-                    logger.warning(f"[no-memo] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Re-sending signal.")
-                    # Повторно отправляем сигнал, если транзакция уже существует
-                    try:
-                        channel_layer = get_channel_layer()
-                        async_to_sync(channel_layer.group_send)(
-                            f"deposit_address_{address}",
-                            {
-                                "type": "deposit_status_update",
-                                "data": {
-                                    "address": address,
-                                    "currency": currency.symbol,
-                                    "network": currency.network,
-                                    "status": "used",
-                                    "amount": str(existing_tx.amount),
-                                }
-                            }
-                        )
-                        logger.info(f"[no-memo] Re-sent WebSocket signal for address {address}")
-                    except Exception as e:
-                        logger.error(f"[no-memo] Failed to re-send WebSocket signal for address {address}: {e}")
+                    logger.info(f"[no-memo] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Skipping re-processing.")
+                    # НЕ отправляем повторные сигналы для старых транзакций, чтобы избежать ложных уведомлений
                     continue
                 try:
                     # Для Ethereum используем правильное количество десятичных знаков
