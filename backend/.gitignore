@@ -54,3 +54,5 @@ core/local_settings.py
 .env.development.local
 .env.test.local
 .env.production.local
+
+*.dat
