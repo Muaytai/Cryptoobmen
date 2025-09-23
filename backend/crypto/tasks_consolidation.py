@@ -155,7 +155,7 @@ def get_system_wallet_address(currency: Cryptocurrency) -> str:
             
         # Если нет deposit_address, генерируем новый
         blockchain_service = get_blockchain_service(currency.network or currency.symbol)
-        address, private_key = blockchain_service.create_new_address()
+        address, private_key = blockchain_service.create_new_address(user_id=0)  # Используем 0 для системных кошельков
         
         system_wallet.deposit_address = address
         system_wallet.encrypted_private_key = private_key

@@ -102,15 +102,20 @@ class BitcoinService(BaseBlockchainService):
             seed_bytes = bytes.fromhex(master_seed_hex)
             bip44_mst = Bip44.FromSeed(seed_bytes, self.bip44_coin)
             
-            # Путь: m/44'/<coin_type>'/0'/0/<user_id>
+            # Используем timestamp для генерации уникальных адресов при ротации
+            import time
+            timestamp_index = int(time.time()) % 1000000  # Последние 6 цифр timestamp для уникальности
+            unique_index = (user_id * 1000000) + timestamp_index  # Комбинируем user_id с timestamp
+            
+            # Путь: m/44'/<coin_type>'/0'/0/<unique_index>
             bip44_acc = bip44_mst.Purpose().Coin().Account(0)
             bip44_chg = bip44_acc.Change(Bip44Changes.CHAIN_EXT)
-            bip44_addr = bip44_chg.AddressIndex(user_id)
+            bip44_addr = bip44_chg.AddressIndex(unique_index)
 
             address = bip44_addr.Address()
             private_key_wif = bip44_addr.PrivateKey().ToWif()
             
-            logger.info(f"Generated new Bitcoin address for user {user_id}: {address}")
+            logger.info(f"Generated new Bitcoin address for user {user_id} (index {unique_index}): {address}")
             return address, private_key_wif
             
         except Exception as e:
