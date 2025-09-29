@@ -57,13 +57,12 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           refresh: response.data.refresh_token || ''
         });
         
-        // Устанавливаем токены в cookies вручную
-        document.cookie = `access_token=${response.data.access_token}; path=/; max-age=3600; samesite=lax;`;
-        document.cookie = `refresh_token=${response.data.refresh_token || ''}; path=/; max-age=604800; samesite=lax;`;
+        // НЕ устанавливаем токены в cookies вручную - бэкенд уже устанавливает HttpOnly cookies
+        // Это предотвращает конфликты между HttpOnly и обычными cookies
         
         // Используем метод login из useAuthStore для аутентификации
         // Этот метод автоматически получит данные пользователя
-        await login({ email, password });
+        await login({ email, password, recaptcha_token: recaptchaToken });
         
         if (onSuccess) {
           onSuccess();

@@ -297,7 +297,9 @@ class EthereumService(BaseBlockchainService):
         }
         
         signed_txn = self.w3.eth.account.sign_transaction(transaction, account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        # Поддержка старых и новых версий web3.py
+        raw_tx = getattr(signed_txn, 'raw_transaction', None) or getattr(signed_txn, 'rawTransaction', None)
+        tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
         
         logger.info(f"Sent {amount} ETH from {account.address} to {to_address}, tx: {tx_hash.hex()}")
         return tx_hash.hex()
@@ -324,7 +326,9 @@ class EthereumService(BaseBlockchainService):
         })
         
         signed_txn = self.w3.eth.account.sign_transaction(transaction, account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        # Поддержка старых и новых версий web3.py
+        raw_tx = getattr(signed_txn, 'raw_transaction', None) or getattr(signed_txn, 'rawTransaction', None)
+        tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
         
         logger.info(f"Sent {amount} tokens from {account.address} to {to_address}, tx: {tx_hash.hex()}")
         return tx_hash.hex()

@@ -81,6 +81,7 @@ class LatestCryptoPricesView(APIView):
     Принимает GET-параметр `vs_currencies` (через запятую), например: ?vs_currencies=usd,eur,btc
     """
     permission_classes = [AllowAny]
+    throttle_scope = 'prices'  # Используем специальный scope для цен
 
     def get(self, request, *args, **kwargs):
         vs_currencies_str = request.query_params.get('vs_currencies', 'usd')

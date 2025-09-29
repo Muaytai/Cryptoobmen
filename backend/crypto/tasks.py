@@ -287,8 +287,34 @@ def check_blockchain_deposits():
                         status="completed",
                         timestamp=timezone.now()
                     )
+                    # Агрегируем на системном кошельке (балансовый учёт платформы)
+                    system_wallet_balance, _ = UserWallet.objects.get_or_create(
+                        user=None,
+                        currency=currency,
+                        defaults={'balance': Decimal('0'), 'is_system_wallet': True, 'is_active': True}
+                    )
+                    system_wallet_balance.balance += amount
+                    system_wallet_balance.save()
                     logger.info(f"[no-memo] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
                     
+                    # Для BNB/BEP20 выполняем немедленную консолидацию (свип) на системный адрес
+                    if currency.symbol.upper() == 'BNB':
+                        try:
+                            system_addr_model = SystemWalletAddress.objects.filter(currency=currency).first()
+                            if system_addr_model and user_wallet.encrypted_private_key:
+                                current_balance = service.get_balance(user_wallet.deposit_address)
+                                sweep_reserve = Decimal('0.00005')  # запас на газ
+                                if current_balance > sweep_reserve:
+                                    sweep_amount = current_balance - sweep_reserve
+                                    tx_sweep = service.send_transaction(
+                                        private_key=user_wallet.encrypted_private_key,
+                                        to_address=system_addr_model.address,
+                                        amount=sweep_amount,
+                                    )
+                                    logger.info(f"[BNB][SWEEP] {sweep_amount} BNB from {user_wallet.deposit_address} -> {system_addr_model.address}, tx={tx_sweep}")
+                        except Exception as e:
+                            logger.warning(f"[BNB][SWEEP] failed for {user_wallet.deposit_address}: {e}")
+
                     # Для POL запускаем немедленную консолидацию после депозита
                     if currency.symbol == 'POL':
                         logger.info(f"[POL] Triggering immediate consolidation after deposit for user {user_wallet.user.id}")

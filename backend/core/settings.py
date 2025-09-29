@@ -167,6 +167,7 @@ REST_FRAMEWORK = {
         'login': os.getenv('THROTTLE_LOGIN_RATE', '5/minute'),
         'register': os.getenv('THROTTLE_REGISTER_RATE', '10/hour'),
         'dj_rest_auth': '5/minute',
+        'prices': '10/minute',  # Специальный лимит для цен
     }
 }
 

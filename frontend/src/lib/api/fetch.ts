@@ -69,6 +69,13 @@ const fetcher = async (url: string, options: RequestInit = {}) => {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
       
+      // Специальная обработка для ошибок rate limiting
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const retrySeconds = retryAfter ? parseInt(retryAfter) : 60;
+        throw new Error(`Too Many Requests. Please try again in ${retrySeconds} seconds.`);
+      }
+      
       throw new Error(errorData.detail || errorData.message || `HTTP error! Status: ${response.status}`);
     }
 
