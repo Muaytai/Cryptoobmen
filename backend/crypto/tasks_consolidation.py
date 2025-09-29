@@ -82,27 +82,39 @@ def consolidate_user_deposits():
                     logger.info(f"Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet")
                     
                     # Выполняем перевод
-                    tx_hash = blockchain_service.send_transaction(
-                        private_key=user_wallet.encrypted_private_key,
-                        to_address=get_system_wallet_address(currency),
-                        amount=amount_to_send,
-                        memo=f"consolidation_{user_wallet.user_id}"
-                    )
-                    
-                    # Записываем транзакцию консолидации
-                    with transaction.atomic():
-                        Transaction.objects.create(
-                            user=user_wallet.user,
-                            crypto=currency,
+                    try:
+                        logger.info(f"Attempting to send transaction from {user_wallet.deposit_address} to {get_system_wallet_address(currency)}")
+                        tx_hash = blockchain_service.send_transaction(
+                            private_key_input=user_wallet.encrypted_private_key,
+                            to_address=get_system_wallet_address(currency),
                             amount=amount_to_send,
-                            tx_hash=tx_hash,
-                            type="consolidation",
-                            status="pending",
-                            timestamp=timezone.now()
+                            memo=f"consolidation_{user_wallet.user_id}"
                         )
-                    
-                    processed += 1
-                    logger.info(f"Consolidation transaction created: {tx_hash}")
+                        
+                        logger.info(f"Transaction sent successfully with hash: {tx_hash}")
+                        
+                        # Записываем транзакцию консолидации
+                        try:
+                            with transaction.atomic():
+                                tx = Transaction.objects.create(
+                                    user=user_wallet.user,
+                                    crypto=currency,
+                                    amount=amount_to_send,
+                                    tx_hash=tx_hash,
+                                    type="consolidation",
+                                    status="pending",
+                                    timestamp=timezone.now()
+                                )
+                                logger.info(f"Transaction record created in database with ID: {tx.id}")
+                        except Exception as db_error:
+                            logger.error(f"Failed to create transaction record in database: {db_error}", exc_info=True)
+                            raise
+                        
+                        processed += 1
+                        logger.info(f"Consolidation transaction created: {tx_hash}")
+                    except Exception as tx_error:
+                        logger.error(f"Failed to send transaction: {tx_error}", exc_info=True)
+                        raise
                     
                 except Exception as e:
                     logger.error(f"Error consolidating {currency.symbol} for user {user_wallet.user_id}: {e}")
@@ -125,6 +137,7 @@ def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
         'POL': Decimal('0.01'),    # Снижен порог для testnet (было 0.1)
         'ETH': Decimal('0.001'), 
         'BTC': Decimal('0.0001'),
+        'SOL': Decimal('0.01'),    # 0.01 SOL минимум для консолидации
     }
     return minimums.get(currency.symbol, Decimal('0.01'))
 
@@ -135,6 +148,7 @@ def get_gas_reserve(currency: Cryptocurrency) -> Decimal:
         'POL': Decimal('0.005'),   # Снижен резерв для testnet (было 0.01)
         'ETH': Decimal('0.0001'), # ~20 Gwei * 21000 gas  
         'BTC': Decimal('0.00001'), # ~1000 sat
+        'SOL': Decimal('0.002'),   # 0.002 SOL резерв на комиссию (~0.000005 SOL за транзакцию)
     }
     return reserves.get(currency.symbol, Decimal('0.001'))
 

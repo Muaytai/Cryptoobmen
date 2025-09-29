@@ -8,6 +8,13 @@ class CryptoConfig(AppConfig):
     name = 'crypto'
     
     def ready(self):
+        # Импортируем задачи ТОЛЬКО после инициализации приложений
+        try:
+            import crypto.tasks
+            import crypto.tasks_consolidation
+        except ImportError:
+            pass  # Игнорируем при миграциях или тестах
+
         # Импортируем сигналы для их регистрации
         from . import signals
         

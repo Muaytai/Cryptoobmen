@@ -70,4 +70,7 @@ class DepositAddressConsumer(AsyncWebsocketConsumer):
 
     async def deposit_status_update(self, event):
         # Отправляем событие клиенту
-        await self.send(text_data=json.dumps(event['data'])) 
+        await self.send(text_data=json.dumps(event['data']))
+        
+        # Добавляем логирование для отладки
+        print(f"[WebSocket] Отправлено уведомление для адреса {self.address}: {event['data']}")

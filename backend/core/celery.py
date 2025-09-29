@@ -15,7 +15,8 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 # Автоматически находит и регистрирует все задачи из installed apps
 app.autodiscover_tasks()
 
-# Убеждаемся, что все модули с задачами зарегистрированы
+# Явно регистрируем задачи консолидации
+app.autodiscover_tasks(['crypto.tasks_consolidation'])
 app.autodiscover_tasks(['crypto'], related_name='tasks_consolidation')
 
 

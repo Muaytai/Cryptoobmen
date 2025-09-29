@@ -245,7 +245,12 @@ export const DepositPage: React.FC = () => {
       
     if (netsArr.length === 1) {
       console.log('DepositPage: автоматический выбор единственной сети:', netsArr[0]);
-      setSelectedNetwork(netsArr[0]);
+      // Специальная обработка для Solana
+      if (symbol.toLowerCase() === 'sol') {
+        setSelectedNetwork('solana');
+      } else {
+        setSelectedNetwork(netsArr[0]);
+      }
     } else if (netsArr.length > 1) {
       console.log('DepositPage: доступно несколько сетей, пользователь должен выбрать');
       // Если есть несколько сетей, попробуем автоматически выбрать ту, которая соответствует кошельку пользователя
@@ -277,6 +282,10 @@ export const DepositPage: React.FC = () => {
     let networkToUse = selectedNetwork || (allNetworks.length === 1 ? allNetworks[0] : null);
     if (selectedCurrency && selectedCurrency.toLowerCase() === 'btc') {
       networkToUse = 'bitcoin';
+    }
+    // Добавляем специальную обработку для Solana
+    if (selectedCurrency && selectedCurrency.toLowerCase() === 'sol') {
+      networkToUse = 'solana';
     }
     if (!selectedCurrency || !networkToUse) {
       setError('Пожалуйста, выберите криптовалюту и сеть.');
@@ -549,7 +558,12 @@ export const DepositPage: React.FC = () => {
             // Если для валюты только одна сеть - выбираем её автоматически
             if (matchedCrypto.networks.length === 1) {
               console.log('DepositPage: автоматический выбор сети (одна опция):', matchedCrypto.networks[0]);
-              setSelectedNetwork(matchedCrypto.networks[0]);
+              // Специальная обработка для Solana
+              if (matchedCrypto.symbol.toLowerCase() === 'sol') {
+                setSelectedNetwork('solana');
+              } else {
+                setSelectedNetwork(matchedCrypto.networks[0]);
+              }
               
               // Автоматически запрашиваем адрес после небольшой задержки если есть единственная сеть
               const timer = setTimeout(() => {

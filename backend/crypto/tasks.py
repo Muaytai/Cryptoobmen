@@ -158,11 +158,35 @@ def check_blockchain_deposits():
                             "data": {
                                 'memo': deposit_memo.memo,
                                 'status': 'used',
-                                'message': 'Deposit completed'
+                                'message': 'Deposit completed',
+                                'amount': str(amount),
+                                'currency': wallet.currency.symbol
                             }
                         }
                     )
                     logger.info(f"!!! WEBSOCKET SIGNAL SENT for memo {deposit_memo.memo} !!!")
+                
+                # Также отправляем сигнал по адресу (для Solana и других валют без MEMO)
+                if wallet.currency.symbol.lower() in ["sol", "solana"]:
+                    logger.info(f"!!! SENDING WEBSOCKET SIGNAL for Solana address {to_address} !!!")
+                    channel_layer = get_channel_layer()
+                    try:
+                        async_to_sync(channel_layer.group_send)(
+                            f"deposit_address_{to_address}",
+                            {
+                                "type": "deposit_status_update",
+                                "data": {
+                                    'address': to_address,
+                                    'status': 'completed',
+                                    'message': 'Deposit completed',
+                                    'amount': str(amount),
+                                    'currency': wallet.currency.symbol
+                                }
+                            }
+                        )
+                        logger.info(f"!!! WEBSOCKET SIGNAL SENT for Solana address {to_address} !!!")
+                    except Exception as e:
+                        logger.error(f"Error sending WebSocket signal for Solana address {to_address}: {e}")
 
             except Exception as e:
                 logger.error(f"Error during database transaction for memo='{memo}': {e}", exc_info=True)
@@ -271,12 +295,12 @@ def check_blockchain_deposits():
                     )
                     logger.info(f"[no-memo] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
                     
-                    # Для POL запускаем немедленную консолидацию после депозита
-                    if currency.symbol == 'POL':
-                        logger.info(f"[POL] Triggering immediate consolidation after deposit for user {user_wallet.user.id}")
+                    # Для SOL также запускаем немедленную консолидацию после депозита
+                    if currency.symbol.upper() in ['SOL', 'SOLANA']:
+                        logger.info(f"[SOL] Triggering immediate consolidation after deposit for user {user_wallet.user.id}")
                         from .tasks_consolidation import consolidate_user_deposits
                         
-                        # Проверяем доступность Celery worker'ов для POL
+                        # Проверяем доступность Celery worker'ов для SOL
                         try:
                             from celery import current_app
                             inspect = current_app.control.inspect()
@@ -285,20 +309,20 @@ def check_blockchain_deposits():
                             if active_workers and any(active_workers.values()):
                                 # Есть активные worker'ы - запускаем асинхронно
                                 consolidate_user_deposits.delay()
-                                logger.info("[POL] Consolidation task queued after deposit via Celery")
+                                logger.info("[SOL] Consolidation task queued after deposit via Celery")
                             else:
                                 # Нет worker'ов - запускаем синхронно
-                                logger.warning("[POL] No active Celery workers, running consolidation synchronously")
+                                logger.warning("[SOL] No active Celery workers, running consolidation synchronously")
                                 result = consolidate_user_deposits()
-                                logger.info(f"[POL] Sync consolidation after deposit: {result}")
+                                logger.info(f"[SOL] Sync consolidation after deposit: {result}")
                                 
                         except Exception as e:
-                            logger.warning(f"[POL] Celery check failed, running sync consolidation: {e}")
+                            logger.warning(f"[SOL] Celery check failed, running sync consolidation: {e}")
                             try:
                                 result = consolidate_user_deposits()
-                                logger.info(f"[POL] Sync consolidation after deposit: {result}")
+                                logger.info(f"[SOL] Sync consolidation after deposit: {result}")
                             except Exception as sync_e:
-                                logger.error(f"[POL] Sync consolidation failed: {sync_e}")
+                                logger.error(f"[SOL] Sync consolidation failed: {sync_e}")
 
                 # Отправляем WebSocket сигнал по адресу
                 try:

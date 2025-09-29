@@ -1,4 +1,4 @@
-import random
+from decimal import Decimal
 from django.utils import timezone
 from datetime import timedelta
 from .models import Cryptocurrency, SystemWalletAddress, UserDepositMemo, UserWallet
@@ -55,8 +55,11 @@ class DepositService:
                 return address, memo, qr_code
             else:
                 # --- Логика для валют без MEMO (BTC, USDT TRC-20 и т.д.) ---
-                user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=currency)
+                user_wallet, created = UserWallet.objects.get_or_create(user=user, currency=currency)
                 
+                # Log wallet creation
+                if created:
+                    logger.info(f"Created new user wallet for user {user.id}, currency {currency.symbol}")
 
                 blockchain_service = get_blockchain_service(currency.network or currency.symbol)
                 
@@ -92,7 +95,7 @@ class DepositService:
                         # Пока что сохраняем как есть, но это требует улучшения безопасности.
                         user_wallet.encrypted_private_key = private_key
                         user_wallet.save()
-                        logger.info(f"Successfully generated and saved new address for user {user.id}, currency {currency.symbol}.")
+                        logger.info(f"Successfully generated and saved new address for user {user.id}, currency {currency.symbol}. Address: {new_address}")
                     except Exception as e:
                         logger.error(f"Critical error generating address for {currency.symbol} (user {user.id}): {e}", exc_info=True)
                         raise ValueError(f"Could not generate a new deposit address. Error: {e}")

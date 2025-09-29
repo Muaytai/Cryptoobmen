@@ -285,44 +285,121 @@ class SolanaService(BaseBlockchainService):
             try:
                 secret_key = json.loads(key_str)
                 if isinstance(secret_key, list) and all(isinstance(i, int) for i in secret_key):
+                    # Если длина 32 байта, преобразуем в 64 байта (seed -> keypair)
+                    if len(secret_key) == 32:
+                        from solders.keypair import Keypair
+                        seed_bytes = bytes(secret_key)
+                        keypair = Keypair.from_seed(seed_bytes)
+                        return bytes(keypair)
                     return bytes(secret_key)
             except json.JSONDecodeError:
                 raise ValueError("Неверный формат JSON-ключа")
+            except Exception as e:
+                raise ValueError(f"Ошибка при обработке JSON-ключа: {e}")
 
-        # Вариант 2: Hex-строка (128 hex-символов)
-        if len(key_str) == 128 and all(c in '0123456789abcdefABCDEF' for c in key_str):
+        # Вариант 2: Hex-строка (64 или 128 hex-символов)
+        if (len(key_str) == 64 or len(key_str) == 128) and all(c in '0123456789abcdefABCDEF' for c in key_str):
             try:
-                return bytes.fromhex(key_str)
+                hex_bytes = bytes.fromhex(key_str)
+                # Если длина 32 байта, преобразуем в 64 байта (seed -> keypair)
+                if len(hex_bytes) == 32:
+                    from solders.keypair import Keypair
+                    keypair = Keypair.from_seed(hex_bytes)
+                    return bytes(keypair)
+                return hex_bytes
             except ValueError:
                 raise ValueError("Неверная hex-строка")
+            except Exception as e:
+                raise ValueError(f"Ошибка при обработке hex-ключа: {e}")
 
-        if key_str.startswith('0x') and len(key_str) == 130:
+        if key_str.startswith('0x') and (len(key_str) == 66 or len(key_str) == 130):
             try:
-                return bytes.fromhex(key_str[2:])
+                hex_bytes = bytes.fromhex(key_str[2:])
+                # Если длина 32 байта, преобразуем в 64 байта (seed -> keypair)
+                if len(hex_bytes) == 32:
+                    from solders.keypair import Keypair
+                    keypair = Keypair.from_seed(hex_bytes)
+                    return bytes(keypair)
+                return hex_bytes
             except ValueError:
                 raise ValueError("Неверная hex-строка после 0x")
+            except Exception as e:
+                raise ValueError(f"Ошибка при обработке hex-ключа с префиксом 0x: {e}")
 
-        # Вариант 3: Base58 (редко, но возможно)
+        # Вариант 3: Base58
         try:
             decoded = base58.b58decode(key_str)
+            # Если длина 32 байта, преобразуем в 64 байта (seed -> keypair)
+            if len(decoded) == 32:
+                from solders.keypair import Keypair
+                keypair = Keypair.from_seed(decoded)
+                return bytes(keypair)
             if len(decoded) == 64:
                 return decoded
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Не удалось декодировать base58: {e}")
 
+        # Логируем информацию о ключе для отладки
+        logger.error(f"Не удалось распознать формат приватного ключа. Длина: {len(key_str)}, начало: {key_str[:10]}...")
         raise ValueError("Не удалось распознать формат приватного ключа. Ожидался hex, JSON-массив или base58.")
 
-    def create_new_address(self, user_id: int = None) -> str:
-        """Создает новый адрес Solana"""
+    def create_new_address(self, user_id: int = None) -> tuple[str, str]:
+        """Создает новый адрес Solana и возвращает (адрес, приватный_ключ)"""
         try:
             # Генерируем новую пару ключей
             keypair = Keypair()
             public_address = str(keypair.pubkey())
             private_key_bytes = bytes(keypair.secret())
+            
+            # Преобразуем приватный ключ в JSON формат (список чисел)
+            private_key_json = json.dumps(list(private_key_bytes))
 
             logger.info(f"Создан новый адрес Solana: {public_address}")
-            return public_address
+            if user_id:
+                logger.info(f"Адрес создан для пользователя ID: {user_id}")
+                
+            return public_address, private_key_json
 
         except Exception as e:
             logger.error(f"[create_new_address] Failed to create SOL address: {e}")
             raise ValueError(f"Не удалось создать новый адрес Solana: {e}")
+
+    def is_transaction_confirmed(self, tx_hash: str, required_confirmations: int = 1) -> bool:
+        """
+        Проверяет, подтверждена ли транзакция в сети Solana
+        """
+        try:
+            from solders.signature import Signature
+            
+            signature = Signature.from_string(tx_hash)
+            
+            # Получаем статус транзакции
+            tx_response = self.client.get_transaction(
+                signature, 
+                max_supported_transaction_version=0,
+                encoding="jsonParsed"
+            )
+            
+            if tx_response.value is None:
+                logger.debug(f"[is_transaction_confirmed] Transaction {tx_hash} not found")
+                return False
+                
+            # Проверяем статус транзакции
+            meta = getattr(tx_response.value.transaction, "meta", None)
+            if meta is not None:
+                if hasattr(meta, 'err') and meta.err is not None:
+                    logger.warning(f"[is_transaction_confirmed] Transaction {tx_hash} failed with error: {meta.err}")
+                    return False
+                    
+            # Проверяем количество подтверждений
+            if hasattr(tx_response.value, 'block_time') and tx_response.value.block_time is not None:
+                # Если транзакция включена в блок, она подтверждена
+                logger.info(f"[is_transaction_confirmed] Transaction {tx_hash} is confirmed (included in block)")
+                return True
+            
+            logger.debug(f"[is_transaction_confirmed] Transaction {tx_hash} not yet confirmed")
+            return False
+            
+        except Exception as e:
+            logger.error(f"[is_transaction_confirmed] Error checking confirmation for {tx_hash}: {e}")
+            return False

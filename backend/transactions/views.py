@@ -199,8 +199,13 @@ class DepositViewSet(viewsets.ViewSet):
         try:
             # Если указана сеть, ищем валюту по символу и сети
             if network:
+                # Специальная обработка для Solana - нормализуем сеть
+                search_network = network.lower() if network else None
+                if search_network == 'sol':
+                    search_network = 'solana'
+                
                 # Ищем валюту по символу и сети (не только USDT)
-                currency = Cryptocurrency.objects.get(symbol__iexact=currency_id, network=network)
+                currency = Cryptocurrency.objects.get(symbol__iexact=currency_id, network__iexact=search_network)
                 logger.info(f"get_deposit_address: found currency by symbol and network: {currency.symbol} (id={currency.id}, network={currency.network})")
             else:
                 # Иначе ищем по ID (для обратной совместимости)
