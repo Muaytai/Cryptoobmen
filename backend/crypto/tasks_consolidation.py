@@ -1,3 +1,4 @@
+
 """
 Задачи консолидации средств - вспомогательные функции и проверка подтверждений
 """
@@ -141,3 +142,4 @@ def check_consolidation_confirmations():
     
     logger.info(f"Consolidation confirmations checked. Confirmed: {confirmed}")
     return f"Checked consolidation confirmations: {confirmed} confirmed"
+

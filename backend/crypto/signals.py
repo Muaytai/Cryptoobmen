@@ -79,30 +79,32 @@ def create_wallets_for_new_cryptocurrency(sender, instance, created, **kwargs):
 
     transaction.on_commit(_create_for_all_users)
 
-@receiver(post_save, sender=UserDepositMemo)
-def send_deposit_status_update(sender, instance, **kwargs):
-    """Отправляет WebSocket уведомления об изменении статуса депозита"""
-    from asgiref.sync import async_to_sync
-    from channels.layers import get_channel_layer
-    try:
-        if instance.status in ['used', 'expired']:
-            logger.info(f"Caught status change for memo {instance.memo} to '{instance.status}'. Sending WebSocket update.")
-            channel_layer = get_channel_layer()
-            group_name = f'deposit_memo_{instance.memo}'
-            if channel_layer:
-                async_to_sync(channel_layer.group_send)(
-                    group_name,
-                    {
-                        "type": "deposit.status.update",
-                        "data": {
-                            'status': instance.status,
-                            'memo': instance.memo,
-                        }
-                    }
-                )
-                logger.info(f"Successfully sent WebSocket update to group {group_name}")
-    except Exception as e:
-        logger.error(f"Error in send_deposit_status_update signal for memo {instance.memo}: {e}")
+# ВРЕМЕННО ОТКЛЮЧЕНО для отладки
+# @receiver(post_save, sender=UserDepositMemo)
+def send_deposit_status_update_DISABLED(sender, instance, **kwargs):
+    """Отправляет WebSocket уведомления об изменении статуса депозита - ОТКЛЮЧЕНО"""
+    logger.info(f"DISABLED: Would send WebSocket update for memo {instance.memo} status {instance.status}")
+    # from asgiref.sync import async_to_sync
+    # from channels.layers import get_channel_layer
+    # try:
+    #     if instance.status in ['used', 'expired']:
+    #         logger.info(f"Caught status change for memo {instance.memo} to '{instance.status}'. Sending WebSocket update.")
+    #         channel_layer = get_channel_layer()
+    #         group_name = f'deposit_memo_{instance.memo}'
+    #         if channel_layer:
+    #             async_to_sync(channel_layer.group_send)(
+    #                 group_name,
+    #                 {
+    #                     "type": "deposit.status.update",
+    #                     "data": {
+    #                         'status': instance.status,
+    #                         'memo': instance.memo,
+    #                     }
+    #                 }
+    #             )
+    #             logger.info(f"Successfully sent WebSocket update to group {group_name}")
+    # except Exception as e:
+    #     logger.error(f"Error in send_deposit_status_update signal for memo {instance.memo}: {e}")
 
 from transactions.models import Transaction as TransactionModel, Withdrawal as WithdrawalModel
 

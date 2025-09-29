@@ -1,3 +1,4 @@
+
 """Service for interacting with the Polygon blockchain (POL native currency only)."""
 from __future__ import annotations
 
@@ -443,4 +444,5 @@ class PolygonService(BaseBlockchainService):
             
         except Exception as e:
             logger.warning(f"Failed to check transaction confirmation for {tx_hash}: {e}")
+
             return False

@@ -16,14 +16,9 @@ class DepositConsumer(AsyncWebsocketConsumer):
         # Принимаем WebSocket
         await self.accept()
 
-        # Сразу отправляем текущее состояние депозита, чтобы клиент не зависал в ожидании,
-        # если статус уже изменился до подключения
-        current_status = await self.get_deposit_memo_status(self.memo_id)
-        if current_status:
-            await self.send(text_data=json.dumps({
-                'memo': self.memo_id,
-                'status': current_status,
-            }))
+        # НЕ отправляем автоматически старые статусы при подключении,
+        # чтобы избежать ложных уведомлений о "успешном пополнении"
+        # Статус будет отправлен только при реальном изменении через deposit_status_update
 
     async def disconnect(self, close_code):
         # Leave group

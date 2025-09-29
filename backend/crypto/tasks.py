@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import os
@@ -1242,3 +1243,4 @@ def consolidate_funds():
                 logger.error(f"[CONSOLIDATE] Failed to consolidate for user {u_wallet.user.id}, currency {currency.symbol}. Error: {e}", exc_info=True)
 
     logger.info("[CONSOLIDATE] Finished funds consolidation task.")
+
