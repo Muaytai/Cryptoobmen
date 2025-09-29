@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import os
@@ -6,9 +7,14 @@ import traceback
 from decimal import Decimal
 from celery import shared_task
 from celery.utils.log import get_task_logger
+from celery.exceptions import Retry
 from crypto.blockchain.xrp import XRPService
 from django.utils import timezone
 from django.db import transaction
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
+import time
+from typing import List, Dict, Any, Tuple
 
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
@@ -22,7 +28,183 @@ logger = get_task_logger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
+from core.task_lock import single_instance_task
+from .tasks_consolidation import get_gas_reserve, get_min_consolidation_amount
+from django.utils import timezone
+from .batch_rpc import cached_batch_processor
+
+# Кэш для балансов и транзакций (время жизни 30 секунд)
+@lru_cache(maxsize=1000)
+def get_cached_balance(service_class: str, address: str, timestamp: int) -> str:
+    """Кэширование балансов с временной меткой"""
+    try:
+        service = get_blockchain_service(service_class)
+        balance = service.get_balance(address)
+        return str(balance)
+    except Exception as e:
+        logger.error(f"Error getting cached balance for {address}: {e}")
+        return "0"
+
+def get_balance_with_cache(service, address: str, cache_seconds: int = 30) -> Decimal:
+    """Получение баланса с кэшированием"""
+    current_time = int(time.time())
+    cache_key = current_time // cache_seconds  # Группируем по временным интервалам
+    
+    service_class = service.__class__.__name__
+    balance_str = get_cached_balance(service_class, address, cache_key)
+    return Decimal(balance_str)
+
+def process_single_address(args: Tuple) -> Tuple[str, List[Dict[str, Any]], bool]:
+    """Обрабатывает один адрес в параллельном потоке"""
+    (currency, user_wallet, last_tx_timestamp) = args
+    
+    address = user_wallet.deposit_address
+    user_id = user_wallet.user.id
+    
+    try:
+        logger.info(f"[PARALLEL] Processing {currency.symbol} for user {user_id}, address {address}")
+        
+        service = get_blockchain_service(currency.network or currency.symbol)
+        
+        # Проверяем доступность сервиса с кэшированием через батч-процессор
+        balance = cached_batch_processor.get_cached_balance(service, address)
+        if balance == 0:
+            logger.debug(f"[PARALLEL] Zero balance for {address}, skipping")
+            return (address, [], False)
+        
+        # Получаем транзакции
+        if currency.symbol == 'POL':
+            # Для Polygon используем оптимизированный сканер с кэшированием
+            current_block = service.w3.eth.block_number
+            from_block = max(current_block - 500, 1)
+            logger.info(f"[PARALLEL][POL] Optimized scan: blocks {from_block} to {current_block} for {address}")
+            
+            # Используем оптимизированный сканер если доступен
+            if hasattr(service, 'optimized_scanner') and service.optimized_scanner:
+                raw_transactions = service.optimized_scanner.scan_optimized(
+                    [address], from_block, current_block
+                )
+            else:
+                # Fallback к обычному сканированию
+                raw_transactions = service.get_transactions(
+                    address=address,
+                    from_block=from_block,
+                    to_block=current_block
+                )
+        elif currency.network and currency.network.upper() == 'ERC20':
+            raw_transactions = service.get_transactions(
+                address=address,
+                min_timestamp=last_tx_timestamp,
+                contract_address=currency.contract_address
+            )
+        else:
+            raw_transactions = service.get_transactions(address=address, min_timestamp=last_tx_timestamp)
+        
+        logger.info(f"[PARALLEL] Found {len(raw_transactions)} transactions for {address}")
+        return (address, raw_transactions, True)
+        
+    except Exception as e:
+        logger.error(f"[PARALLEL] Error processing {address}: {e}")
+        return (address, [], False)
+
+def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[List[Dict[str, Any]], bool]]:
+    """
+    Обрабатывает множество адресов одной валюты батчами для повышения эффективности
+    """
+    logger.info(f"[BATCH] Starting batch processing for {len(user_wallets)} addresses of {currency.symbol}")
+    
+    # Сначала получаем все балансы одним батчем
+    addresses = [wallet.deposit_address for wallet in user_wallets]
+    address_to_wallet = {wallet.deposit_address: wallet for wallet in user_wallets}
+    
+    # Получаем балансы всех адресов батчем
+    balances = cached_batch_processor.batch_get_balances_cached(service, addresses)
+    
+    # Фильтруем адреса с ненулевыми балансами
+    active_addresses = []
+    transaction_params = []
+    
+    for address, balance in balances.items():
+        if balance > 0:
+            wallet = address_to_wallet[address]
+            
+            # Получаем последнюю транзакцию для расчёта min_timestamp
+            from transactions.models import Transaction
+            last_tx = Transaction.objects.filter(
+                user=wallet.user,
+                crypto=currency,
+                tx_hash__isnull=False
+            ).order_by("-timestamp").first()
+            min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
+            
+            active_addresses.append(address)
+            
+            # Подготавливаем параметры для get_transactions
+            if currency.symbol == 'POL':
+                current_block = service.w3.eth.block_number
+                from_block = max(current_block - 500, 1)
+                params = {'from_block': from_block, 'to_block': current_block}
+            elif currency.network and currency.network.upper() == 'ERC20':
+                params = {'min_timestamp': min_ts, 'contract_address': currency.contract_address}
+            else:
+                params = {'min_timestamp': min_ts}
+            
+            transaction_params.append((address, params))
+    
+    logger.info(f"[BATCH] Found {len(active_addresses)} addresses with balance > 0 for {currency.symbol}")
+    
+    results = {}
+    
+    if transaction_params:
+        # Получаем транзакции для всех активных адресов батчем
+        if currency.symbol == 'POL' and hasattr(service, 'optimized_scanner') and service.optimized_scanner:
+            # Для POL используем оптимизированный сканер для всех адресов сразу
+            logger.info(f"[BATCH][POL] Using optimized scanner for {len(active_addresses)} addresses")
+            current_block = service.w3.eth.block_number
+            from_block = max(current_block - 500, 1)
+            
+            try:
+                all_transactions = service.optimized_scanner.scan_optimized(
+                    active_addresses, from_block, current_block
+                )
+                
+                # Группируем транзакции по адресам
+                transactions_by_address = {}
+                for tx in all_transactions:
+                    to_addr = tx.get('to_address', '').lower()
+                    if to_addr in [addr.lower() for addr in active_addresses]:
+                        if to_addr not in transactions_by_address:
+                            transactions_by_address[to_addr] = []
+                        transactions_by_address[to_addr].append(tx)
+                
+                for address in active_addresses:
+                    addr_lower = address.lower()
+                    txs = transactions_by_address.get(addr_lower, [])
+                    results[address] = (txs, True)
+                    
+            except Exception as e:
+                logger.error(f"[BATCH][POL] Optimized scanner failed: {e}, falling back to batch RPC")
+                # Fallback к обычному батч-процессору
+                all_transactions = cached_batch_processor.batch_get_transactions(service, transaction_params)
+                for address, txs in all_transactions.items():
+                    results[address] = (txs, True)
+        else:
+            # Для других валют используем обычный батч-процессор
+            all_transactions = cached_batch_processor.batch_get_transactions(service, transaction_params)
+            for address, txs in all_transactions.items():
+                results[address] = (txs, True)
+    
+    # Добавляем адреса с нулевым балансом
+    for address in addresses:
+        if address not in results:
+            results[address] = ([], False)
+    
+    logger.info(f"[BATCH] Completed batch processing for {currency.symbol}: {len(results)} addresses processed")
+    return results
+
+
 @shared_task
+@single_instance_task(timeout=300)  # 5 минут блокировка
 def check_blockchain_deposits():
     """
     Периодическая задача для проверки новых депозитов в блокчейне.
@@ -38,7 +220,7 @@ def check_blockchain_deposits():
         if not currency.is_active:
             continue
         if not getattr(currency, 'requires_memo', False):
-            logger.info(f"Skipping {currency.symbol} in {wallet.network}: MEMO not required (per official docs)")
+            logger.info(f"Skipping {currency.symbol} in {wallet.network}: MEMO not required (per official docs). Currency decimals: {currency.decimals}")
             continue
 
         logger.info(f"[check_blockchain_deposits] Checking wallet: {wallet.address} for currency {wallet.currency.symbol} in network {wallet.network}")
@@ -96,8 +278,17 @@ def check_blockchain_deposits():
 
             # Проверяем на дубликат ДО основной логики
             if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                logger.info(f"Duplicate transaction found: tx_hash={tx_hash}. Skipping re-processing.")
-                # НЕ отправляем повторные сигналы для старых транзакций, чтобы избежать ложных уведомлений
+                logger.warning(f"Duplicate transaction found: tx_hash={tx_hash}. Re-sending signal just in case.")
+                # Отправляем сигнал повторно, на случай если фронтенд его пропустил
+                if deposit_memo:
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f"deposit_memo_{deposit_memo.memo}",
+                        {
+                            "type": "deposit_status_update",
+                            "data": {'memo': deposit_memo.memo, 'status': 'used', 'message': 'Deposit completed'}
+                        }
+                    )
                 continue
 
             try:
@@ -118,6 +309,11 @@ def check_blockchain_deposits():
                         currency=wallet.currency,
                         defaults={'balance': Decimal('0'), 'is_system_wallet': True, 'is_active': True}
                     )
+                    # Проверяем, что транзакция с таким hash еще не существует
+                    if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                        logger.warning(f"[memo] Transaction {tx_hash} already exists, skipping duplicate")
+                        continue
+                        
                     system_wallet.balance += amount
                     system_wallet.save()
 
@@ -158,157 +354,133 @@ def check_blockchain_deposits():
             except Exception as e:
                 logger.error(f"Error during database transaction for memo='{memo}': {e}", exc_info=True)
 
-    # 2. Теперь обрабатываем валюты без MEMO/tag по уникальным адресам пользователей
+    # 2. Теперь обрабатываем валюты без MEMO/tag по уникальным адресам пользователей с батч-обработкой
     currencies_no_memo = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
+    
     for currency in currencies_no_memo:
-        # Явно логируем поддержку Solana
-        if currency.symbol.lower() in ["sol", "solana"]:
-            logger.info(f"[Solana][DEPOSIT] Обработка депозитов для Solana: network={currency.network}, symbol={currency.symbol}")
-        user_wallets = UserWallet.objects.filter(currency=currency, is_system_wallet=False, deposit_address__isnull=False).exclude(deposit_address='')
-        for user_wallet in user_wallets:
-            address = user_wallet.deposit_address
-            logger.info(f"[no-memo][DEBUG] SCAN: currency={currency.symbol}, network={currency.network}, user={user_wallet.user_id}, address={address}")
-            try:
-                service = get_blockchain_service(currency.network or currency.symbol)
-            except ValueError:
-                logger.warning(f"Unsupported network {currency.network} for {currency.symbol}. Skipping.")
-                continue
+        logger.info(f"[BATCH] Starting batch processing for {currency.symbol}, network={currency.network}, decimals={currency.decimals}, requires_memo={currency.requires_memo}")
+        
+        user_wallets = UserWallet.objects.filter(
+            currency=currency, 
+            is_system_wallet=False, 
+            deposit_address__isnull=False
+        ).exclude(deposit_address='')
+        
+        if not user_wallets.exists():
+            logger.info(f"[BATCH] No user wallets found for {currency.symbol}")
+            continue
+        
+        try:
+            service = get_blockchain_service(currency.network or currency.symbol)
             
-            # Получаем последние транзакции по адресу
-            # Получаем последнюю транзакцию для КОНКРЕТНОГО пользователя
-            last_tx = Transaction.objects.filter(
-                user=user_wallet.user,
-                crypto=currency,
-                tx_hash__isnull=False
-            ).order_by("-timestamp").first()
-            min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
-            logger.info(f"[no-memo][DEBUG] CALL get_transactions: address={address}, min_ts={min_ts}, contract={currency.contract_address}")
+            # Используем батч-обработку для эффективного сканирования
+            batch_results = process_addresses_batch(currency, user_wallets, service)
             
-            # Для Polygon используем ограниченное сканирование (последние 500 блоков)
-            if currency.symbol == 'POL':
-                # Ограничиваем сканирование для предотвращения зависания
-                current_block = service.w3.eth.block_number
-                from_block = max(current_block - 500, 1)  # Последние 500 блоков или с блока 1
-                logger.info(f"[POL] Quick scan: blocks {from_block} to {current_block} for {address}")
-                raw_transactions = service.get_transactions(
-                    address=address,
-                    from_block=from_block,
-                    to_block=current_block
-                )
-            # Для Ethereum и ERC-20 токенов передаем contract_address
-            elif currency.network and currency.network.upper() == 'ERC20':
-                raw_transactions = service.get_transactions(
-                    address=address,
-                    min_timestamp=min_ts,
-                    contract_address=currency.contract_address
-                )
-            # Для TRC20 токенов всегда передаем contract_address (даже если пустой для TRX)
-            elif currency.network and currency.network.upper() == 'TRC20':
-                raw_transactions = service.get_transactions(
-                    address=address,
-                    min_timestamp=min_ts,
-                    contract_address=currency.contract_address
-                )
-            else:
-                raw_transactions = service.get_transactions(address=address, min_timestamp=min_ts)
+            # Создаём маппинг адресов к кошелькам
+            address_to_wallet = {wallet.deposit_address: wallet for wallet in user_wallets}
             
-            logger.info(f"[no-memo] Found {len(raw_transactions)} tx for {currency.symbol} address {address}")
-            for ev in raw_transactions:
-                tx_hash = ev.get("transaction_id")
-                amount_str = ev.get("value")
-                logger.info(f"[no-memo] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
-                existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).first()
-                if existing_tx:
-                    logger.info(f"[no-memo] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Skipping re-processing.")
-                    # НЕ отправляем повторные сигналы для старых транзакций, чтобы избежать ложных уведомлений
+            # Обрабатываем результаты батча
+            for address, (raw_transactions, success) in batch_results.items():
+                if not success or not raw_transactions:
                     continue
-                try:
-                    # Для Ethereum используем правильное количество десятичных знаков
-                    if currency.network and currency.network.upper() == 'ERC20':
-                        if currency.symbol == 'ETH':
-                            # ETH в Wei (18 decimals)
-                            amount = Decimal(amount_str) / Decimal(10**18)
-                        else:
-                            # ERC-20 токены используют свои decimals
-                            amount = Decimal(amount_str) / Decimal(10**currency.decimals)
-                    else:
-                        amount = Decimal(amount_str) / Decimal(10**currency.decimals)
-                except (ValueError, TypeError):
-                    logger.error(f"[no-memo] Invalid amount: {amount_str}")
+                
+                user_wallet = address_to_wallet.get(address)
+                if not user_wallet:
                     continue
-                    
-                with transaction.atomic():
-                    user_wallet.balance += amount
-                    user_wallet.save()
-                    Transaction.objects.create(
-                        user=user_wallet.user,
-                        crypto=currency,
-                        amount=amount,
-                        tx_hash=tx_hash,
-                        type="deposit",
-                        status="completed",
-                        timestamp=timezone.now()
-                    )
-                    logger.info(f"[no-memo] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
-                    
-                    # Для POL запускаем немедленную консолидацию после депозита
-                    if currency.symbol == 'POL':
-                        logger.info(f"[POL] Triggering immediate consolidation after deposit for user {user_wallet.user.id}")
-                        from .tasks_consolidation import consolidate_user_deposits
-                        
-                        # Проверяем доступность Celery worker'ов для POL
+                
+                logger.info(f"[BATCH] Processing {len(raw_transactions)} transactions for address {address}")
+                
+                # Обрабатываем найденные транзакции
+                for ev in raw_transactions:
+                    tx_hash = ev.get("transaction_id")
+                    amount_str = ev.get("value")
+                    logger.info(f"[BATCH] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
+                    existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).first()
+                    if existing_tx:
+                        logger.warning(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Re-sending signal.")
+                        # Повторно отправляем сигнал, если транзакция уже существует
                         try:
-                            from celery import current_app
-                            inspect = current_app.control.inspect()
-                            active_workers = inspect.active()
-                            
-                            if active_workers and any(active_workers.values()):
-                                # Есть активные worker'ы - запускаем асинхронно
-                                consolidate_user_deposits.delay()
-                                logger.info("[POL] Consolidation task queued after deposit via Celery")
-                            else:
-                                # Нет worker'ов - запускаем синхронно
-                                logger.warning("[POL] No active Celery workers, running consolidation synchronously")
-                                result = consolidate_user_deposits()
-                                logger.info(f"[POL] Sync consolidation after deposit: {result}")
-                                
+                            channel_layer = get_channel_layer()
+                            async_to_sync(channel_layer.group_send)(
+                                f"deposit_address_{address}",
+                                {
+                                    "type": "deposit_status_update",
+                                    "data": {
+                                        "address": address,
+                                        "currency": currency.symbol,
+                                        "network": currency.network,
+                                        "status": "used",
+                                        "amount": str(existing_tx.amount),
+                                    }
+                                }
+                            )
+                            logger.info(f"[BATCH] Re-sent WebSocket signal for address {address}")
                         except Exception as e:
-                            logger.warning(f"[POL] Celery check failed, running sync consolidation: {e}")
-                            try:
-                                result = consolidate_user_deposits()
-                                logger.info(f"[POL] Sync consolidation after deposit: {result}")
-                            except Exception as sync_e:
-                                logger.error(f"[POL] Sync consolidation failed: {sync_e}")
+                            logger.error(f"[BATCH] Failed to re-send WebSocket signal for address {address}: {e}")
+                        continue
+                    
+                    try:
+                        # Логируем входные данные для диагностики
+                        logger.info(f"[BATCH] Processing amount conversion: currency={currency.symbol}, network={currency.network}, amount_str={amount_str}, decimals={currency.decimals}")
+                        
+                        # Проверяем, является ли amount_str уже конвертированной суммой (от оптимизированного сканера)
+                        # Если в amount_str есть точка и число меньше 1000, скорее всего это уже готовая сумма
+                        is_already_converted = (
+                            '.' in amount_str and 
+                            Decimal(amount_str) < Decimal('1000') and
+                            currency.symbol == 'POL'
+                        )
+                        
+                        if is_already_converted:
+                            # Данные уже в POL (от оптимизированного сканера)
+                            amount = Decimal(amount_str)
+                            logger.info(f"[BATCH][OPTIMIZED] Amount already converted by optimized scanner: {amount} {currency.symbol}")
+                        elif currency.network and currency.network.upper() == 'ERC20':
+                            if currency.symbol == 'ETH':
+                                # ETH в Wei (18 decimals)
+                                amount = Decimal(amount_str) / Decimal(10**18)
+                                logger.info(f"[BATCH] ETH: Converting {amount_str} Wei to {amount} ETH")
+                            else:
+                                # ERC-20 токены используют свои decimals
+                                amount = Decimal(amount_str) / Decimal(10**currency.decimals)
+                                logger.info(f"[BATCH] ERC20: Converting {amount_str} with {currency.decimals} decimals to {amount} {currency.symbol}")
+                        else:
+                            # Остальные валюты используют свои decimals (Wei формат)
+                            amount = Decimal(amount_str) / Decimal(10**currency.decimals)
+                            logger.info(f"[BATCH] Converting {amount_str} Wei with {currency.decimals} decimals to {amount} {currency.symbol}")
+                        
+                        # Логируем результат
+                        logger.info(f"[BATCH] Amount conversion result: {amount} {currency.symbol}")
+                        
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"[BATCH] Invalid amount: {amount_str}, error: {e}")
+                        continue
+                        
+                    # Проверяем, что транзакция с таким hash еще не существует
+                    if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                        logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
+                        continue
+                        
+                    with transaction.atomic():
+                        user_wallet.balance += amount
+                        user_wallet.save()
+                        
+                        # Детальное логирование перед сохранением
+                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={amount}, tx_hash={tx_hash}")
+                        
+                        Transaction.objects.create(
+                            user=user_wallet.user,
+                            crypto=currency,
+                            amount=amount,
+                            tx_hash=tx_hash,
+                            type="deposit",
+                            status="completed",
+                            timestamp=timezone.now()
+                        )
+                        processed += 1
+                        logger.info(f"[BATCH] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
 
-                # Отправляем WebSocket сигнал по адресу
-                try:
-                    channel_layer = get_channel_layer()
-                    async_to_sync(channel_layer.group_send)(
-                        f"deposit_address_{address}",
-                        {
-                            "type": "deposit_status_update",
-                            "data": {
-                                "address": address,
-                                "currency": currency.symbol,
-                                "network": currency.network,
-                                "status": "used",
-                                "amount": str(amount),
-                            }
-                        }
-                    )
-                    logger.info(f"[no-memo] WebSocket signal sent for address {address}")
-                except Exception as e:
-                    logger.error(f"[no-memo] Failed to send WebSocket signal for address {address}: {e}")
-
-
-                # Ротация депозитного адреса после успешного зачисления
-                try:
-                    new_address, new_private_key = service.create_new_address(user_id=user_wallet.user.id)
-                    user_wallet.deposit_address = new_address
-                    user_wallet.encrypted_private_key = new_private_key
-                    user_wallet.save(update_fields=["deposit_address", "encrypted_private_key", "updated_at"]) if hasattr(user_wallet, "updated_at") else user_wallet.save()
-
-                    # Сообщим фронту о новом адресе (опционально)
+                    # Отправляем WebSocket сигнал по адресу
                     try:
                         channel_layer = get_channel_layer()
                         async_to_sync(channel_layer.group_send)(
@@ -316,19 +488,29 @@ def check_blockchain_deposits():
                             {
                                 "type": "deposit_status_update",
                                 "data": {
-                                    "address": new_address,
+                                    "address": address,
                                     "currency": currency.symbol,
                                     "network": currency.network,
-                                    "status": "rotated",
-                                },
-                            },
+                                    "status": "used",
+                                    "amount": str(amount),
+                                }
+                            }
                         )
-                    except Exception:
-                        pass
-                    logger.info(f"[no-memo] Rotated deposit address for user {user_wallet.user_id}: {address} -> {new_address}")
-                except Exception as e:
-                    logger.error(f"[no-memo] Failed to rotate deposit address for user {user_wallet.user_id}: {e}")
-
+                        logger.info(f"[BATCH] WebSocket signal sent for address {address}")
+                    except Exception as e:
+                        logger.error(f"[BATCH] Failed to send WebSocket signal for address {address}: {e}")
+                    
+                    logger.info(f"[BATCH] Deposit processed for user {user_wallet.user_id}")
+            
+        except Exception as e:
+            logger.error(f"[BATCH] Error processing currency {currency.symbol}: {e}")
+            continue
+        
+        # Очищаем кэш периодически
+        try:
+            cached_batch_processor.cleanup_cache()
+        except Exception as cache_error:
+            logger.warning(f"[BATCH] Cache cleanup failed: {cache_error}")
 
     # --- XRP Ledger ---
     xrp_wallets = SystemWalletAddress.objects.filter(network__iexact="XRP", currency__is_active=True)
@@ -412,6 +594,11 @@ def check_blockchain_deposits():
                             'is_active': True,
                         }
                     )
+                    # Проверяем, что транзакция с таким hash еще не существует
+                    if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                        logger.warning(f"[XRP] Transaction {tx_hash} already exists, skipping duplicate")
+                        continue
+                        
                     system_wallet.balance += amount
                     system_wallet.save()
                     Transaction.objects.create(
@@ -430,42 +617,14 @@ def check_blockchain_deposits():
         except Exception as e:
             logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 
-
     logger.info(f"Finished deposit check. Processed {processed} transactions.")
     
-    # Всегда запускаем консолидацию средств (даже если новых депозитов нет)
-    # Это обеспечивает консолидацию средств, которые могли поступить ранее
-    from .tasks_consolidation import consolidate_user_deposits
-    logger.info("Starting consolidation of user deposits...")
-    
-    # Проверяем доступность Celery worker'ов
-    try:
-        from celery import current_app
-        inspect = current_app.control.inspect()
-        active_workers = inspect.active()
-        
-        if active_workers and any(active_workers.values()):
-            # Есть активные worker'ы - запускаем асинхронно
-            consolidate_user_deposits.delay()
-            logger.info("Consolidation task queued successfully via Celery")
-        else:
-            # Нет worker'ов - запускаем синхронно
-            logger.warning("No active Celery workers found, running consolidation synchronously")
-            result = consolidate_user_deposits()
-            logger.info(f"Synchronous consolidation completed: {result}")
-            
-    except Exception as e:
-        # Если проблемы с Celery, запускаем синхронно
-        logger.warning(f"Celery check failed ({e}), running consolidation synchronously")
-        try:
-            result = consolidate_user_deposits()
-            logger.info(f"Synchronous consolidation completed: {result}")
-        except Exception as sync_error:
-            logger.error(f"Synchronous consolidation failed: {sync_error}", exc_info=True)
+    # Если были обработаны новые депозиты, запускаем задачу их консолидации
+    if processed > 0:
+        logger.info("Triggering process_pending_deposits to handle consolidation...")
+        process_pending_deposits.delay()
     
     return f"Готово, обработано: {processed}"
-
-
 
 
 @shared_task(bind=True, name='crypto.tasks.process_withdrawal')
@@ -481,7 +640,6 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
     except Withdrawal.DoesNotExist:
         logger.error(f"Withdrawal with id {withdrawal_id} not found. The task will not be executed.")
         return f"error:not_found"
-
 
     try:
         # Используем одну транзакцию БД для всех проверок и начальных изменений
@@ -512,7 +670,6 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
             user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
             if user_wallet.balance < total_amount:
                 withdrawal.transaction.status = 'failed'
-
                 withdrawal.transaction.notes = "Insufficient funds at the time of processing."
                 withdrawal.transaction.save()
                 logger.error(f"Insufficient funds for withdrawal {withdrawal.id}. Balance: {user_wallet.balance}, required: {total_amount}")
@@ -547,7 +704,6 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
         
         if not system_wallet.encrypted_private_key:
             raise Exception(f"System wallet for {crypto.symbol} has no private key.")
-
 
         service = get_blockchain_service(network)
         
@@ -591,7 +747,6 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
         return f"success:sent_to_network:{tx_hash}"
 
     except Exception as e:
-
         logger.error(f"!!! Caught exception for withdrawal {withdrawal_id} !!!", exc_info=True)
         logger.error(f"Transaction failed for withdrawal {withdrawal_id}: {e}", exc_info=True)
         if withdrawal:
@@ -616,7 +771,6 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
                     withdrawal_to_fail.transaction.status = 'failed'
                     withdrawal_to_fail.transaction.notes = f"Transaction error: {str(e)}. Refund failed due to inconsistent locked balance."
                     withdrawal_to_fail.transaction.save()
-
 
         return f"error:transaction_failed - {str(e)}"
 
@@ -659,13 +813,193 @@ def process_pending_withdrawals():
         logger.info(f"Queueing blockchain confirmation check for withdrawal {withdrawal.id}")
         check_withdrawal_confirmation.delay(withdrawal.id)
 
+def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal]:
+    """Обрабатывает консолидацию для одного кошелька в параллельном потоке"""
+    (currency, user_wallet, blockchain_service, system_wallet_address, min_threshold) = args
+    
+    try:
+        # Проверяем реальный баланс в блокчейне с кэшированием через батч-процессор
+        blockchain_balance = cached_batch_processor.get_cached_balance(blockchain_service, user_wallet.deposit_address)
+        
+        if blockchain_balance < min_threshold:
+            logger.debug(f"[CONSOLIDATION] Address {user_wallet.deposit_address} has {blockchain_balance} {currency.symbol}, less than minimum {min_threshold}")
+            return (False, user_wallet.deposit_address, Decimal('0'))
+        
+        logger.info(f"[CONSOLIDATION] Found {blockchain_balance} {currency.symbol} on address {user_wallet.deposit_address} for user {user_wallet.user.id}")
+        
+        # Рассчитываем максимальную отправляемую сумму
+        if hasattr(blockchain_service, 'get_max_sendable_amount'):
+            # Для POL используем умный расчёт газа
+            amount_to_send = blockchain_service.get_max_sendable_amount(
+                user_wallet.deposit_address, 
+                system_wallet_address
+            )
+            if amount_to_send <= 0:
+                logger.warning(f"[CONSOLIDATION] Cannot consolidate for user {user_wallet.user.id}: insufficient balance after gas deduction")
+                return (False, user_wallet.deposit_address, Decimal('0'))
+            logger.info(f"[CONSOLIDATION] Smart gas calculation: sending {amount_to_send} {currency.symbol}")
+        else:
+            # Fallback для других валют
+            gas_reserve = get_gas_reserve(currency)
+            amount_to_send = blockchain_balance - gas_reserve
+            if amount_to_send <= 0:
+                logger.warning(f"[CONSOLIDATION] Cannot consolidate for user {user_wallet.user.id}: insufficient balance after gas reserve")
+                return (False, user_wallet.deposit_address, Decimal('0'))
+            logger.info(f"[CONSOLIDATION] Fixed gas reserve: sending {amount_to_send} {currency.symbol}")
+        
+        # Выполняем консолидацию
+        logger.info(f"[CONSOLIDATION] Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet")
+        
+        tx_hash = blockchain_service.send_transaction(
+            private_key=user_wallet.encrypted_private_key,
+            to_address=system_wallet_address,
+            amount=amount_to_send,
+        )
+        
+        logger.info(f"[CONSOLIDATION] Transaction sent: {tx_hash}")
+        return (True, tx_hash, amount_to_send)
+        
+    except Exception as e:
+        logger.error(f"[CONSOLIDATION] Error processing wallet {user_wallet.deposit_address}: {e}")
+        return (False, user_wallet.deposit_address, Decimal('0'))
+
 @shared_task
 def process_pending_deposits():
     """
-    Периодическая задача для обработки всех ожидающих депозитов (если требуется).
+    Обрабатывает только что зачисленные депозиты и выполняет их консолидацию с многопоточностью.
+    Эта задача запускается после check_blockchain_deposits, когда депозиты уже в БД.
     """
-    # Здесь можно реализовать обработку зависших депозитов, если такая логика нужна
-    pass
+    from django.utils import timezone
+    from datetime import timedelta
+    from django.db import transaction as db_transaction
+    from .tasks_consolidation import get_min_consolidation_amount, get_gas_reserve, get_system_wallet_address
+    from .blockchain.factory import get_blockchain_service
+    
+    logger.info("🔄 Processing pending deposits for consolidation with parallel processing...")
+    
+    from transactions.models import Transaction
+    from crypto.models import Cryptocurrency, UserWallet
+    
+    # Получаем валюты, которые НЕ требуют мемо (они нуждаются в консолидации)
+    no_memo_currencies = Cryptocurrency.objects.filter(requires_memo=False, is_active=True)
+    consolidated_count = 0
+    
+    for currency in no_memo_currencies:
+        logger.info(f"[CONSOLIDATION] Processing {currency.symbol} with parallel processing...")
+        
+        try:
+            # Получаем сервис блокчейна
+            blockchain_service = get_blockchain_service(currency.network or currency.symbol)
+            
+            # Проверяем доступность сервиса
+            try:
+                system_wallet_address = get_system_wallet_address(currency)
+                test_balance = cached_batch_processor.get_cached_balance(blockchain_service, system_wallet_address)
+                logger.debug(f"Service for {currency.symbol} is available. System balance: {test_balance}")
+            except Exception as e:
+                logger.error(f"Service not available for {currency.symbol}: {e}. Skipping.")
+                continue
+            
+            # Ищем кошельки пользователей с балансом на блокчейне
+            user_wallets_with_funds = UserWallet.objects.filter(
+                currency=currency,
+                is_system_wallet=False,
+                deposit_address__isnull=False
+            ).exclude(deposit_address='')
+            
+            if not user_wallets_with_funds.exists():
+                logger.info(f"[CONSOLIDATION] No user wallets found for {currency.symbol}")
+                continue
+            
+            min_threshold = get_min_consolidation_amount(currency)
+            
+            # Подготавливаем аргументы для параллельной обработки
+            consolidation_args = []
+            for user_wallet in user_wallets_with_funds:
+                consolidation_args.append((currency, user_wallet, blockchain_service, system_wallet_address, min_threshold))
+            
+            logger.info(f"[CONSOLIDATION] Processing {len(consolidation_args)} wallets for {currency.symbol} in parallel")
+            
+            # Выполняем параллельную консолидацию
+            max_workers = min(5, len(consolidation_args))  # Ограничиваем количество потоков для консолидации
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Запускаем задачи консолидации
+                future_to_wallet = {
+                    executor.submit(process_consolidation_for_wallet, args): args[1] 
+                    for args in consolidation_args
+                }
+                
+                # Собираем результаты
+                for future in as_completed(future_to_wallet):
+                    user_wallet = future_to_wallet[future]
+                    try:
+                        success, tx_hash_or_address, amount_sent = future.result(timeout=120)  # Увеличенный таймаут для консолидации
+                        
+                        if not success:
+                            continue
+                        
+                        tx_hash = tx_hash_or_address
+                        amount_to_send = amount_sent
+                        
+                        # Проверяем, что транзакция ещё не существует
+                        if not Transaction.objects.filter(tx_hash=tx_hash).exists():
+                            # Записываем транзакцию консолидации в БД
+                            with db_transaction.atomic():
+                                Transaction.objects.create(
+                                    user=user_wallet.user,
+                                    crypto=currency,
+                                    amount=amount_to_send,
+                                    type="consolidation",
+                                    status="pending",
+                                    tx_hash=tx_hash,
+                                    timestamp=timezone.now(),
+                                    fee=Decimal('0'),  # Комиссия уже учтена в расчёте amount_to_send
+                                )
+                                logger.info(f"[CONSOLIDATION] Transaction saved to DB: {tx_hash}")
+                                
+                                # Генерируем новый адрес для пользователя сразу после консолидации
+                                try:
+                                    new_address, private_key = blockchain_service.create_new_address(user_id=user_wallet.user.id)
+                                    if new_address:
+                                        old_address = user_wallet.deposit_address
+                                        user_wallet.deposit_address = new_address
+                                        user_wallet.encrypted_private_key = private_key
+                                        user_wallet.save()
+                                        
+                                        # Записываем сгенерированный кошелек в GeneratedWallet
+                                        from crypto.models import GeneratedWallet
+                                        GeneratedWallet.record_generated_wallet(
+                                            address=new_address,
+                                            private_key=private_key,
+                                            currency=currency,
+                                            network=currency.network,
+                                            user=user_wallet.user,
+                                            wallet_type='user',
+                                            created_by='process_pending_deposits_consolidation_parallel',
+                                            notes=f'Generated after parallel consolidation for user {user_wallet.user.id}, old address: {old_address}'
+                                        )
+                                        
+                                        logger.info(f"[CONSOLIDATION] Generated new address for user {user_wallet.user.id}: {old_address} -> {new_address}")
+                                    else:
+                                        logger.warning(f"[CONSOLIDATION] Failed to generate new address for user {user_wallet.user.id}")
+                                except Exception as addr_error:
+                                    logger.error(f"[CONSOLIDATION] Error generating new address for user {user_wallet.user.id}: {addr_error}")
+                                
+                                consolidated_count += 1
+                        else:
+                            logger.warning(f"[CONSOLIDATION] Transaction {tx_hash} already exists in DB")
+                    
+                    except Exception as e:
+                        logger.error(f"[CONSOLIDATION] Error processing consolidation result: {e}")
+                        continue
+                    
+        except Exception as e:
+            logger.error(f"Error processing currency {currency.symbol}: {e}")
+            continue
+    
+    logger.info(f"🏁 Consolidation completed: {consolidated_count} transactions processed")
+    return f"Consolidation completed: {consolidated_count} transactions"
 
 @shared_task(bind=True, max_retries=20, default_retry_delay=60)
 def check_withdrawal_confirmation(self, withdrawal_id: int):
@@ -720,13 +1054,14 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
                 # Блокируем кошелек для безопасного списания
                 user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
                 
-                # Повторная проверка баланса на всякий случай
-                if user_wallet.balance < amount_to_withdraw:
+                # Повторная проверка заблокированного баланса на всякий случай
+                # При подтверждении проверяем locked_balance, так как средства уже были зарезервированы при отправке
+                if user_wallet.locked_balance < amount_to_withdraw:
                     withdrawal.transaction.status = 'failed'
-                    withdrawal.transaction.notes = "Insufficient funds discovered upon withdrawal confirmation."
+                    withdrawal.transaction.notes = "Insufficient locked funds discovered upon withdrawal confirmation."
                     withdrawal.transaction.save()
-                    logger.error(f"Insufficient funds for withdrawal {withdrawal.id} upon confirmation. Balance: {user_wallet.balance}, required: {amount_to_withdraw}")
-                    return "error:insufficient_funds_on_confirmation"
+                    logger.error(f"Insufficient locked funds for withdrawal {withdrawal.id} upon confirmation. Locked balance: {user_wallet.locked_balance}, required: {amount_to_withdraw}")
+                    return "error:insufficient_locked_funds_on_confirmation"
 
                 # Списываем средства
                 # Средства уже были списаны с основного баланса,
@@ -748,31 +1083,42 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
         else:
             logger.info(f"Withdrawal {withdrawal_id} (tx: {tx_hash}) is not yet confirmed. Retrying...")
             # Увеличиваем задержку с каждой попыткой
-            # Увеличиваем задержку с каждой попыткой, как указано в требованиях
             retry_countdown = 60 * (self.request.retries + 1)
-            self.retry(countdown=retry_countdown, max_retries=20)
+            
+            # Проверяем лимит попыток
+            if self.request.retries >= self.max_retries:
+                logger.error(f"Max retries ({self.max_retries}) reached for withdrawal {withdrawal_id}, marking as failed")
+                withdrawal.transaction.status = 'failed'
+                withdrawal.transaction.notes = f"Failed to confirm transaction after {self.max_retries} attempts"
+                withdrawal.transaction.save()
+                return f"error:max_retries_exceeded"
+            
+            # Делаем retry (это вызовет исключение Retry, которое нормально для Celery)
+            # Вызываем retry вне try-except блока
+            self.retry(countdown=retry_countdown, max_retries=self.max_retries)
 
     except Withdrawal.DoesNotExist:
         logger.error(f"Withdrawal with id {withdrawal_id} not found for confirmation check.")
         return f"error:not_found"
+    except Retry:
+        # Исключение Retry от Celery - просто пропускаем его дальше, это нормально
+        raise
     except Exception as e:
         logger.error(f"Error checking confirmation for withdrawal {withdrawal_id}: {e}", exc_info=True)
-        try:
-            # Если после нескольких попыток возникает ошибка, помечаем как failed
-            if self.request.retries >= self.max_retries:
-                 if withdrawal:
-                    withdrawal.transaction.status = 'failed'
-                    withdrawal.transaction.notes = f"Failed to confirm transaction after multiple retries: {str(e)}"
-                    withdrawal.transaction.save()
-                 return f"error:max_retries_exceeded"
-            self.retry(exc=e)
-        except Exception as retry_exc:
-             logger.error(f"Failed to retry task for withdrawal {withdrawal_id}: {retry_exc}", exc_info=True)
-             if withdrawal:
+        
+        # Только для реальных ошибок (не Retry) помечаем как failed при превышении лимита
+        if self.request.retries >= self.max_retries:
+            if withdrawal:
                 withdrawal.transaction.status = 'failed'
-                withdrawal.transaction.notes = f"Critical error during confirmation check: {str(e)}"
+                withdrawal.transaction.notes = f"Failed to confirm transaction after multiple retries: {str(e)}"
                 withdrawal.transaction.save()
-             return f"error:critical_failure"
+                logger.error(f"Withdrawal {withdrawal_id} marked as failed after {self.max_retries} retries")
+            return f"error:max_retries_exceeded"
+        
+        # Пытаемся retry для других ошибок
+        retry_countdown = 60 * (self.request.retries + 1)
+        logger.info(f"Retrying withdrawal confirmation {withdrawal_id} in {retry_countdown}s (attempt {self.request.retries + 1}/{self.max_retries})")
+        self.retry(countdown=retry_countdown, exc=e, max_retries=self.max_retries)
 
 
 @shared_task
@@ -791,8 +1137,17 @@ def consolidate_funds():
         try:
             service = get_blockchain_service(currency.network or currency.symbol)
             system_wallet_address = SystemWalletAddress.objects.get(currency=currency).address
-        except (ValueError, SystemWalletAddress.DoesNotExist) as e:
-            logger.error(f"[CONSOLIDATE] Skipping {currency.symbol}: Cannot get service or system address. Error: {e}")
+            # Проверяем доступность сервиса через простой запрос баланса
+            test_balance = service.get_balance(system_wallet_address)
+            logger.debug(f"[CONSOLIDATE] Successfully connected to {currency.symbol} ({currency.network}), system balance: {test_balance}")
+        except ValueError as e:
+            logger.warning(f"[CONSOLIDATE] Unsupported network {currency.network} for {currency.symbol}. Skipping.")
+            continue
+        except SystemWalletAddress.DoesNotExist as e:
+            logger.error(f"[CONSOLIDATE] No system address for {currency.symbol}. Skipping.")
+            continue
+        except Exception as e:
+            logger.warning(f"[CONSOLIDATE] Service unavailable for {currency.symbol} ({currency.network}): {e}. Skipping.")
             continue
 
         # Находим все кошельки пользователей с депозитными адресами и балансом
@@ -819,9 +1174,8 @@ def consolidate_funds():
                     # Fallback для сервисов, которые не поддерживают contract_address
                     actual_balance = service.get_balance(u_wallet.deposit_address)
                 
-                # Устанавливаем минимальный порог для перевода, чтобы избежать "пыли"
-                # TODO: Порог должен быть в настройках, а не захардкожен
-                min_threshold = Decimal('0.1') 
+                # Используем настроенный минимальный порог
+                min_threshold = get_min_consolidation_amount(currency) 
                 
                 if actual_balance < min_threshold:
                     logger.info(f"[CONSOLIDATE] Skipping user {u_wallet.user.id} wallet for {currency.symbol}: balance {actual_balance} is below threshold {min_threshold}.")
@@ -835,20 +1189,58 @@ def consolidate_funds():
                     logger.warning(f"[CONSOLIDATE] Skip user {u_wallet.user.id} for {currency.symbol}: missing private key for address {u_wallet.deposit_address}")
                     continue
 
+                # Рассчитываем максимальную отправляемую сумму (баланс - газ)
+                if hasattr(service, 'get_max_sendable_amount'):
+                    # Для POL используем умный расчёт газа
+                    max_sendable = service.get_max_sendable_amount(u_wallet.deposit_address, system_wallet_address)
+                    if max_sendable <= 0:
+                        logger.warning(f"[CONSOLIDATE] Cannot consolidate for user {u_wallet.user.id}: insufficient balance after gas deduction")
+                        continue
+                    amount_to_send = max_sendable
+                    logger.info(f"[CONSOLIDATE] Smart gas calculation: sending {amount_to_send} {currency.symbol} (from balance {actual_balance})")
+                else:
+                    # Fallback для других валют - вычитаем фиксированный резерв
+                    gas_reserve = get_gas_reserve(currency)
+                    amount_to_send = actual_balance - gas_reserve
+                    if amount_to_send <= 0:
+                        logger.warning(f"[CONSOLIDATE] Cannot consolidate for user {u_wallet.user.id}: insufficient balance after gas reserve")
+                        continue
+                    logger.info(f"[CONSOLIDATE] Fixed gas reserve: sending {amount_to_send} {currency.symbol} (gas reserve: {gas_reserve})")
+
                 # Отправляем средства на системный кошелек
                 tx_hash = service.send_transaction(
                     private_key=private_key,
                     to_address=system_wallet_address,
-                    amount=actual_balance,
-                    # Важно: для некоторых сетей может потребоваться вычесть комиссию из суммы
+                    amount=amount_to_send,
                 )
                 
                 logger.info(f"[CONSOLIDATE] Consolidation transaction sent for user {u_wallet.user.id}. Tx hash: {tx_hash}")
 
-                # TODO: Нужно сохранить информацию о транзакции консолидации в БД
-                # и обнулить баланс пользователя в блокчейне после подтверждения.
+                # Сохраняем транзакцию консолидации в БД
+                try:
+                    from transactions.models import Transaction
+                    # Проверяем что транзакция ещё не существует
+                    if not Transaction.objects.filter(tx_hash=tx_hash).exists():
+                        Transaction.objects.create(
+                            user=u_wallet.user,
+                            crypto=currency,
+                            amount=amount_to_send,
+                            type="consolidation",
+                            status="pending",  # Будет обновлено после подтверждения
+                            tx_hash=tx_hash,
+                            timestamp=timezone.now(),
+                            fee=actual_balance - amount_to_send,  # Комиссия газа (разница между балансом и отправленной суммой)
+                        )
+                        logger.info(f"[CONSOLIDATE] Consolidation transaction saved to DB: {tx_hash}")
+                    else:
+                        logger.warning(f"[CONSOLIDATE] Transaction {tx_hash} already exists in DB")
+                except Exception as db_error:
+                    logger.error(f"[CONSOLIDATE] Failed to save consolidation transaction to DB: {db_error}")
+
+                # НЕ обнуляем баланс сразу - это делается после подтверждения транзакции в блокчейне
 
             except Exception as e:
                 logger.error(f"[CONSOLIDATE] Failed to consolidate for user {u_wallet.user.id}, currency {currency.symbol}. Error: {e}", exc_info=True)
 
     logger.info("[CONSOLIDATE] Finished funds consolidation task.")
+

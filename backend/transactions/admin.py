@@ -1,3 +1,4 @@
+
 from django import forms
 from django.contrib import admin
 from .models import Transaction, Exchange, Deposit, Withdrawal, Review
@@ -17,15 +18,142 @@ class StatusChangeForm(forms.Form):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display = ('transaction_id', 'user', 'type', 'status', 'amount', 'crypto', 'timestamp')
+    list_display = ('transaction_id', 'user', 'type', 'status', 'amount', 'crypto', 'timestamp', 'delete_button')
     list_filter = ('type', 'status', 'crypto__symbol')
     search_fields = ('transaction_id', 'user__email', 'user__username', 'tx_hash', 'crypto__symbol')
     readonly_fields = ('transaction_id', 'timestamp', 'updated_at', 'status')
     date_hierarchy = 'timestamp'
+    actions = ['delete_selected_transactions', 'find_duplicate_transactions', 'delete_duplicate_transactions']
     
     def has_delete_permission(self, request, obj=None):
-        # Запрещаем удаление транзакций через админку
-        return False
+        # Разрешаем удаление транзакций только суперпользователям
+        return request.user.is_superuser
+    
+    def changelist_view(self, request, extra_context=None):
+        """Сохраняем request для использования в других методах"""
+        self._current_request = request
+        return super().changelist_view(request, extra_context)
+    
+    def delete_button(self, obj):
+        """Кнопка удаления для каждой транзакции"""
+        from django.utils.html import format_html
+        from django.urls import reverse
+        
+        # Проверяем, есть ли текущий запрос в контексте
+        request = getattr(self, '_current_request', None)
+        if request and self.has_delete_permission(request, obj):
+            delete_url = reverse('admin:transactions_transaction_delete', args=[obj.pk])
+            return format_html(
+                '<a href="{}" onclick="return confirm(\'Вы уверены, что хотите удалить транзакцию {}? Это действие необратимо!\')" '
+                'style="background-color: #dc3545; color: white; padding: 4px 8px; text-decoration: none; border-radius: 3px; font-size: 12px;">'
+                '🗑️ Удалить</a>',
+                delete_url, obj.transaction_id
+            )
+        return '-'
+    delete_button.short_description = 'Действия'
+    delete_button.allow_tags = True
+    
+    def delete_selected_transactions(self, request, queryset):
+        """Массовое удаление выбранных транзакций"""
+        if not request.user.is_superuser:
+            self.message_user(request, "Только суперпользователи могут удалять транзакции.", level='ERROR')
+            return
+        
+        count = queryset.count()
+        if count > 0:
+            # Получаем связанные объекты для информирования
+            related_objects = []
+            for transaction in queryset:
+                # Проверяем связанные депозиты
+                deposits = transaction.deposit_set.all()
+                if deposits.exists():
+                    related_objects.extend([f"Депозит {d.id}" for d in deposits])
+                
+                # Проверяем связанные выводы
+                withdrawals = transaction.withdrawal_set.all()
+                if withdrawals.exists():
+                    related_objects.extend([f"Вывод {w.id}" for w in withdrawals])
+                
+                # Проверяем связанные обмены
+                exchanges = transaction.exchange_set.all()
+                if exchanges.exists():
+                    related_objects.extend([f"Обмен {e.id}" for e in exchanges])
+            
+            # Удаляем транзакции (каскадное удаление удалит связанные объекты)
+            deleted_objects = queryset.delete()
+            
+            message = f"Успешно удалено {count} транзакций"
+            if related_objects:
+                message += f" и связанных объектов: {', '.join(related_objects[:10])}"
+                if len(related_objects) > 10:
+                    message += f" и еще {len(related_objects) - 10}..."
+            
+            self.message_user(request, message)
+        else:
+            self.message_user(request, "Не выбрано ни одной транзакции для удаления.", level='WARNING')
+    
+    delete_selected_transactions.short_description = "🗑️ Удалить выбранные транзакции (ОСТОРОЖНО!)"
+    
+    def find_duplicate_transactions(self, request, queryset):
+        """Поиск дублирующихся транзакций по tx_hash"""
+        from django.db.models import Count
+        
+        # Находим дубликаты по tx_hash
+        duplicates = Transaction.objects.values('tx_hash').annotate(
+            count=Count('tx_hash')
+        ).filter(count__gt=1, tx_hash__isnull=False).exclude(tx_hash='')
+        
+        if duplicates.exists():
+            duplicate_count = sum(d['count'] for d in duplicates)
+            duplicate_hashes = [d['tx_hash'] for d in duplicates]
+            
+            message = f"Найдено {len(duplicates)} групп дубликатов ({duplicate_count} транзакций): "
+            message += ", ".join(duplicate_hashes[:5])
+            if len(duplicate_hashes) > 5:
+                message += f" и еще {len(duplicate_hashes) - 5}..."
+            
+            self.message_user(request, message, level='WARNING')
+        else:
+            self.message_user(request, "Дубликатов не найдено.")
+    
+    find_duplicate_transactions.short_description = "🔍 Найти дубликаты транзакций"
+    
+    def delete_duplicate_transactions(self, request, queryset):
+        """Удаление дублирующихся транзакций (оставляет самую старую)"""
+        if not request.user.is_superuser:
+            self.message_user(request, "Только суперпользователи могут удалять дубликаты.", level='ERROR')
+            return
+        
+        from django.db.models import Count, Min
+        
+        # Находим дубликаты по tx_hash
+        duplicates = Transaction.objects.values('tx_hash').annotate(
+            count=Count('tx_hash'),
+            oldest_id=Min('id')
+        ).filter(count__gt=1, tx_hash__isnull=False).exclude(tx_hash='')
+        
+        deleted_count = 0
+        for duplicate in duplicates:
+            tx_hash = duplicate['tx_hash']
+            oldest_id = duplicate['oldest_id']
+            
+            # Удаляем все дубликаты кроме самого старого
+            duplicate_transactions = Transaction.objects.filter(
+                tx_hash=tx_hash
+            ).exclude(id=oldest_id)
+            
+            count = duplicate_transactions.count()
+            duplicate_transactions.delete()
+            deleted_count += count
+            
+            self.message_user(request, f"Удалено {count} дубликатов для tx_hash: {tx_hash}")
+        
+        if deleted_count > 0:
+            self.message_user(request, f"Всего удалено {deleted_count} дублирующихся транзакций.")
+        else:
+            self.message_user(request, "Дубликаты не найдены.")
+    
+    delete_duplicate_transactions.short_description = "🗑️ Удалить дубликаты транзакций"
 
 
 @admin.register(Exchange)
@@ -430,4 +558,5 @@ class ReviewAdmin(admin.ModelAdmin):
         """Добавить отзывы в избранное"""
         queryset.update(is_featured=True, is_published=True, is_verified=True)
     mark_featured.short_description = "Добавить в избранное"
+
 
