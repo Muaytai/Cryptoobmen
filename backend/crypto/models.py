@@ -1,3 +1,4 @@
+
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
@@ -515,3 +516,4 @@ class GeneratedWallet(models.Model):
             return account.address.lower() == address.lower()
         except Exception:
             return False
+

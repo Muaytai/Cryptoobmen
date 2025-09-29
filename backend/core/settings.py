@@ -1,3 +1,4 @@
+
 from pathlib import Path
 import os
 import sys
@@ -622,4 +623,5 @@ else:  # testnet/amoy
 # Gas настройки для Polygon (POL)
 POLYGON_GAS_PRICE_MULTIPLIER = float(os.getenv('POLYGON_GAS_PRICE_MULTIPLIER', '1.1'))
 POLYGON_MAX_GAS_PRICE = int(os.getenv('POLYGON_MAX_GAS_PRICE', '50'))  # В Gwei
+
 POLYGON_GAS_LIMIT = int(os.getenv('POLYGON_GAS_LIMIT', '21000'))  # Для POL транзакций

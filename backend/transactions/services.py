@@ -1,6 +1,7 @@
 import uuid
 from datetime import timedelta
 from decimal import Decimal
+import logging
 
 from django.utils import timezone
 from django.db import transaction as db_transaction
@@ -18,6 +19,8 @@ from accounts.models import User
 from crypto.services import get_exchange_rates
 from crypto.models import ExchangePair
 from transactions.models import Exchange as TransactionExchange
+
+logger = logging.getLogger(__name__)
 
 
 class ExchangeService:
@@ -149,36 +152,49 @@ class WithdrawalService:
         Создает запрос на вывод и отправляет email для подтверждения.
         Средства не списываются до подтверждения.
         """
+        logger.info(f"Создание запроса на вывод: user={user.username}, crypto_id={crypto_id}, amount={amount}, address={destination_address}")
+        
         # --- Блок валидации (взят и адаптирован из старого сериализатора) ---
         try:
             crypto = Cryptocurrency.objects.get(id=crypto_id, is_active=True)
+            logger.info(f"Найдена криптовалюта: {crypto.name} ({crypto.symbol})")
+            
             wallet = UserWallet.objects.get(user=user, currency=crypto, is_active=True)
+            logger.info(f"Найден кошелек: ID={wallet.id}, баланс={wallet.balance}")
             
             # Проверяем баланс
             if wallet.balance < amount:
+                logger.error(f"Недостаточно средств: баланс={wallet.balance}, запрошено={amount}")
                 raise serializers.ValidationError(f"Недостаточно средств. Баланс: {wallet.balance} {crypto.symbol}")
             
             # Проверяем минимальную сумму
             if amount < crypto.min_exchange_amount:
+                logger.error(f"Сумма меньше минимальной: {amount} < {crypto.min_exchange_amount}")
                 raise serializers.ValidationError(f"Минимальная сумма вывода: {crypto.min_exchange_amount} {crypto.symbol}")
             
             # Рассчитываем комиссию
             fee_percentage = crypto.fee_percentage
             fee_amount = (amount * fee_percentage) / 100
+
             amount_after_fee = amount - fee_amount
             if amount_after_fee <= 0:
                 raise serializers.ValidationError("Сумма к выводу после комиссии должна быть положительной")
 
             # Проверяем MEMO
             if getattr(crypto, 'requires_memo', False) and not memo:
+                logger.error(f"Требуется MEMO для {crypto.symbol}")
                 raise serializers.ValidationError("Для этой валюты требуется MEMO/Tag")
 
         except Cryptocurrency.DoesNotExist:
+            logger.error(f"Криптовалюта не найдена: crypto_id={crypto_id}")
             raise serializers.ValidationError("Криптовалюта не найдена или неактивна")
         except UserWallet.DoesNotExist:
+            logger.error(f"Кошелек не найден: user={user.username}, crypto_id={crypto_id}")
             raise serializers.ValidationError("Кошелек не найден")
         # --- Конец блока валидации ---
 
+        logger.info("Начинаем создание транзакции...")
+        
         with db_transaction.atomic():
             # Создаем транзакцию со статусом "ожидает подтверждения"
             transaction_obj = Transaction.objects.create(
@@ -191,6 +207,7 @@ class WithdrawalService:
                 ip_address=ip_address,
                 notes=f"Withdrawal request for {amount} {crypto.symbol} to {destination_address} (net: {amount_after_fee})"
             )
+            logger.info(f"Создана транзакция: ID={transaction_obj.id}")
 
             # Генерируем токен и время его жизни
             token = uuid.uuid4()
@@ -207,10 +224,18 @@ class WithdrawalService:
                 email_confirmation_token=token,
                 email_confirmation_token_expires_at=expires_at
             )
+            logger.info(f"Создан объект вывода: ID={withdrawal_obj.id}")
 
         # Отправляем письмо для подтверждения (вне атомарной транзакции)
-        WithdrawalService.send_confirmation_email(user, withdrawal_obj)
+        logger.info("Отправляем email для подтверждения...")
+        try:
+            WithdrawalService.send_confirmation_email(user, withdrawal_obj)
+            logger.info("Email отправлен успешно")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке email: {e}")
+            # Не прерываем процесс, если email не отправлен
 
+        logger.info("Запрос на вывод успешно создан")
         return withdrawal_obj
 
     @staticmethod

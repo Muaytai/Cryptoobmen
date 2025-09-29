@@ -1,3 +1,4 @@
+
 #!/bin/bash
 # Простой скрипт запуска Celery workers
 
@@ -29,3 +30,4 @@ ps aux | grep celery | grep -v grep | wc -l | xargs echo "Активных пр�
 
 echo ""
 echo "✅ Готово! Для остановки: pkill -f celery"
+

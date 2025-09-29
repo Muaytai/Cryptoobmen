@@ -1,3 +1,4 @@
+
 from django import forms
 from django.contrib import admin
 from .models import Transaction, Exchange, Deposit, Withdrawal, Review
@@ -557,4 +558,5 @@ class ReviewAdmin(admin.ModelAdmin):
         """Добавить отзывы в избранное"""
         queryset.update(is_featured=True, is_published=True, is_verified=True)
     mark_featured.short_description = "Добавить в избранное"
+
 

@@ -16,14 +16,19 @@ class DepositInfoView(APIView):
     def get(self, request):
         """
         Возвращает адрес и memo для пополнения указанной валюты.
-        Принимает query-параметры: `currency_symbol` и `network`.
+        Принимает query-параметры: `currency` и `network`.
         """
-        currency_symbol = request.query_params.get('currency_symbol')
+        currency_symbol = request.query_params.get('currency') or request.query_params.get('currency_symbol')
         network = request.query_params.get('network')
+
+        # Добавляем логирование для отладки
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"DepositInfoView: currency={currency_symbol}, network={network}")
 
         if not currency_symbol or not network:
             return Response(
-                {"error": "Параметры 'currency_symbol' и 'network' обязательны."},
+                {"error": "Параметры 'currency' и 'network' обязательны."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
