@@ -7,6 +7,7 @@ import { useEffect, useState, CSSProperties, Suspense } from 'react';
 import { useTheme } from '@/lib/ThemeProvider';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
+import { AnimatedHeroText } from '@/components/ui/AnimatedHeroText';
 
 // Простое модальное окно (вам нужно будет стилизовать его)
 const EmailConfirmedModal = ({ onClose }: { onClose: () => void }) => {
@@ -179,81 +180,6 @@ const HomePageContent = () => {
           wordWrap: 'break-word' as const
         } as CSSProperties,
         
-        // Заголовок
-        heading: {
-          fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
-          fontWeight: 700,
-          color: isDarkMode ? '#ffffff' : '#333333',
-          marginBottom: isMobile ? 16 : 24,
-          lineHeight: isMobile ? 1.3 : 1.2,
-          maxWidth: '100%',
-          wordBreak: isMobile ? 'break-word' as const : 'normal' as const,
-          overflow: 'hidden'
-        } as CSSProperties,
-        
-        // Span в заголовке для nowrap
-        headingSpan: {
-          whiteSpace: 'normal' as const,
-          display: 'inline' as const,
-          fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
-          wordBreak: 'break-word' as const,
-        } as CSSProperties,
-        
-        // Span с выделенным цветом в заголовке
-        headingColoredSpan: {
-          color: '#8b21fe',
-          whiteSpace: 'normal' as const,
-          display: 'inline' as const,
-          fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
-          wordBreak: 'break-word' as const,
-          hyphens: 'auto' as const
-        } as CSSProperties,
-        
-        // Подзаголовок
-        subtitle: {
-          color: isDarkMode ? '#bdbdbd' : '#666666',
-          fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 20 : 24,
-          marginBottom: isMobile ? 30 : 48
-        } as CSSProperties,
-        
-        // Контейнер для кнопок
-        buttonContainer: {
-          display: 'flex',
-          flexDirection: isMobile ? 'column' as const : 'row' as const,
-          alignItems: isMobile ? 'center' as const : 'flex-start' as const,
-          gap: isMobile ? 12 : 20,
-          width: isMobile ? '100%' : 'auto'
-        } as CSSProperties,
-        
-        // Кнопка основного действия
-        primaryButton: {
-          background: '#a259ff',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 12,
-          padding: isSmallMobile ? '10px 20px' : isMobile ? '12px 24px' : '16px 36px',
-          fontWeight: 500,
-          fontSize: isSmallMobile ? 14 : isMobile ? 16 : 18,
-          cursor: 'pointer',
-          transition: 'background 0.2s',
-          width: isMobile ? '100%' : 'auto',
-          marginBottom: isMobile ? '12px' : 0
-        } as CSSProperties,
-        
-        // Кнопка дополнительного действия
-        secondaryButton: {
-          border: '1px solid #a259ff',
-          color: isDarkMode ? '#fff' : '#7C3AED',
-          borderRadius: 12,
-          padding: isSmallMobile ? '10px 20px' : isMobile ? '12px 24px' : '16px 36px',
-          fontWeight: 500,
-          fontSize: isSmallMobile ? 14 : isMobile ? 16 : 18,
-          background: 'none',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          width: isMobile ? '100%' : 'auto'
-        } as CSSProperties,
-        
         // Контейнер для изображения
         imageContainer: {
           position: 'relative' as const,
@@ -341,13 +267,6 @@ const HomePageContent = () => {
   const defaultStyles: Record<string, CSSProperties> = {
     contentContainer: { display: 'flex' },
     textContainer: { position: 'relative' as const },
-    heading: { fontSize: 40, fontWeight: 700 },
-    headingSpan: { display: 'inline' },
-    headingColoredSpan: { color: '#b48afd' },
-    subtitle: { fontSize: 24 },
-    buttonContainer: { display: 'flex' },
-    primaryButton: { background: '#a259ff', color: '#fff' },
-    secondaryButton: { border: '1px solid #a259ff' },
     imageContainer: { position: 'relative' as const },
     image: { objectFit: 'contain' as const },
     spacer: { flex: 1 },
@@ -379,39 +298,7 @@ const HomePageContent = () => {
         <div style={currentStyles.contentContainer}>
           {/* Левая колонка */}
           <div style={currentStyles.textContainer}>
-            <h1 style={currentStyles.heading}>
-              <span style={currentStyles.headingSpan}>Инвестируй и получай </span>
-              <span style={currentStyles.headingColoredSpan}>от 10% годовых в USDT</span>
-            </h1>
-            <div style={currentStyles.subtitle}>
-              Думай на шаг вперёд. Инвестируй с умом.<br />Твоя партия начинается здесь
-            </div>
-            <div style={currentStyles.buttonContainer}>
-              <button style={currentStyles.primaryButton} 
-                onMouseOver={e => {
-                  const target = e.currentTarget.style as any;
-                  target.background = '#8f3fff';
-                }} 
-                onMouseOut={e => {
-                  const target = e.currentTarget.style as any;
-                  target.background = '#a259ff';
-                }}
-              >
-                Попробовать бесплатно
-              </button>
-              <button style={currentStyles.secondaryButton} 
-                onMouseOver={e => {
-                  const target = e.currentTarget.style as any;
-                  target.background = typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? '#2a1a3a' : '#f5eeff';
-                }} 
-                onMouseOut={e => {
-                  const target = e.currentTarget.style as any;
-                  target.background = 'none';
-                }}
-              >
-                Узнать подробнее
-              </button>
-            </div>
+            <AnimatedHeroText deviceType={deviceType} />
           </div>
           {/* Правая колонка */}
           <div style={currentStyles.imageContainer}>
