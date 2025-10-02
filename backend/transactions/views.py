@@ -1,3 +1,4 @@
+
 from django.shortcuts import render
 from rest_framework import viewsets, status, generics, permissions, filters
 from rest_framework.response import Response
@@ -246,18 +247,32 @@ class DepositViewSet(viewsets.ViewSet):
 
             # Проверяем, что адрес соответствует выбранной сети
             if wallet.deposit_address and not created:
-                # Проверяем формат адреса для соответствия сети
+                # ОТЛАДКА: Логируем ВСЁ перед проверками
                 address = wallet.deposit_address
+                logger.error(f"🔍 ADDRESS CHECK DEBUG:")
+                logger.error(f"   Currency: {currency.symbol} (ID: {currency.id})")
+                logger.error(f"   Network: '{currency.network}'")
+                logger.error(f"   Address: '{address}'")
+                logger.error(f"   Starts with 0x: {address.startswith('0x')}")
+                logger.error(f"   Starts with T: {address.startswith('T')}")
+                logger.error(f"   ERC20 check: {currency.network == 'ERC20'}")
+                logger.error(f"   TRC20 check: {currency.network == 'TRC20'}")
+                
+                # Проверяем формат адреса для соответствия сети
                 if currency.network == 'ERC20' and not address.startswith('0x'):
+                    logger.error(f"🚨 CLEARING ADDRESS: ERC20 check failed!")
                     logger.warning(f"get_deposit_address: wallet {wallet.id} has non-ERC20 address {address} for ERC20 currency {currency.symbol}")
                     # Сбрасываем неправильный адрес
                     wallet.deposit_address = None
                     wallet.save()
                 elif currency.network == 'TRC20' and not address.startswith('T'):
+                    logger.error(f"🚨 CLEARING ADDRESS: TRC20 check failed!")
                     logger.warning(f"get_deposit_address: wallet {wallet.id} has non-TRC20 address {address} for TRC20 currency {currency.symbol}")
                     # Сбрасываем неправильный адрес
                     wallet.deposit_address = None
                     wallet.save()
+                else:
+                    logger.error(f"✅ ADDRESS CHECK PASSED - no clearing needed")
 
             # --- Новая унифицированная логика через DepositService ---
             from crypto.services_deposit import DepositService
@@ -427,3 +442,4 @@ class TransactionHistoryView(generics.ListAPIView):
             'deposit',
             'withdrawal'
         ).order_by('-timestamp')
+

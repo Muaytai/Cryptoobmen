@@ -1,5 +1,0 @@
-#!/bin/bash
-# Worker для задач средней важности (консолидация)
-cd /home/chaizer/projects/Cryptoobmen/backend
-source venv/bin/activate
-celery -A core worker -l info -Q medium_priority -n medium_priority_worker@%h --concurrency=2

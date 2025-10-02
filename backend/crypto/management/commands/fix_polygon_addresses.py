@@ -108,7 +108,7 @@ class Command(BaseCommand):
                 for wallet in wallets_to_fix:
                     try:
                         old_address = wallet.deposit_address
-                        new_address, private_key = service.create_new_address()
+                        new_address, private_key = service.create_new_address(user_id=wallet.user.id)
                         
                         wallet.deposit_address = new_address
                         wallet.encrypted_private_key = private_key

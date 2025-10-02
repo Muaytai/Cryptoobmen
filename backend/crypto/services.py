@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Можно вынести в настройки, если URL или параметры будут меняться
 COINGECKO_API_URL = "https://api.coingecko.com/api/v3/simple/price"
-CACHE_TIMEOUT = 30  # 30 секунд для более частого обновления
+CACHE_TIMEOUT = 60 * 5  # 5 минут
 
 def get_exchange_rates(vs_currencies=None):
     """

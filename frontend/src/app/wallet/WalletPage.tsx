@@ -73,18 +73,9 @@ export const WalletPage: React.FC = () => {
       console.log('[WalletPage Debug] balanceData:', balanceData);
       setTotalUsdBalance(parseFloat(balanceData.total_usd_balance || balanceData.total_balance || 0));
       setError(null);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Ошибка при получении данных кошелька:', err);
-      if (!isBackground) {
-        // Специальная обработка для ошибок rate limiting
-        if (err?.message?.includes('Too Many Requests')) {
-          setError('Слишком много запросов. Пожалуйста, подождите немного.');
-        } else if (err?.message?.includes('401') || err?.message?.includes('403')) {
-          setError('Ошибка авторизации. Пожалуйста, войдите в систему снова.');
-        } else {
-          setError('Не удалось обновить данные.');
-        }
-      }
+      if (!isBackground) setError('Не удалось обновить данные.');
     } finally {
       if (!isBackground) setComponentLoading(false);
     }
@@ -99,8 +90,7 @@ export const WalletPage: React.FC = () => {
     }
     
     refetchData(false);
-    // Увеличиваем интервал до 60 секунд для уменьшения нагрузки на сервер
-    const intervalId = setInterval(() => refetchData(true), 60000);
+    const intervalId = setInterval(() => refetchData(true), REFETCH_INTERVAL);
     return () => clearInterval(intervalId);
   }, [isAuthenticated, authLoading, user, router]);
   

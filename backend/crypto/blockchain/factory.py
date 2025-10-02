@@ -1,5 +1,6 @@
 from django.conf import settings
 from .base import BaseBlockchainService
+from .solana import SolanaService
 from .tron import TronService
 from .bitcoin import BitcoinService
 from .xrp import XRPService
@@ -36,6 +37,8 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
         return TronService(network=tron_network)
     elif network_lower in ['btc', 'bitcoin']:
         return BitcoinService(network='testnet')
+    elif network_lower in ['sol', 'solana']:
+        return SolanaService(network='devnet')  
     elif network_lower in ['erc20', 'ethereum', 'eth']:
         eth_network = getattr(settings, 'ETHEREUM_NETWORK', 'goerli')
         return EthereumService(network=eth_network)

@@ -1,3 +1,4 @@
+
 from pathlib import Path
 import os
 import sys
@@ -534,9 +535,11 @@ CELERY_TASK_ROUTES = {
     'crypto.tasks_consolidation.consolidate_user_deposits': {'queue': 'medium_priority'},
     'crypto.tasks_consolidation.check_consolidation_confirmations': {'queue': 'medium_priority'},
     
+    # Обработка депозитов - средний приоритет (запускает консолидацию)
+    'crypto.tasks.process_pending_deposits': {'queue': 'medium_priority'},
+    
     # Фоновое сканирование - низкий приоритет
     'crypto.tasks.check_blockchain_deposits': {'queue': 'low_priority'},
-    'crypto.tasks.process_pending_deposits': {'queue': 'low_priority'},
     'crypto.tasks.process_pending_withdrawals': {'queue': 'low_priority'},
 }
 
@@ -548,6 +551,10 @@ CELERY_TASK_DEFAULT_PRIORITY = 5
 # Настройки производительности
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Обрабатывать по одной задаче за раз
 CELERY_TASK_ACKS_LATE = True  # Подтверждать выполнение только после завершения
+
+# Предотвращение дублирующихся задач
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 
 # Периодические задачи
 from celery.schedules import crontab
@@ -561,21 +568,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'crypto.tasks.process_pending_withdrawals',
         'schedule': 60.0,
     },
-    'process-pending-deposits-every-minute': {
-        'task': 'crypto.tasks.process_pending_deposits',
-        'schedule': 60.0,
-    },
-    'consolidate-user-deposits-every-5-minutes': {
-        'task': 'crypto.tasks_consolidation.consolidate_user_deposits',
-        'schedule': 300.0,  # 5 минут
-    },
+    # УБРАНО: 'process-pending-deposits-every-minute' - запускается из check_blockchain_deposits
+    # УБРАНО: 'consolidate-user-deposits-every-5-minutes' - запускается из process_pending_deposits
     'check-consolidation-confirmations-every-minute': {
         'task': 'crypto.tasks_consolidation.check_consolidation_confirmations',
         'schedule': 60.0,
-    },
-    'consolidate_funds_every_5_minutes': {
-        'task': 'crypto.tasks.consolidate_funds',
-        'schedule': 300.0,  # 300 секунд = 5 минут
     },
 }
 

@@ -1,3 +1,4 @@
+
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
@@ -44,7 +45,7 @@ class Transaction(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     # Сетевая информация (для blockchain транзакций)
-    tx_hash = models.CharField(max_length=255, blank=True, null=True)
+    tx_hash = models.CharField(max_length=255, blank=True, null=True, unique=True)
     block_number = models.IntegerField(blank=True, null=True)
     
     # Дополнительная информация
