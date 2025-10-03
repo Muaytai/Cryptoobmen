@@ -1,0 +1,37 @@
+#!/bin/bash
+# Скрипт для остановки Celery системы
+
+echo "🛑 Остановка Celery системы..."
+
+# Останавливаем workers
+echo "   Остановка workers..."
+pkill -f "celery.*worker" 2>/dev/null
+
+# Останавливаем beat
+echo "   Остановка beat scheduler..."
+pkill -f "celery.*beat" 2>/dev/null
+
+# Ждем завершения процессов
+sleep 3
+
+# Проверяем статус
+WORKER_COUNT=$(ps aux | grep -E "celery.*worker" | grep -v grep | wc -l)
+BEAT_COUNT=$(ps aux | grep -E "celery.*beat" | grep -v grep | wc -l)
+
+if [ $WORKER_COUNT -eq 0 ] && [ $BEAT_COUNT -eq 0 ]; then
+    echo "✅ Все процессы Celery остановлены"
+else
+    echo "⚠️  Некоторые процессы все еще активны:"
+    echo "   Workers: $WORKER_COUNT процессов"
+    echo "   Beat: $BEAT_COUNT процесс"
+    echo ""
+    echo "   Принудительная остановка..."
+    pkill -9 -f "celery.*worker" 2>/dev/null
+    pkill -9 -f "celery.*beat" 2>/dev/null
+    sleep 2
+    echo "✅ Принудительная остановка завершена"
+fi
+
+echo ""
+echo "📊 Финальный статус:"
+ps aux | grep -E "celery.*worker|celery.*beat" | grep -v grep || echo "   Нет активных процессов Celery"
