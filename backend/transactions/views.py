@@ -15,6 +15,7 @@ import uuid
 
 from crypto.models import Cryptocurrency, UserWallet
 from .models import Transaction, Exchange, Deposit, Withdrawal, Review
+from crypto.gas_calculation import calculate_max_withdrawal_amount, calculate_withdrawal_total_cost
 from .serializers import (
     TransactionSerializer, ExchangeSerializer, DepositSerializer,
     WithdrawalSerializer, ExchangeCreateSerializer, WithdrawalCreateSerializer,
@@ -103,6 +104,86 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
         # Возвращаем созданный вывод через основной сериализатор
         response_serializer = WithdrawalSerializer(withdrawal)
         return Response({"message": "Запрос на вывод создан. Пожалуйста, проверьте свою электронную почту, чтобы подтвердить операцию."}, status=status.HTTP_201_CREATED)
+    
+    @action(detail=False, methods=['post'], url_path='max-amount')
+    def get_max_withdrawal_amount(self, request):
+        """Получает максимальную сумму вывода с учетом газа"""
+        try:
+            crypto_id = request.data.get('crypto_id')
+            destination_address = request.data.get('destination_address')
+            
+            if crypto_id is None:
+                return Response({'error': 'crypto_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Получаем криптовалюту
+            try:
+                crypto = Cryptocurrency.objects.get(id=crypto_id, is_active=True)
+            except Cryptocurrency.DoesNotExist:
+                return Response({'error': 'Cryptocurrency not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Получаем кошелек пользователя
+            try:
+                wallet = UserWallet.objects.get(user=request.user, currency=crypto, is_active=True)
+            except UserWallet.DoesNotExist:
+                return Response({'error': 'Wallet not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Рассчитываем максимальную сумму вывода с учетом газа
+            max_withdrawal_info = calculate_max_withdrawal_amount(
+                currency=crypto,
+                user_balance=wallet.balance,
+                destination_address=destination_address
+            )
+            
+            return Response({
+                'max_withdrawal': str(max_withdrawal_info['max_withdrawal']),
+                'gas_cost': str(max_withdrawal_info['gas_cost']),
+                'total_required': str(max_withdrawal_info['total_required']),
+                'calculation_method': max_withdrawal_info['calculation_method'],
+                'currency_symbol': crypto.symbol,
+                'user_balance': str(wallet.balance)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': f'Error calculating max withdrawal amount: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['post'], url_path='calculate-cost')
+    def calculate_withdrawal_cost(self, request):
+        """Рассчитывает стоимость вывода (сумма + газ + комиссия)"""
+        try:
+            crypto_id = request.data.get('crypto_id')
+            amount = request.data.get('amount')
+            destination_address = request.data.get('destination_address')
+            
+            if crypto_id is None or amount is None:
+                return Response({'error': 'crypto_id and amount are required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Получаем криптовалюту
+            try:
+                crypto = Cryptocurrency.objects.get(id=crypto_id, is_active=True)
+            except Cryptocurrency.DoesNotExist:
+                return Response({'error': 'Cryptocurrency not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            from decimal import Decimal
+            amount_decimal = Decimal(str(amount))
+            
+            # Рассчитываем общую стоимость вывода
+            cost_info = calculate_withdrawal_total_cost(
+                currency=crypto,
+                withdrawal_amount=amount_decimal,
+                destination_address=destination_address
+            )
+            
+            return Response({
+                'withdrawal_amount': str(cost_info['withdrawal_amount']),
+                'gas_cost': str(cost_info['gas_cost']),
+                'platform_fee': str(cost_info['platform_fee']),
+                'total_cost': str(cost_info['total_cost']),
+                'calculation_method': cost_info['calculation_method'],
+                'currency_symbol': crypto.symbol
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': f'Error calculating withdrawal cost: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
@@ -278,19 +359,33 @@ class DepositViewSet(viewsets.ViewSet):
             from crypto.services_deposit import DepositService
 
             # DepositService сам обрабатывает создание/обновление адреса
-            address, memo, qr_code = DepositService.get_deposit_info(
+            result = DepositService.get_deposit_info(
                 user=user,
                 currency_symbol=currency.symbol,
                 network=currency.network
             )
+            
+            # Обрабатываем результат в зависимости от количества возвращаемых значений
+            if len(result) == 4:
+                address, memo, qr_code, gas_info = result
+            else:
+                # Обратная совместимость со старым форматом
+                address, memo, qr_code = result
+                gas_info = None
 
-            return Response({
+            response_data = {
                 'address': address,
                 'memo': memo,
                 'qr_code': qr_code,
                 'currency_symbol': currency.symbol,
                 'network': currency.network
-            }, status=status.HTTP_200_OK)
+            }
+            
+            # Добавляем информацию о газе для валют без мемо
+            if gas_info is not None:
+                response_data['gas_info'] = gas_info
+            
+            return Response(response_data, status=status.HTTP_200_OK)
 
         except Cryptocurrency.DoesNotExist:
             logger.error(f"get_deposit_address: currency with id {currency_id} and network {network} not found")

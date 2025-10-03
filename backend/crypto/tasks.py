@@ -23,6 +23,7 @@ from .models import SystemWalletAddress, UserDepositMemo, UserWallet, Commission
 from .blockchain.factory import get_blockchain_service
 from django.conf import settings
 from .models import Cryptocurrency
+from .gas_calculation import calculate_net_deposit_amount, calculate_withdrawal_gas_cost
 
 logger = get_task_logger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -301,7 +302,21 @@ def check_blockchain_deposits():
                 with transaction.atomic():
                     logger.info(f"Updating balance for user {user.id} and wallet {wallet.currency.symbol}")
                     user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
-                    user_wallet.balance += amount
+                    
+                    # Для валют с мемо газ не нужен, зачисляем полную сумму
+                    if wallet.currency.requires_memo:
+                        user_wallet.balance += amount
+                        logger.info(f"[MEMO] Full amount credited: {amount} {wallet.currency.symbol}")
+                    else:
+                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
+                        deposit_info = calculate_net_deposit_amount(
+                            currency=wallet.currency,
+                            deposit_amount=amount,
+                            user_address=user_wallet.deposit_address
+                        )
+                        user_wallet.balance += deposit_info['net_amount']
+                        logger.info(f"[NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
+                    
                     user_wallet.save()
 
                     system_wallet, _ = UserWallet.objects.get_or_create(
@@ -462,16 +477,33 @@ def check_blockchain_deposits():
                         continue
                         
                     with transaction.atomic():
-                        user_wallet.balance += amount
+                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
+                        if not currency.requires_memo:
+                            deposit_info = calculate_net_deposit_amount(
+                                currency=currency,
+                                deposit_amount=amount,
+                                user_address=user_wallet.deposit_address
+                            )
+                            net_amount = deposit_info['net_amount']
+                            gas_cost = deposit_info['gas_cost']
+                            logger.info(f"[BATCH] Gas calculation: gross={amount}, net={net_amount}, gas={gas_cost} {currency.symbol}")
+                        else:
+                            # Для валют с мемо зачисляем полную сумму
+                            net_amount = amount
+                            gas_cost = Decimal('0')
+                            logger.info(f"[BATCH] Full amount for memo currency: {amount} {currency.symbol}")
+                        
+                        user_wallet.balance += net_amount
                         user_wallet.save()
                         
                         # Детальное логирование перед сохранением
-                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={amount}, tx_hash={tx_hash}")
+                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={net_amount}, tx_hash={tx_hash}")
                         
                         Transaction.objects.create(
                             user=user_wallet.user,
                             crypto=currency,
-                            amount=amount,
+                            amount=net_amount,  # Записываем чистую сумму
+                            fee=gas_cost,  # Записываем стоимость газа
                             tx_hash=tx_hash,
                             type="deposit",
                             status="completed",
@@ -582,7 +614,21 @@ def check_blockchain_deposits():
 
                 with transaction.atomic():
                     user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
-                    user_wallet.balance += amount
+                    
+                    # Для XRP (с мемо) газ не нужен, зачисляем полную сумму
+                    if wallet.currency.requires_memo:
+                        user_wallet.balance += amount
+                        logger.info(f"[XRP] Full amount credited: {amount} {wallet.currency.symbol}")
+                    else:
+                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
+                        deposit_info = calculate_net_deposit_amount(
+                            currency=wallet.currency,
+                            deposit_amount=amount,
+                            user_address=user_wallet.deposit_address
+                        )
+                        user_wallet.balance += deposit_info['net_amount']
+                        logger.info(f"[XRP_NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
+                    
                     user_wallet.save()
                     # Обновляем системный кошелек
                     system_wallet, _ = UserWallet.objects.get_or_create(
@@ -663,22 +709,34 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
 
             crypto = withdrawal.transaction.crypto
             amount_to_send = withdrawal.transaction.amount
-            commission = withdrawal.transaction.fee
-            total_amount = amount_to_send + commission
+            platform_fee = withdrawal.transaction.fee
+            
+            # Рассчитываем стоимость газа для вывода
+            gas_cost = calculate_withdrawal_gas_cost(
+                currency=crypto,
+                withdrawal_amount=amount_to_send,
+                destination_address=withdrawal.destination_address
+            )
+            
+            total_amount = amount_to_send + platform_fee + gas_cost
+            
+            logger.info(f"Withdrawal cost breakdown: amount={amount_to_send}, platform_fee={platform_fee}, gas={gas_cost}, total={total_amount}")
             
             # --- Проверка баланса пользователя ---
             user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
             if user_wallet.balance < total_amount:
                 withdrawal.transaction.status = 'failed'
-                withdrawal.transaction.notes = "Insufficient funds at the time of processing."
+                withdrawal.transaction.notes = f"Insufficient funds at the time of processing. Required: {total_amount} (including gas: {gas_cost})"
                 withdrawal.transaction.save()
-                logger.error(f"Insufficient funds for withdrawal {withdrawal.id}. Balance: {user_wallet.balance}, required: {total_amount}")
+                logger.error(f"Insufficient funds for withdrawal {withdrawal.id}. Balance: {user_wallet.balance}, required: {total_amount} (gas: {gas_cost})")
                 return "error:insufficient_funds"
 
-            # Блокируем средства на балансе пользователя
+            # Блокируем средства на балансе пользователя (включая газ)
             user_wallet.balance -= total_amount
             user_wallet.locked_balance += total_amount
             user_wallet.save()
+            
+            logger.info(f"Funds locked for withdrawal {withdrawal.id}: {total_amount} (amount: {amount_to_send}, platform_fee: {platform_fee}, gas: {gas_cost})")
 
             # Меняем статус на "в обработке" перед отправкой в сеть
             withdrawal.transaction.status = 'processing'
@@ -726,24 +784,26 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
             withdrawal.transaction.status = 'awaiting_confirmation'
             withdrawal.transaction.save()
 
-            # --- Начисление комиссии на внутренний кошелек ---
+            # --- Начисление комиссии платформы на внутренний кошелек ---
             commission_wallet, _ = CommissionWallet.objects.get_or_create(currency=crypto)
-            commission_wallet.balance += commission
+            commission_wallet.balance += platform_fee
             commission_wallet.save()
 
-            # --- Логирование транзакции комиссии ---
+            # --- Логирование транзакции комиссии платформы ---
             CommissionTransaction.objects.create(
                 user=withdrawal.user,
                 currency=crypto,
-                amount=commission,
+                amount=platform_fee,
                 commission_type='withdraw',
                 related_object_id=str(withdrawal.transaction.transaction_id)
             )
+            
+            # Газ не начисляется на комиссионный кошелек - это просто стоимость транзакции
 
         # Запускаем отложенную задачу для проверки подтверждения
         check_withdrawal_confirmation.apply_async(args=[withdrawal.id], countdown=60)
 
-        logger.info(f"Withdrawal {withdrawal.id} sent to blockchain with tx_hash: {tx_hash}. Commission: {commission}. Awaiting confirmation.")
+        logger.info(f"Withdrawal {withdrawal.id} sent to blockchain with tx_hash: {tx_hash}. Platform fee: {platform_fee}, Gas: {gas_cost}. Awaiting confirmation.")
         return f"success:sent_to_network:{tx_hash}"
 
     except Exception as e:
@@ -813,7 +873,7 @@ def process_pending_withdrawals():
         logger.info(f"Queueing blockchain confirmation check for withdrawal {withdrawal.id}")
         check_withdrawal_confirmation.delay(withdrawal.id)
 
-def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal]:
+def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal, Decimal]:
     """Обрабатывает консолидацию для одного кошелька в параллельном потоке"""
     (currency, user_wallet, blockchain_service, system_wallet_address, min_threshold) = args
     
@@ -823,11 +883,12 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal]:
         
         if blockchain_balance < min_threshold:
             logger.debug(f"[CONSOLIDATION] Address {user_wallet.deposit_address} has {blockchain_balance} {currency.symbol}, less than minimum {min_threshold}")
-            return (False, user_wallet.deposit_address, Decimal('0'))
+            return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
         
         logger.info(f"[CONSOLIDATION] Found {blockchain_balance} {currency.symbol} on address {user_wallet.deposit_address} for user {user_wallet.user.id}")
         
-        # Рассчитываем максимальную отправляемую сумму
+        # Рассчитываем максимальную отправляемую сумму и газ
+        gas_cost = Decimal('0')
         if hasattr(blockchain_service, 'get_max_sendable_amount'):
             # Для POL используем умный расчёт газа
             amount_to_send = blockchain_service.get_max_sendable_amount(
@@ -836,16 +897,20 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal]:
             )
             if amount_to_send <= 0:
                 logger.warning(f"[CONSOLIDATION] Cannot consolidate for user {user_wallet.user.id}: insufficient balance after gas deduction")
-                return (False, user_wallet.deposit_address, Decimal('0'))
-            logger.info(f"[CONSOLIDATION] Smart gas calculation: sending {amount_to_send} {currency.symbol}")
+                return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
+            
+            # Рассчитываем стоимость газа
+            gas_cost = blockchain_balance - amount_to_send
+            logger.info(f"[CONSOLIDATION] Smart gas calculation: sending {amount_to_send} {currency.symbol}, gas cost: {gas_cost}")
         else:
             # Fallback для других валют
             gas_reserve = get_gas_reserve(currency)
             amount_to_send = blockchain_balance - gas_reserve
+            gas_cost = gas_reserve
             if amount_to_send <= 0:
                 logger.warning(f"[CONSOLIDATION] Cannot consolidate for user {user_wallet.user.id}: insufficient balance after gas reserve")
-                return (False, user_wallet.deposit_address, Decimal('0'))
-            logger.info(f"[CONSOLIDATION] Fixed gas reserve: sending {amount_to_send} {currency.symbol}")
+                return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
+            logger.info(f"[CONSOLIDATION] Fixed gas reserve: sending {amount_to_send} {currency.symbol}, gas cost: {gas_cost}")
         
         # Выполняем консолидацию
         logger.info(f"[CONSOLIDATION] Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet")
@@ -857,11 +922,11 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal]:
         )
         
         logger.info(f"[CONSOLIDATION] Transaction sent: {tx_hash}")
-        return (True, tx_hash, amount_to_send)
+        return (True, tx_hash, amount_to_send, gas_cost)
         
     except Exception as e:
         logger.error(f"[CONSOLIDATION] Error processing wallet {user_wallet.deposit_address}: {e}")
-        return (False, user_wallet.deposit_address, Decimal('0'))
+        return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
 
 @shared_task
 def process_pending_deposits():
@@ -934,7 +999,15 @@ def process_pending_deposits():
                 for future in as_completed(future_to_wallet):
                     user_wallet = future_to_wallet[future]
                     try:
-                        success, tx_hash_or_address, amount_sent = future.result(timeout=120)  # Увеличенный таймаут для консолидации
+                        result = future.result(timeout=120)  # Увеличенный таймаут для консолидации
+                        
+                        # Обрабатываем результат в зависимости от количества возвращаемых значений
+                        if len(result) == 4:
+                            success, tx_hash_or_address, amount_sent, gas_cost = result
+                        else:
+                            # Обратная совместимость со старым форматом
+                            success, tx_hash_or_address, amount_sent = result
+                            gas_cost = Decimal('0')
                         
                         if not success:
                             continue
@@ -954,7 +1027,7 @@ def process_pending_deposits():
                                     status="pending",
                                     tx_hash=tx_hash,
                                     timestamp=timezone.now(),
-                                    fee=Decimal('0'),  # Комиссия уже учтена в расчёте amount_to_send
+                                    fee=gas_cost,  # Теперь записываем реальную стоимость газа
                                 )
                                 logger.info(f"[CONSOLIDATION] Transaction saved to DB: {tx_hash}")
                                 
@@ -1047,8 +1120,18 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
 
         if is_confirmed:
             logger.info(f"Withdrawal {withdrawal_id} (tx: {tx_hash}) is confirmed on the blockchain.")
-            # Сумма для списания = отправленная сумма + комиссия
-            amount_to_withdraw = withdrawal.transaction.amount + withdrawal.transaction.fee
+            
+            # Рассчитываем стоимость газа для вывода (может отличаться от первоначальной оценки)
+            gas_cost = calculate_withdrawal_gas_cost(
+                currency=withdrawal.transaction.crypto,
+                withdrawal_amount=withdrawal.transaction.amount,
+                destination_address=withdrawal.destination_address
+            )
+            
+            # Сумма для списания = отправленная сумма + комиссия + газ
+            amount_to_withdraw = withdrawal.transaction.amount + withdrawal.transaction.fee + gas_cost
+            
+            logger.info(f"Withdrawal confirmation: amount={withdrawal.transaction.amount}, platform_fee={withdrawal.transaction.fee}, gas={gas_cost}, total={amount_to_withdraw}")
             
             with transaction.atomic():
                 # Блокируем кошелек для безопасного списания
@@ -1058,16 +1141,18 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
                 # При подтверждении проверяем locked_balance, так как средства уже были зарезервированы при отправке
                 if user_wallet.locked_balance < amount_to_withdraw:
                     withdrawal.transaction.status = 'failed'
-                    withdrawal.transaction.notes = "Insufficient locked funds discovered upon withdrawal confirmation."
+                    withdrawal.transaction.notes = f"Insufficient locked funds discovered upon withdrawal confirmation. Required: {amount_to_withdraw} (including gas: {gas_cost})"
                     withdrawal.transaction.save()
                     logger.error(f"Insufficient locked funds for withdrawal {withdrawal.id} upon confirmation. Locked balance: {user_wallet.locked_balance}, required: {amount_to_withdraw}")
                     return "error:insufficient_locked_funds_on_confirmation"
 
-                # Списываем средства
+                # Списываем средства (включая газ)
                 # Средства уже были списаны с основного баланса,
                 # теперь нужно уменьшить заблокированный баланс
                 user_wallet.locked_balance -= amount_to_withdraw
                 user_wallet.save()
+                
+                logger.info(f"Withdrawal {withdrawal_id} completed: {amount_to_withdraw} deducted (amount: {withdrawal.transaction.amount}, platform_fee: {withdrawal.transaction.fee}, gas: {gas_cost})")
 
                 # Обновляем транзакцию
                 withdrawal.transaction.status = 'completed'
