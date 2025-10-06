@@ -29,7 +29,7 @@ const GasWarningModal: React.FC<GasWarningModalProps> = ({
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className="text-center">
           {/* Иконка предупреждения */}
-          <div className="mb-4 sm:mb-6">
+          <div className="mb-3 sm:mb-4">
             <svg 
               xmlns="http://www.w3.org/2000/svg" 
               className="h-12 w-12 sm:h-16 sm:w-16 mx-auto text-amber-500 dark:text-amber-500" 
@@ -47,12 +47,12 @@ const GasWarningModal: React.FC<GasWarningModalProps> = ({
           </div>
 
           {/* Заголовок */}
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4 px-2">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-3 px-2">
             Важное предупреждение
           </h2>
 
           {/* Блоки информации - адаптивное расположение */}
-          <div className="flex flex-col lg:flex-row gap-4 mb-4 sm:mb-6">
+          <div className="flex flex-col xl:flex-row gap-3 mb-3 sm:mb-4">
             {/* Основное предупреждение */}
             <div className="bg-amber-50 dark:bg-amber-900 bg-opacity-30 dark:bg-opacity-30 border-l-4 border-amber-500 p-3 sm:p-4 rounded-md text-left flex-1">
               <h3 className="font-bold text-amber-800 dark:text-amber-300 mb-2 sm:mb-3 flex items-center text-sm sm:text-base">
@@ -93,7 +93,7 @@ const GasWarningModal: React.FC<GasWarningModalProps> = ({
           </div>
 
           {/* Дополнительная информация */}
-          <div className="bg-gray-100 dark:bg-gray-700 bg-opacity-50 dark:bg-opacity-50 p-3 sm:p-4 rounded-md mb-4 sm:mb-6 text-left">
+          <div className="bg-gray-100 dark:bg-gray-700 bg-opacity-50 dark:bg-opacity-50 p-3 rounded-md mb-3 text-left">
             <h4 className="font-bold text-gray-800 dark:text-gray-300 mb-2 text-sm sm:text-base">Что это означает для вас:</h4>
             <ul className="list-disc pl-4 sm:pl-5 text-gray-700 dark:text-gray-300 text-xs sm:text-sm space-y-1">
               <li>Общая стоимость перевода будет выше обычной</li>

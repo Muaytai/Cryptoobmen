@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -36,13 +37,9 @@ export default function AboutPage() {
             </div>
             <div className="md:w-1/2 relative h-64 w-full md:h-80">
               <div className={`absolute inset-0 rounded-lg ${isDarkMode ? 'bg-violet-900/20' : 'bg-violet-100'} flex items-center justify-center`}>
-                <Image
-                  src="/images/logo.png"
-                  alt="CTokenX Logo"
-                  width={300}
-                  height={300}
-                  className="object-contain"
-                />
+                <div className={`text-5xl ${isDarkMode ? 'text-violet-400' : 'text-violet-600'}`}>
+                  CTokenX
+                </div>
               </div>
             </div>
           </div>
@@ -212,4 +209,5 @@ export default function AboutPage() {
       </div>
     </div>
   );
+
 } 
