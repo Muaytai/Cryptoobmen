@@ -524,18 +524,6 @@ def check_blockchain_deposits():
                     except Exception as e:
                         logger.error(f"[BATCH] Failed to send WebSocket signal for address {address}: {e}")
                     
-                with transaction.atomic():
-                    user_wallet.balance += amount
-                    user_wallet.save()
-                    Transaction.objects.create(
-                        user=user_wallet.user,
-                        crypto=currency,
-                        amount=amount,
-                        tx_hash=tx_hash,
-                        type="deposit",
-                        status="completed",
-                        timestamp=timezone.now()
-                    )
                     # Агрегируем на системном кошельке (балансовый учёт платформы)
                     system_wallet_balance, _ = UserWallet.objects.get_or_create(
                         user=None,
@@ -544,7 +532,6 @@ def check_blockchain_deposits():
                     )
                     system_wallet_balance.balance += amount
                     system_wallet_balance.save()
-                    logger.info(f"[no-memo] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
                     
                     # Для BNB/BEP20 выполняем немедленную консолидацию (свип) на системный адрес
                     if currency.symbol.upper() == 'BNB':
@@ -593,51 +580,33 @@ def check_blockchain_deposits():
                             except Exception as sync_e:
                                 logger.error(f"[POL] Sync consolidation failed: {sync_e}")
 
-                # Отправляем WebSocket сигнал по адресу
-                try:
-                    channel_layer = get_channel_layer()
-                    async_to_sync(channel_layer.group_send)(
-                        f"deposit_address_{address}",
-                        {
-                            "type": "deposit_status_update",
-                            "data": {
-                                "address": address,
-                                "currency": currency.symbol,
-                                "network": currency.network,
-                                "status": "used",
-                                "amount": str(amount),
-                            }
-                        }
-                    )
-                    logger.info(f"[no-memo] WebSocket signal sent for address {address}")
-                except Exception as e:
-                    logger.error(f"[no-memo] Failed to send WebSocket signal for address {address}: {e}")
-
-                # Ротация депозитного адреса после успешного зачисления
-                try:
-                    new_address, new_private_key = service.create_new_address(user_id=user_wallet.user.id)
-                    user_wallet.deposit_address = new_address
-                    user_wallet.encrypted_private_key = new_private_key
-                    user_wallet.save(update_fields=["deposit_address", "encrypted_private_key", "updated_at"]) if hasattr(user_wallet, "updated_at") else user_wallet.save()
-
-                    # Сообщим фронту о новом адресе (опционально)
+                    # Ротация депозитного адреса после успешного зачисления
                     try:
-                        channel_layer = get_channel_layer()
-                        async_to_sync(channel_layer.group_send)(
-                            f"deposit_address_{address}",
-                            {
-                                "type": "deposit_status_update",
-                                "data": {
-                                    "address": new_address,
-                                    "currency": currency.symbol,
-                                    "network": currency.network,
-                                    "status": "rotated",
+                        new_address, new_private_key = service.create_new_address(user_id=user_wallet.user.id)
+                        user_wallet.deposit_address = new_address
+                        user_wallet.encrypted_private_key = new_private_key
+                        user_wallet.save(update_fields=["deposit_address", "encrypted_private_key", "updated_at"]) if hasattr(user_wallet, "updated_at") else user_wallet.save()
+
+                        # Сообщим фронту о новом адресе (опционально)
+                        try:
+                            channel_layer = get_channel_layer()
+                            async_to_sync(channel_layer.group_send)(
+                                f"deposit_address_{address}",
+                                {
+                                    "type": "deposit_status_update",
+                                    "data": {
+                                        "address": new_address,
+                                        "currency": currency.symbol,
+                                        "network": currency.network,
+                                        "status": "rotated",
+                                    },
                                 },
-                            },
-                        )
-                    except Exception:
-                        pass
-                    logger.info(f"[BATCH] Deposit processed for user {user_wallet.user_id}")
+                            )
+                        except Exception:
+                            pass
+                        logger.info(f"[BATCH] Deposit processed for user {user_wallet.user_id}")
+                    except Exception as e:
+                        logger.error(f"[BATCH] Failed to rotate address for user {user_wallet.user_id}: {e}")
             
         except Exception as e:
             logger.error(f"[BATCH] Error processing currency {currency.symbol}: {e}")
