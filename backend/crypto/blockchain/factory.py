@@ -33,7 +33,8 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
     elif network_lower in ['btc', 'bitcoin']:
         return BitcoinService(network='testnet')
     elif network_lower in ['sol', 'solana']:
-        return SolanaService(network='devnet')  
+        solana_network = getattr(settings, 'SOLANA_NETWORK', 'devnet')
+        return SolanaService(network=solana_network)  
     elif network_lower in ['erc20', 'ethereum', 'eth']:
         eth_network = getattr(settings, 'ETHEREUM_NETWORK', 'goerli')
         return EthereumService(network=eth_network)
@@ -43,4 +44,3 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
         return PolygonService()  # Использует настройку из settings.py
     
     raise ValueError(f"Unsupported blockchain network: {network} or address format.")
-

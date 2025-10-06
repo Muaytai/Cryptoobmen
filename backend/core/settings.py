@@ -77,7 +77,7 @@ INSTALLED_APPS = [
     'django_celery_beat',
 ]
 
-SITE_ID = 2
+SITE_ID = 1
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -578,10 +578,7 @@ LOCALE_PATHS = [
 
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("localhost", 6379)],
-        },
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
     },
 }
 
@@ -625,3 +622,7 @@ POLYGON_GAS_PRICE_MULTIPLIER = float(os.getenv('POLYGON_GAS_PRICE_MULTIPLIER', '
 POLYGON_MAX_GAS_PRICE = int(os.getenv('POLYGON_MAX_GAS_PRICE', '50'))  # В Gwei
 
 POLYGON_GAS_LIMIT = int(os.getenv('POLYGON_GAS_LIMIT', '21000'))  # Для POL транзакций
+
+# Solana настройки
+SOLANA_NETWORK = os.getenv('SOLANA_NETWORK', 'devnet')  # mainnet, testnet, devnet
+HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '')  # API ключ для Helius RPC

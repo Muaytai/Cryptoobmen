@@ -1,6 +1,3 @@
-
-from __future__ import annotations
-
 import os
 import logging
 import traceback
@@ -130,11 +127,20 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
             
             # Получаем последнюю транзакцию для расчёта min_timestamp
             from transactions.models import Transaction
-            last_tx = Transaction.objects.filter(
-                user=wallet.user,
-                crypto=currency,
-                tx_hash__isnull=False
-            ).order_by("-timestamp").first()
+            if wallet.is_system_wallet:
+                # Для системных кошельков ищем транзакции без привязки к пользователю
+                last_tx = Transaction.objects.filter(
+                    user=None,
+                    crypto=currency,
+                    tx_hash__isnull=False
+                ).order_by("-timestamp").first()
+            else:
+                # Для пользовательских кошельков ищем транзакции для конкретного пользователя
+                last_tx = Transaction.objects.filter(
+                    user=wallet.user,
+                    crypto=currency,
+                    tx_hash__isnull=False
+                ).order_by("-timestamp").first()
             min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
             
             active_addresses.append(address)
@@ -146,9 +152,13 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
                 params = {'from_block': from_block, 'to_block': current_block}
             elif currency.network and currency.network.upper() == 'ERC20':
                 params = {'min_timestamp': min_ts, 'contract_address': currency.contract_address}
+            elif currency.symbol == 'SOL':
+                # Для Solana используем оптимизированный сканер
+                params = {'min_timestamp': min_ts, 'use_optimized': True}
             else:
+                # Для других валют
                 params = {'min_timestamp': min_ts}
-            
+
             transaction_params.append((address, params))
     
     logger.info(f"[BATCH] Found {len(active_addresses)} addresses with balance > 0 for {currency.symbol}")
@@ -184,6 +194,42 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
                     
             except Exception as e:
                 logger.error(f"[BATCH][POL] Optimized scanner failed: {e}, falling back to batch RPC")
+                # Fallback к обычному батч-процессору
+                all_transactions = cached_batch_processor.batch_get_transactions(service, transaction_params)
+                for address, txs in all_transactions.items():
+                    results[address] = (txs, True)
+        elif currency.symbol == 'SOL' and hasattr(service, 'optimized_scanner') and service.optimized_scanner:
+            # Для SOL используем оптимизированный сканер Solana
+            logger.info(f"[BATCH][SOL] Using optimized scanner for {len(active_addresses)} addresses")
+            
+            try:
+                # Извлекаем min_timestamp из параметров
+                min_timestamp = 0
+                for addr, params in transaction_params:
+                    if 'min_timestamp' in params:
+                        min_timestamp = params['min_timestamp']
+                        break
+                
+                all_transactions = service.optimized_scanner.scan_optimized(
+                    active_addresses, min_timestamp
+                )
+                
+                # Группируем транзакции по адресам
+                transactions_by_address = {}
+                for tx in all_transactions:
+                    to_addr = tx.get('to_address', tx.get('address', '')).lower()
+                    if to_addr in [addr.lower() for addr in active_addresses]:
+                        if to_addr not in transactions_by_address:
+                            transactions_by_address[to_addr] = []
+                        transactions_by_address[to_addr].append(tx)
+                
+                for address in active_addresses:
+                    addr_lower = address.lower()
+                    txs = transactions_by_address.get(addr_lower, [])
+                    results[address] = (txs, True)
+                    
+            except Exception as e:
+                logger.error(f"[BATCH][SOL] Optimized scanner failed: {e}, falling back to batch RPC")
                 # Fallback к обычному батч-процессору
                 all_transactions = cached_batch_processor.batch_get_transactions(service, transaction_params)
                 for address, txs in all_transactions.items():
@@ -360,32 +406,42 @@ def check_blockchain_deposits():
     for currency in currencies_no_memo:
         logger.info(f"[BATCH] Starting batch processing for {currency.symbol}, network={currency.network}, decimals={currency.decimals}, requires_memo={currency.requires_memo}")
         
+        # Обрабатываем как пользовательские, так и системные кошельки
         user_wallets = UserWallet.objects.filter(
             currency=currency, 
             is_system_wallet=False, 
             deposit_address__isnull=False
         ).exclude(deposit_address='')
         
-        if not user_wallets.exists():
-            logger.info(f"[BATCH] No user wallets found for {currency.symbol}")
+        system_wallets = UserWallet.objects.filter(
+            currency=currency, 
+            is_system_wallet=True, 
+            deposit_address__isnull=False
+        ).exclude(deposit_address='')
+        
+        # Объединяем все кошельки для обработки
+        all_wallets = list(user_wallets) + list(system_wallets)
+        
+        if not all_wallets:
+            logger.info(f"[BATCH] No wallets found for {currency.symbol}")
             continue
         
         try:
             service = get_blockchain_service(currency.network or currency.symbol)
             
             # Используем батч-обработку для эффективного сканирования
-            batch_results = process_addresses_batch(currency, user_wallets, service)
+            batch_results = process_addresses_batch(currency, all_wallets, service)
             
             # Создаём маппинг адресов к кошелькам
-            address_to_wallet = {wallet.deposit_address: wallet for wallet in user_wallets}
+            address_to_wallet = {wallet.deposit_address: wallet for wallet in all_wallets}
             
             # Обрабатываем результаты батча
             for address, (raw_transactions, success) in batch_results.items():
                 if not success or not raw_transactions:
                     continue
                 
-                user_wallet = address_to_wallet.get(address)
-                if not user_wallet:
+                wallet = address_to_wallet.get(address)
+                if not wallet:
                     continue
                 
                 logger.info(f"[BATCH] Processing {len(raw_transactions)} transactions for address {address}")
@@ -395,9 +451,16 @@ def check_blockchain_deposits():
                     tx_hash = ev.get("transaction_id")
                     amount_str = ev.get("value")
                     logger.info(f"[BATCH] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
-                    existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).first()
+                    
+                    # Для системных кошельков проверяем по tx_hash, для пользовательских по user+tx_hash
+                    existing_tx = None
+                    if wallet.is_system_wallet:
+                        existing_tx = Transaction.objects.filter(tx_hash=tx_hash).first()
+                    else:
+                        existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=wallet.user).first()
+                        
                     if existing_tx:
-                        logger.warning(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Re-sending signal.")
+                        logger.warning(f"[BATCH] Duplicate tx {tx_hash} for wallet {wallet.id}. Re-sending signal.")
                         # Повторно отправляем сигнал, если транзакция уже существует
                         try:
                             channel_layer = get_channel_layer()
@@ -428,11 +491,11 @@ def check_blockchain_deposits():
                         is_already_converted = (
                             '.' in amount_str and 
                             Decimal(amount_str) < Decimal('1000') and
-                            currency.symbol == 'POL'
+                            currency.symbol in ['POL', 'SOL']  # Для POL и SOL значения уже конвертированы
                         )
                         
                         if is_already_converted:
-                            # Данные уже в POL (от оптимизированного сканера)
+                            # Данные уже в POL/SOL (от оптимизированного сканера)
                             amount = Decimal(amount_str)
                             logger.info(f"[BATCH][OPTIMIZED] Amount already converted by optimized scanner: {amount} {currency.symbol}")
                         elif currency.network and currency.network.upper() == 'ERC20':
@@ -445,9 +508,9 @@ def check_blockchain_deposits():
                                 amount = Decimal(amount_str) / Decimal(10**currency.decimals)
                                 logger.info(f"[BATCH] ERC20: Converting {amount_str} with {currency.decimals} decimals to {amount} {currency.symbol}")
                         else:
-                            # Остальные валюты используют свои decimals (Wei формат)
+                            # Остальные валюты используют свои decimals (Wei формат для EVM, lamports для Solana)
                             amount = Decimal(amount_str) / Decimal(10**currency.decimals)
-                            logger.info(f"[BATCH] Converting {amount_str} Wei with {currency.decimals} decimals to {amount} {currency.symbol}")
+                            logger.info(f"[BATCH] Converting {amount_str} with {currency.decimals} decimals to {amount} {currency.symbol}")
                         
                         # Логируем результат
                         logger.info(f"[BATCH] Amount conversion result: {amount} {currency.symbol}")
@@ -457,50 +520,74 @@ def check_blockchain_deposits():
                         continue
                         
                     # Проверяем, что транзакция с таким hash еще не существует
-                    if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                        logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
-                        continue
+                    if wallet.is_system_wallet:
+                        if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                            logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
+                            continue
+                    else:
+                        if Transaction.objects.filter(tx_hash=tx_hash, user=wallet.user).exists():
+                            logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
+                            continue
                         
                     with transaction.atomic():
-                        user_wallet.balance += amount
-                        user_wallet.save()
+                        wallet.balance += amount
+                        wallet.save()
+                        
+                        # Для системных кошельков также обновляем доступный баланс
+                        if wallet.is_system_wallet:
+                            wallet.available_balance += amount
+                            wallet.save()
                         
                         # Детальное логирование перед сохранением
-                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={amount}, tx_hash={tx_hash}")
-                        
-                        Transaction.objects.create(
-                            user=user_wallet.user,
-                            crypto=currency,
-                            amount=amount,
-                            tx_hash=tx_hash,
-                            type="deposit",
-                            status="completed",
-                            timestamp=timezone.now()
-                        )
+                        if wallet.is_system_wallet:
+                            logger.info(f"[BATCH] Saving transaction for system wallet: currency={currency.symbol}, amount={amount}, tx_hash={tx_hash}")
+                            
+                            Transaction.objects.create(
+                                user=None,  # Системные транзакции не привязаны к пользователю
+                                crypto=currency,
+                                amount=amount,
+                                tx_hash=tx_hash,
+                                type="deposit",
+                                status="completed",
+                                timestamp=timezone.now()
+                            )
+                        else:
+                            logger.info(f"[BATCH] Saving transaction: user={wallet.user.id}, currency={currency.symbol}, amount={amount}, tx_hash={tx_hash}")
+                            
+                            Transaction.objects.create(
+                                user=wallet.user,
+                                crypto=currency,
+                                amount=amount,
+                                tx_hash=tx_hash,
+                                type="deposit",
+                                status="completed",
+                                timestamp=timezone.now()
+                            )
                         processed += 1
-                        logger.info(f"[BATCH] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
+                        logger.info(f"[BATCH] Deposit credited: {wallet.user if wallet.user else 'SYSTEM'} {currency.symbol} {amount}")
 
                     # Отправляем WebSocket сигнал по адресу
                     try:
                         channel_layer = get_channel_layer()
-                        async_to_sync(channel_layer.group_send)(
-                            f"deposit_address_{address}",
-                            {
-                                "type": "deposit_status_update",
-                                "data": {
-                                    "address": address,
-                                    "currency": currency.symbol,
-                                    "network": currency.network,
-                                    "status": "used",
-                                    "amount": str(amount),
-                                }
+                        group_name = f"deposit_address_{address}"
+                        message_data = {
+                            "type": "deposit_status_update",
+                            "data": {
+                                "address": address,
+                                "currency": currency.symbol,
+                                "network": currency.network,
+                                "status": "used",
+                                "amount": str(amount),
                             }
-                        )
-                        logger.info(f"[BATCH] WebSocket signal sent for address {address}")
+                        }
+                        logger.info(f"[BATCH] Preparing to send WebSocket signal for address {address} to group {group_name}")
+                        logger.info(f"[BATCH] Message data: {message_data}")
+                        async_to_sync(channel_layer.group_send)(group_name, message_data)
+                        logger.info(f"[BATCH] WebSocket signal sent successfully for address {address}")
                     except Exception as e:
-                        logger.error(f"[BATCH] Failed to send WebSocket signal for address {address}: {e}")
+                        logger.error(f"[BATCH] Failed to send WebSocket signal for address {address}: {e}", exc_info=True)
                     
-                    logger.info(f"[BATCH] Deposit processed for user {user_wallet.user_id}")
+                    logger.info(f"[BATCH] Deposit processed for wallet {wallet.id}")
             
         except Exception as e:
             logger.error(f"[BATCH] Error processing currency {currency.symbol}: {e}")

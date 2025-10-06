@@ -113,7 +113,12 @@ class BatchRPCProcessor:
     def _safe_get_transactions(self, service, address: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Безопасное получение транзакций с обработкой ошибок"""
         try:
-            return service.get_transactions(address=address, **params)
+            # Проверяем, есть ли у сервиса оптимизированный метод
+            if hasattr(service, 'get_transactions_optimized') and params.get('use_optimized', False):
+                # Для оптимизированного сканирования передаем список адресов
+                return service.get_transactions_optimized([address], **{k: v for k, v in params.items() if k != 'use_optimized'})
+            else:
+                return service.get_transactions(address=address, **params)
         except Exception as e:
             logger.warning(f"[BATCH] Failed to get transactions for {address}: {e}")
             return []

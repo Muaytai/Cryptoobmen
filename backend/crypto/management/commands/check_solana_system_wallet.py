@@ -1,6 +1,8 @@
 from django.core.management.base import BaseCommand
 from crypto.models import Cryptocurrency, UserWallet
 from crypto.blockchain.factory import get_blockchain_service
+from decimal import Decimal
+from django.db import models
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,105 +15,81 @@ class Command(BaseCommand):
         self.stdout.write("=== Проверка системного кошелька Solana ===\n")
         
         try:
-            # Находим криптовалюту Solana
+            # Получаем валюту SOL
             try:
                 sol_currency = Cryptocurrency.objects.get(symbol__iexact='SOL', is_active=True)
-                self.stdout.write(f"✓ Найдена валюта: {sol_currency.name} ({sol_currency.symbol})")
-                self.stdout.write(f"  Сеть: {sol_currency.network}")
-                self.stdout.write(f"  Минимальная сумма обмена: {sol_currency.min_exchange_amount}")
-                self.stdout.write(f"  Комиссия: {sol_currency.fee_percentage}%")
+                self.stdout.write(self.style.SUCCESS(f"✓ Найдена валюта: {sol_currency.name} ({sol_currency.symbol})"))
             except Cryptocurrency.DoesNotExist:
-                self.stdout.write(self.style.ERROR("✗ Криптовалюта SOL не найдена или неактивна"))
+                self.stdout.write(self.style.ERROR("✗ Валюта SOL не найдена в базе данных"))
                 return
-
-            # Находим системный кошелёк
+            
+            # Проверяем системный кошелек
             try:
-                system_wallet = UserWallet.objects.get(
-                    currency=sol_currency,
-                    is_system_wallet=True,
-                    is_active=True
-                )
-                self.stdout.write(f"✓ Найден системный кошелёк: ID={system_wallet.id}")
-                self.stdout.write(f"  Баланс: {system_wallet.balance} SOL")
-                self.stdout.write(f"  Доступный баланс: {system_wallet.available_balance} SOL")
-                self.stdout.write(f"  Заблокированный баланс: {system_wallet.locked_balance} SOL")
+                system_wallet = UserWallet.objects.get(currency=sol_currency, is_system_wallet=True)
+                self.stdout.write(self.style.SUCCESS(f"✓ Найден системный кошелек"))
+                self.stdout.write(f"  Адрес: {system_wallet.deposit_address}")
+                self.stdout.write(f"  Баланс в БД: {system_wallet.balance} SOL")
             except UserWallet.DoesNotExist:
-                self.stdout.write(self.style.ERROR("✗ Системный кошелёк SOL не найден"))
-                self.stdout.write("Создание системного кошелька...")
-                
-                system_wallet = UserWallet.objects.create(
-                    user=None,
-                    currency=sol_currency,
-                    balance=0,
-                    is_system_wallet=True,
-                    is_active=True
-                )
-                self.stdout.write(f"✓ Создан системный кошелёк: ID={system_wallet.id}")
-
+                self.stdout.write(self.style.ERROR("✗ Системный кошелек SOL не найден"))
+                return
+            
             # Проверяем приватный ключ
             if system_wallet.encrypted_private_key:
-                self.stdout.write("✓ Приватный ключ установлен")
-                
-                # Пробуем получить блокчейн сервис
-                try:
-                    service = get_blockchain_service(sol_currency.network)
-                    self.stdout.write(f"✓ Сервис блокчейна инициализирован: {service.__class__.__name__}")
-                    
-                    # Пробуем парсить приватный ключ
-                    try:
-                        key_bytes = service._parse_private_key(system_wallet.encrypted_private_key)
-                        self.stdout.write("✓ Приватный ключ корректен")
-                        
-                        # Получаем публичный адрес из приватного ключа
-                        from solders.keypair import Keypair
-                        keypair = Keypair.from_bytes(key_bytes)
-                        wallet_address = str(keypair.pubkey())
-                        self.stdout.write(f"  Адрес кошелька: {wallet_address}")
-                        
-                        # Проверяем баланс в блокчейне
-                        try:
-                            blockchain_balance = service.get_balance(wallet_address)
-                            self.stdout.write(f"  Баланс в блокчейне: {blockchain_balance} SOL")
-                            
-                            if blockchain_balance != system_wallet.balance:
-                                self.stdout.write(self.style.WARNING(
-                                    f"⚠ Несоответствие балансов! База данных: {system_wallet.balance} SOL, "
-                                    f"блокчейн: {blockchain_balance} SOL"
-                                ))
-                        except Exception as e:
-                            self.stdout.write(self.style.ERROR(f"✗ Ошибка получения баланса: {e}"))
-                            
-                    except Exception as e:
-                        self.stdout.write(self.style.ERROR(f"✗ Ошибка парсинга приватного ключа: {e}"))
-                        
-                except Exception as e:
-                    self.stdout.write(self.style.ERROR(f"✗ Ошибка инициализации блокчейн сервиса: {e}"))
+                self.stdout.write(self.style.SUCCESS("✓ Приватный ключ установлен"))
             else:
-                self.stdout.write(self.style.ERROR("✗ Приватный ключ не установлен"))
-                self.stdout.write("Для решения проблемы:")
-                self.stdout.write("1. Зайдите в админку Django")
-                self.stdout.write("2. Найдите раздел 'Crypto' -> 'User wallets'")
-                self.stdout.write(f"3. Отредактируйте системный кошелёк SOL (ID: {system_wallet.id})")
-                self.stdout.write("4. Установите приватный ключ в поле 'Encrypted Private Key'")
-                self.stdout.write("   Поддерживаемые форматы:")
-                self.stdout.write("   - Hex (128 символов): abcd1234...")
-                self.stdout.write("   - JSON массив: [251,34,123,...]")
-                self.stdout.write("   - Base58 (редко)")
-
-            # Проверяем активные заявки на вывод
-            from transactions.models import Withdrawal
-            pending_withdrawals = Withdrawal.objects.filter(
-                wallet__currency=sol_currency,
-                transaction__status__in=['pending', 'processing']
-            ).count()
+                self.stdout.write(self.style.WARNING("⚠ Приватный ключ отсутствует"))
             
-            if pending_withdrawals > 0:
-                self.stdout.write(f"⚠ Найдено {pending_withdrawals} ожидающих заявок на вывод SOL")
-            else:
-                self.stdout.write("✓ Нет ожидающих заявок на вывод")
+            # Проверяем баланс в блокчейне
+            if system_wallet.deposit_address:
+                try:
+                    service = get_blockchain_service('solana')
+                    blockchain_balance = service.get_balance(system_wallet.deposit_address)
+                    self.stdout.write(f"  Баланс в блокчейне: {blockchain_balance} SOL")
+                    
+                    # Сравниваем балансы
+                    diff = abs(blockchain_balance - system_wallet.balance)
+                    if diff > Decimal('0.000000001'):
+                        self.stdout.write(self.style.WARNING(f"⚠ Разница в балансах: {diff} SOL"))
+                    else:
+                        self.stdout.write(self.style.SUCCESS("✓ Балансы совпадают"))
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(f"✗ Ошибка проверки баланса в блокчейне: {e}"))
+            
+            # Проверяем ожидающие выводы
+            try:
+                from transactions.models import Transaction
+                pending_withdrawals = Transaction.objects.filter(
+                    crypto=sol_currency,
+                    type='withdrawal',
+                    status__in=['pending', 'processing', 'awaiting_confirmation']
+                ).count()
                 
+                self.stdout.write(f"\n--- Ожидающие выводы ---")
+                self.stdout.write(f"Количество: {pending_withdrawals}")
+                
+                if pending_withdrawals > 0:
+                    # Подсчитываем общую сумму
+                    total_amount = Transaction.objects.filter(
+                        crypto=sol_currency,
+                        type='withdrawal',
+                        status__in=['pending', 'processing', 'awaiting_confirmation']
+                    ).aggregate(
+                        total=models.Sum('amount')
+                    )['total'] or Decimal('0')
+                    
+                    self.stdout.write(f"Общая сумма: {total_amount} SOL")
+                    
+                    # Проверяем, достаточно ли средств
+                    if system_wallet.balance >= total_amount:
+                        self.stdout.write(self.style.SUCCESS("✓ Достаточно средств для выводов"))
+                    else:
+                        self.stdout.write(self.style.ERROR("✗ Недостаточно средств для выводов"))
+                        
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"✗ Ошибка проверки ожидающих выводов: {e}"))
+            
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Критическая ошибка: {e}"))
-            logger.exception("Ошибка в check_solana_system_wallet")
+            logger.exception("Критическая ошибка в check_solana_system_wallet")
 
-        self.stdout.write("\n=== Проверка завершена ===")
+        self.stdout.write(f"\n=== Проверка завершена ===")

@@ -60,14 +60,15 @@ class DepositService:
                 
                 blockchain_service = get_blockchain_service(currency.network or currency.symbol)
                 
-                # Проверяем, нужно ли генерировать новый адрес.
-                # Условия:
-                # 1. Адреса еще нет.
-                # 2. Адрес уже был использован (на него есть транзакции).
+                # Для Solana всегда генерируем новый адрес (по требованию)
                 needs_new_address = False
                 if not user_wallet.deposit_address:
                     needs_new_address = True
                     logger.info(f"User {user.id} needs new {currency.symbol} address because none exists.")
+                elif currency.symbol == 'SOL':
+                    # Для Solana всегда генерируем новый адрес
+                    needs_new_address = True
+                    logger.info(f"User {user.id} needs new {currency.symbol} address (Solana always requires new addresses).")
                 else:
                     try:
                         # Быстро проверяем в локальной БД - есть ли транзакции на этом адресе

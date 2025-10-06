@@ -20,6 +20,7 @@ from solders.message import MessageV0
 # from spl.memo.instructions import encode_memo
 
 from .base import BaseBlockchainService
+from .solana_optimized_scanner import SolanaOptimizedScanner, SolanaOptimizedScanConfig
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,46 @@ class SolanaService(BaseBlockchainService):
             RPC_ENDPOINTS[network],
             timeout=15,  # seconds
         )
+        
+        # Инициализируем оптимизированный сканер
+        scan_config = SolanaOptimizedScanConfig(
+            max_workers=10,     # Количество параллельных потоков
+            batch_size=20,      # Размер пачки адресов
+            max_signatures_per_scan=50,  # Максимум подписей за одно сканирование
+            cache_duration=300, # 5 минут кэширования
+            retry_attempts=3,
+            timeout_per_request=30.0
+        )
+        self.optimized_scanner = SolanaOptimizedScanner(self, scan_config)
+        
         logger.info(f"SolanaService initialized with network: {network}, RPC: {RPC_ENDPOINTS[network]}")
+
+    def get_transactions_optimized(self, addresses: List[str], min_timestamp: int = 0) -> List[Dict[str, Any]]:
+        """
+        Оптимизированное сканирование транзакций для нескольких адресов
+        """
+        try:
+            logger.info(f"Starting optimized scan for {len(addresses)} addresses")
+            transactions = self.optimized_scanner.scan_optimized(addresses, min_timestamp)
+            
+            logger.info(f"Optimized scan completed: {len(transactions)} transactions found")
+            return transactions
+            
+        except Exception as e:
+            logger.error(f"Optimized scan failed: {e}")
+            # Fallback to regular scanning
+            return self._fallback_scan(addresses, min_timestamp)
+    
+    def _fallback_scan(self, addresses: List[str], min_timestamp: int = 0) -> List[Dict[str, Any]]:
+        """Резервное сканирование если оптимизированное не работает"""
+        all_transactions = []
+        for address in addresses:
+            try:
+                transactions = self.get_transactions(address, min_timestamp)
+                all_transactions.extend(transactions)
+            except Exception as e:
+                logger.error(f"Fallback scan failed for {address}: {e}")
+        return all_transactions
 
     def get_transactions(self, address: str, min_timestamp: int = 0) -> List[Dict[str, Any]]:
         try:
@@ -60,7 +100,11 @@ class SolanaService(BaseBlockchainService):
 
             transactions = []
             for sig_info in signatures:
-                tx_resp = self.client.get_transaction(sig_info.signature).value
+                # Запрашиваем транзакцию с поддержкой версий
+                tx_resp = self.client.get_transaction(
+                    sig_info.signature,
+                    max_supported_transaction_version=0  # Поддержка версии транзакций 0
+                ).value
                 if tx_resp is None:
                     continue
 
@@ -105,11 +149,13 @@ class SolanaService(BaseBlockchainService):
                     if str(acc) == address:
                         diff = post_balances[i] - pre_balances[i]
                         if diff > 0:
+                            # Конвертируем lamports в SOL (1 SOL = 1_000_000_000 lamports)
+                            amount_sol = Decimal(diff) / Decimal(1_000_000_000)
                             transactions.append({
                                 "transaction_id": str(sig_info.signature),
                                 "from_address": str(account_keys[0]),
                                 "to_address": address,
-                                "value": str(diff),
+                                "value": str(amount_sol),  # Возвращаем значение в SOL, а не в lamports
                                 "memo": None
                             })
             return transactions
@@ -123,7 +169,8 @@ class SolanaService(BaseBlockchainService):
             pubkey = Pubkey.from_string(address)
             balance_resp = self.client.get_balance(pubkey)
             lamports = balance_resp.value
-            return self.from_atomic_unit(lamports, 9)
+            # Конвертируем lamports в SOL (1 SOL = 1_000_000_000 lamports)
+            return Decimal(lamports) / Decimal(1_000_000_000)
         except Exception as e:
             logger.error(f"[get_balance] Error for {address}: {e}")
             return Decimal("0.0")
@@ -140,7 +187,8 @@ class SolanaService(BaseBlockchainService):
             secret_key_bytes = self._parse_private_key(private_key_input)
             sender = Keypair.from_bytes(secret_key_bytes)
             sender_address = str(sender.pubkey())
-            lamports = int(amount * 1_000_000_000)
+            # Конвертируем SOL в lamports (1 SOL = 1_000_000_000 lamports)
+            lamports = int(amount * Decimal(1_000_000_000))
 
             logger.info(f"[send_transaction] Отправка {amount} SOL ({lamports} lamports) с {sender_address} на {to_address}")
 
@@ -312,17 +360,93 @@ class SolanaService(BaseBlockchainService):
 
         raise ValueError("Не удалось распознать формат приватного ключа. Ожидался hex, JSON-массив или base58.")
 
-    def create_new_address(self, user_id: int = None) -> str:
-        """Создает новый адрес Solana"""
+    def create_new_address(self, user_id: int = None) -> tuple[str, str]:
+        """Создает новый адрес Solana и возвращает кортеж (address, private_key)"""
         try:
             # Генерируем новую пару ключей
             keypair = Keypair()
             public_address = str(keypair.pubkey())
             private_key_bytes = bytes(keypair.secret())
+            
+            # Конвертируем приватный ключ в hex строку для хранения
+            private_key_hex = private_key_bytes.hex()
 
             logger.info(f"Создан новый адрес Solana: {public_address}")
-            return public_address
+            return public_address, private_key_hex
 
         except Exception as e:
             logger.error(f"[create_new_address] Failed to create SOL address: {e}")
             raise ValueError(f"Не удалось создать новый адрес Solana: {e}")
+
+    def is_transaction_confirmed(self, tx_hash: str, required_confirmations: int = 1) -> bool:
+        """
+        Проверяет подтверждение транзакции в сети Solana
+        """
+        try:
+            from solders.signature import Signature
+            signature = Signature.from_string(tx_hash)
+            
+            # Получаем статус транзакции
+            response = self.client.get_signature_statuses([signature])
+            statuses = response.value
+            
+            if not statuses or statuses[0] is None:
+                return False
+                
+            status = statuses[0]
+            
+            # Проверяем, что транзакция подтверждена
+            if hasattr(status, 'confirmation_status'):
+                confirmation_status = status.confirmation_status
+                if confirmation_status is not None:
+                    # В Solana статусы: processed, confirmed, finalized
+                    return str(confirmation_status) in ['confirmed', 'finalized']
+            
+            # Если confirmation_status недоступен, проверяем confirmed слот
+            if hasattr(status, 'confirmed'):
+                return status.confirmed is not None
+                
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Failed to check Solana transaction confirmation for {tx_hash}: {e}")
+            return False
+
+    def add_test_funds(self, address: str, amount: float) -> str:
+        """
+        Adds test funds to a Solana address by transferring from system wallet
+        """
+        try:
+            from crypto.models import UserWallet
+            from decimal import Decimal
+            
+            # Get system wallet
+            system_wallet = UserWallet.objects.filter(
+                currency__symbol='SOL',
+                is_system_wallet=True
+            ).first()
+            
+            if not system_wallet or not system_wallet.deposit_address:
+                logger.error("No system wallet found for SOL")
+                return ""
+            
+            if not system_wallet.encrypted_private_key:
+                logger.error("System wallet has no private key")
+                return ""
+            
+            logger.info(f"Transferring {amount} SOL from system wallet {system_wallet.deposit_address} to {address}")
+            
+            # Send transaction from system wallet to target address
+            tx_hash = self.send_transaction(
+                system_wallet.encrypted_private_key,
+                address,
+                Decimal(str(amount)),
+                "Test funds"
+            )
+            
+            logger.info(f"Successfully transferred {amount} SOL to {address}, tx: {tx_hash}")
+            return tx_hash
+                
+        except Exception as e:
+            logger.error(f"Failed to add test funds to {address}: {e}", exc_info=True)
+            return ""
