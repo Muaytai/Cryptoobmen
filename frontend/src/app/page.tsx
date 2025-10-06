@@ -169,7 +169,7 @@ const HomePageContent = () => {
         
         // Левая колонка с текстом
         textContainer: {
-          maxWidth: isMobile ? '100%' : isTablet ? '55%' : 600,
+          maxWidth: isMobile ? '100%' : isTablet ? '60%' : 1100,
           zIndex: 2,
           position: 'relative' as const,
           textAlign: isMobile ? 'center' as const : 'left' as const,
@@ -186,7 +186,7 @@ const HomePageContent = () => {
           width: isMobile ? '100%' : isTablet ? 400 : 520,
           height: isSmallMobile ? 250 : isMobile ? 300 : isTablet ? 400 : 520,
           marginRight: isMobile ? 0 : isTablet ? 0 : -25,
-          marginLeft: isMobile ? 0 : isTablet ? -50 : -150,
+          marginLeft: isMobile ? 0 : isTablet ? -30 : -40,
           marginTop: isMobile ? -20 : isTablet ? -10 : 30,
           alignSelf: 'flex-end' as const
         } as CSSProperties,
@@ -198,8 +198,8 @@ const HomePageContent = () => {
           transform: isMobile 
             ? 'scale(1.1) translateX(-10px) translateY(10px)' 
             : isTablet 
-              ? 'scale(1.2) translateX(-50px) translateY(20px)' 
-              : 'scale(1.4) translateX(-100px) translateY(20px)'
+              ? 'scale(1.18) translateX(-40px) translateY(20px)' 
+              : 'scale(1.35) translateX(-60px) translateY(20px)'
         } as CSSProperties,
         
         // Пустой блок для отступа

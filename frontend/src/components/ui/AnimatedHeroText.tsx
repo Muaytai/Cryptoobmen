@@ -16,21 +16,22 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
   const [visibleWords, setVisibleWords] = useState<number[]>([]);
   
   const lines = [
-    "Твоя стратегия",
-    "Твой ход",
-    "Твоя прибыль", 
-    "Партия начинается здесь"
+  "Инвестируй с умом",
+  "Получай от 10% годовых в USDT",
+  "Твоя стратегия - стабильный доход",
+  "Партия начинается здесь"
   ];
 
-  // Разбиваем четвертую фразу на слова для анимации
+  // Разбиваем финальную фразу на слова для анимации
   const finalPhraseWords = ["Партия", "начинается", "здесь"];
 
 
   useEffect(() => {
     const timeouts: NodeJS.Timeout[] = [];
     
-    // Фаза 1: Появление первых трех строк (собираются вместе)
-    lines.slice(0, 3).forEach((_, index) => {
+    // Фаза 1: Появление всех строк, кроме финальной
+    const nonFinalCount = lines.length - 1;
+    lines.slice(0, nonFinalCount).forEach((_, index) => {
       const timeout = setTimeout(() => {
         setVisibleLines(prev => [...prev, index]);
       }, index * 1200); // 1200ms задержка между строками
@@ -38,10 +39,10 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
       timeouts.push(timeout);
     });
 
-    // Фаза 2: Появление финальной строки (без исчезновения первых трех)
+    // Фаза 2: Появление финальной строки (без исчезновения предыдущих)
     const finalTimeout = setTimeout(() => {
       setAnimationPhase('final');
-      setVisibleLines(prev => [...prev, 3]); // Добавляем четвертую строку к существующим
+      setVisibleLines(prev => [...prev, lines.length - 1]); // Добавляем финальную строку
 
       // Анимация слов в финальной фразе
       finalPhraseWords.forEach((_, wordIndex) => {
@@ -51,7 +52,7 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
 
         timeouts.push(wordTimeout);
       });
-    }, 3 * 1200 + 2000); // После появления всех трех + 2 секунды показа
+    }, (nonFinalCount) * 1200 + 1200); // После появления первых строк + пауза
     
     timeouts.push(finalTimeout);
 
@@ -95,10 +96,17 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
           ? 'translateX(-50px) scale(0.95)' // Четные индексы (0,2) - "Твоя стратегия", "Твоя прибыль" - слева направо
           : 'translateX(50px) scale(0.95)', // Нечетные индексы (1) - "Твой ход" - справа налево
       transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)', // Более плавный переход
-      marginBottom: isFinalPhrase ? 0 : (isMobile ? 25 : 30), // Расстояние между первыми тремя строками
+      // Индивидуальные отступы между строками
+      marginBottom: (() => {
+        if (isFinalPhrase) return 0;
+        // после второй строки увеличиваем отступ ещё сильнее, после третьей — уменьшаем
+        if (index === 1) return isMobile ? 34 : 46;
+        if (index === 2) return isMobile ? 10 : 14;
+        return isMobile ? 22 : 26;
+      })(),
       lineHeight: 1.2,
-      fontWeight: isFinalPhrase ? 700 : 500,
-      whiteSpace: 'nowrap' as const, // Все фразы в одну строку
+      fontWeight: isFinalPhrase ? 700 : 600,
+      whiteSpace: 'nowrap' as const, // Всегда в одну строку на всех устройствах
       // Простые тени для объемного эффекта
       textShadow: isFinalPhrase
         ? '2px 2px 4px rgba(0,0,0,0.3), 4px 4px 8px rgba(0,0,0,0.2), 6px 6px 12px rgba(0,0,0,0.1), 0 0 20px rgba(139, 33, 254, 0.3)'
@@ -114,19 +122,21 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
     // Размеры шрифта в зависимости от устройства и позиции (увеличенные размеры)
     let fontSize: number;
     if (isFinalPhrase) {
-      // Финальная строка - немного уменьшенный размер для баланса
-      fontSize = isSmallMobile ? 20 : isMobile ? 25 : isTablet ? 32 : 40;
+      // Малые поддерживающие строки (оба одинаковые)
+      fontSize = isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 20 : 22;
+    } else if (index === 0 || index === 1) {
+      // Первые две строки — одинаковая крупность, немного уменьшена, чтобы помещалась в одну строку
+      fontSize = isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 30 : 36;
     } else {
-      // Первые три строки - немного меньше финальной
-      fontSize = isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 30 : 38;
+      fontSize = isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 20 : 22;
     }
 
     // Цвета из существующей палитры проекта
     const color = isFinalPhrase 
-      ? '#8b21fe' // Фиолетовый акцент (как в оригинале)
+      ? '#8b21fe' // Акцент для финальной строки
       : isDarkMode 
-        ? '#bdbdbd' // Серый для темной темы (как в оригинале)
-        : '#666666'; // Серый для светлой темы (как в оригинале)
+        ? '#e5e5e5'
+        : '#333333';
 
     return {
       ...baseStyles,
@@ -141,13 +151,13 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
         display: 'block' as const, // Блочный элемент
         // Первая строка выше остальных
         ...(index === 0 && {
-          marginTop: isMobile ? '-20px' : '-30px', // Поднимаем первую строку выше
+          marginTop: isMobile ? '-6px' : '-6px',
         }),
       }),
       // Дополнительные эффекты для финальной строки (прозрачный как стекло с переливами и 3D)
       ...(isFinalPhrase && {
         letterSpacing: '0.5px',
-        background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 25%, hsl(var(--accent)) 50%, hsl(var(--secondary)) 75%, hsl(var(--primary)) 100%)',
+        background: 'linear-gradient(135deg, #e5e7eb 0%, #cfd2da 50%, #eef0f5 100%)',
         backgroundSize: '200% 200%',
         backgroundClip: 'text',
         WebkitBackgroundClip: 'text',
@@ -159,9 +169,22 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
         width: '100%', // Полная ширина для использования всего доступного пространства
         maxWidth: 'none', // Убираем ограничение ширины
         display: 'block' as const, // Блочный элемент
-                marginTop: isMobile ? '60px' : '80px', // Отступ сверху между 3-й и 4-й фразой
+                marginTop: isMobile ? '28px' : '36px', // Блок поддержки опущен ниже
                 marginBottom: isMobile ? '20px' : '30px', // Отступ снизу
       }),
+      // Чёткий стеклянный эффект для первой строки (без размытого свечения)
+      ...(index === 0 && {
+        background: 'linear-gradient(180deg, #ffffff 0%, #e6e6f1 40%, #a259ff 100%)',
+        backgroundClip: 'text',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        WebkitTextStroke: isDarkMode ? '0.4px rgba(255,255,255,0.35)' : '0.4px rgba(0,0,0,0.25)',
+        textShadow: '0 1px 0 rgba(255,255,255,0.25), 0 0 0 rgba(0,0,0,0)'
+      }),
+      // Чуть усилим вторую строку, чтобы визуально рифмовалась с первой
+      ...(index === 1 && {
+        color: isDarkMode ? '#f3f4f6' : '#222222'
+      })
     };
   };
 
@@ -195,24 +218,62 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
         </>
       );
     } else {
-      // Для первых трех строк выделяем "Твоя/Твой" фиолетовым, остальные слова - жемчужно-серым с градиентом
-      const parts = line.split(' ');
-      const firstWord = parts[0]; // "Твоя" или "Твой"
-      const restWords = parts.slice(1).join(' ');
+      // Первая строка: акцент на слове "ход"
+      if (index === 0) {
+        // Явно выводим полный текст: "Инвестируй с умом"
+        const first = 'Инвестируй';
+        const second = 'с умом';
+        return (
+          <>
+            <span style={{ color: 'hsl(var(--primary))' }}>{first}</span>{' '}
+            <span style={{
+              background: 'linear-gradient(135deg, #e5e7eb 0%, #d1d5db 25%, #9ca3af 50%, #d1d5db 75%, #e5e7eb 100%)',
+              backgroundSize: '200% 200%',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              animation: 'pearlShimmer 3s ease-in-out infinite',
+              fontSize: '0.9em',
+              opacity: 0.95
+            }}>{second}</span>
+          </>
+        );
+      }
 
-      return (
-        <>
-          <span style={{ color: 'hsl(var(--primary))' }}>{firstWord}</span>
-          <span style={{
-            background: 'linear-gradient(135deg, #e5e7eb 0%, #d1d5db 25%, #9ca3af 50%, #d1d5db 75%, #e5e7eb 100%)',
-            backgroundSize: '200% 200%',
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            animation: 'pearlShimmer 3s ease-in-out infinite'
-          }}> {restWords}</span>
-        </>
-      );
+      // Вторая строка: выделяем "10%" и "USDT"
+      if (index === 1) {
+        const withTokens = line.replace('10%', '__TEN__').replace('USDT', '__USDT__');
+        const tokens = withTokens.split(' ');
+        return (
+          <>
+            {tokens.map((t, i) => {
+              if (t.includes('__TEN__')) {
+                return (
+                  <span key={i} style={{
+                    color: 'hsl(var(--primary))',
+                    textShadow: '0 0 10px rgba(162,89,255,0.55)'
+                  }}>10%</span>
+                );
+              }
+              if (t.includes('__USDT__')) {
+                return (
+                  <span key={i} style={{
+                    padding: '2px 8px',
+                    marginLeft: '6px',
+                    borderRadius: '999px',
+                    background: isDarkMode ? 'rgba(162,89,255,0.12)' : 'rgba(162,89,255,0.12)',
+                    border: '1px solid rgba(162,89,255,0.35)'
+                  }}>USDT</span>
+                );
+              }
+              return <span key={i} style={{ marginRight: '6px' }}>{t}</span>;
+            })}
+          </>
+        );
+      }
+
+      // Дефолтный рендер для прочих строк
+      return <span>{line}</span>;
     }
   };
 
@@ -258,9 +319,28 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
                 margin: '0 auto',
                 padding: '0 10px',
                 minHeight: '300px',
-                marginTop: deviceType === 'mobile' || deviceType === 'mobile-small' ? '90px' : '130px',
+                position: 'relative',
+                marginTop: deviceType === 'mobile' || deviceType === 'mobile-small' ? '90px' : '120px',
                 marginLeft: deviceType === 'mobile' || deviceType === 'mobile-small' ? '30px' : '60px',
               }}>
+        {/* Слой глубины позади текста: мягкая подсветка + тонкая сетка */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: 'none',
+          backgroundImage: `
+            radial-gradient(800px 260px at 0% 40%, rgba(162,89,255,0.18), rgba(162,89,255,0) 60%),
+            linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)
+          `,
+          backgroundSize: 'auto, 28px 28px, 28px 28px',
+          backgroundPosition: 'left center, left top, left top',
+          opacity: isDarkMode ? 1 : 0.6,
+          maskImage: 'linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.9) 75%, rgba(0,0,0,0.65) 100%)',
+          WebkitMaskImage: 'linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.9) 75%, rgba(0,0,0,0.65) 100%)'
+        }} />
+        <div style={{ position: 'relative', zIndex: 1 }}>
         {lines.map((line, index) => (
           <div
             key={index}
@@ -269,6 +349,7 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
             {renderLine(line, index)}
           </div>
         ))}
+        </div>
       </div>
     </>
   );
