@@ -27,7 +27,7 @@ class DepositService:
         Возвращает адрес для пополнения.
         - Для валют с MEMO: системный адрес + уникальный memo.
         - Для валют без MEMO: уникальный адрес пользователя, который меняется после использования.
-        Также возвращает qr_code (base64 PNG).
+        Также возвращает qr_code (base64 PNG) и информацию о газе для валют без мемо.
         """
         try:
             # 1. Найти валюту с учетом сети
@@ -53,7 +53,7 @@ class DepositService:
                 # Для некоторых сетей (например, XRP) QR-код может включать доп. параметры
                 qr_data = f"{address}?dt={memo}" if currency.symbol == 'XRP' else f"{address}:{memo}"
                 qr_code = generate_qr_code(qr_data)
-                return address, memo, qr_code
+                return address, memo, qr_code, None  # Нет информации о газе для валют с мемо
             else:
                 # --- Логика для валют без MEMO (BTC, USDT TRC-20 и т.д.) ---
                 user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=currency)
@@ -114,7 +114,11 @@ class DepositService:
                 
                 final_address = user_wallet.deposit_address
                 qr_code = generate_qr_code(final_address)
-                return final_address, None, qr_code
+                
+                # Рассчитываем информацию о газе для валют без мемо
+                gas_info = DepositService._calculate_gas_info(currency, blockchain_service, final_address)
+                
+                return final_address, None, qr_code, gas_info
 
         except Cryptocurrency.DoesNotExist:
             raise ValueError(f"Криптовалюта {currency_symbol} в сети {network} не найдена или неактивна.")
@@ -131,4 +135,70 @@ class DepositService:
             memo = str(random.randint(100000, 999999))
             if not UserDepositMemo.objects.filter(memo=memo, status='waiting').exists():
                 return memo
+
+    @staticmethod
+    def _calculate_gas_info(currency, blockchain_service, address):
+        """
+        Рассчитывает информацию о газе для валют без мемо.
+        Возвращает словарь с информацией о газе или None если расчет невозможен.
+        """
+        try:
+            # Получаем адрес системного кошелька для расчета газа
+            from .tasks_consolidation import get_system_wallet_address
+            system_wallet_address = get_system_wallet_address(currency)
+            
+            # Проверяем, поддерживает ли сервис расчет максимальной отправляемой суммы
+            if hasattr(blockchain_service, 'get_max_sendable_amount'):
+                # Для валют с умным расчетом газа (например, POL)
+                max_sendable = blockchain_service.get_max_sendable_amount(address, system_wallet_address)
+                if max_sendable > 0:
+                    # Получаем текущий баланс
+                    current_balance = blockchain_service.get_balance(address)
+                    gas_cost = current_balance - max_sendable
+                    
+                    return {
+                        'estimated_gas_cost': str(gas_cost),
+                        'current_balance': str(current_balance),
+                        'max_sendable_after_gas': str(max_sendable),
+                        'currency_symbol': currency.symbol,
+                        'calculation_method': 'smart'
+                    }
+            
+            # Fallback для валют без умного расчета газа
+            if hasattr(blockchain_service, 'estimate_gas_cost'):
+                # Для валют с методом оценки газа (например, ETH)
+                try:
+                    # Конвертируем небольшое количество для оценки
+                    from decimal import Decimal
+                    test_amount = Decimal('0.001')
+                    
+                    # Конвертируем в атомарные единицы для оценки
+                    if hasattr(blockchain_service, 'to_atomic_unit'):
+                        test_amount_atomic = blockchain_service.to_atomic_unit(test_amount, currency.decimals or 18)
+                    else:
+                        test_amount_atomic = int(test_amount * (10 ** (currency.decimals or 18)))
+                    
+                    gas_cost = blockchain_service.estimate_gas_cost(address, system_wallet_address, test_amount_atomic)
+                    
+                    return {
+                        'estimated_gas_cost': str(gas_cost),
+                        'currency_symbol': currency.symbol,
+                        'calculation_method': 'estimated'
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to estimate gas cost for {currency.symbol}: {e}")
+            
+            # Fallback к фиксированным значениям из tasks_consolidation
+            from .tasks_consolidation import get_gas_reserve
+            gas_reserve = get_gas_reserve(currency)
+            
+            return {
+                'estimated_gas_cost': str(gas_reserve),
+                'currency_symbol': currency.symbol,
+                'calculation_method': 'fixed_reserve'
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate gas info for {currency.symbol}: {e}")
+            return None
 

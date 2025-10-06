@@ -40,7 +40,7 @@ const fetcher = async (url: string, options: RequestInit = {}) => {
     const isFormData = options.body instanceof FormData;
     
     // Получаем пользовательские заголовки из options
-    const customHeaders = options.headers as Record<string, string> || {};
+    const customHeaders = (options.headers as Record<string, string>) || {};
     
     // Объединяем заголовки по умолчанию и переданные пользователем
     const headers = {
@@ -62,7 +62,7 @@ const fetcher = async (url: string, options: RequestInit = {}) => {
 
     // Если ответ не успешный, выбрасываем ошибку
     if (!response.ok) {
-      let errorData;
+      let errorData: any;
       try {
         errorData = await response.json();
       } catch (e) {

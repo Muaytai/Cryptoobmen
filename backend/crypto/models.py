@@ -1,4 +1,3 @@
-
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
@@ -36,7 +35,7 @@ class Cryptocurrency(models.Model):
     
     # Информация для API
     coingecko_id = models.CharField(max_length=100, blank=True, null=True, verbose_name=_('CoinGecko ID'))
-    # api_id = models.CharField(max_length=100, blank=True, null=True) # Это поле кажется дублирующим coingecko_id, можно убрать если не используется специфично
+    # api_id = models.CharField(max_length=100, blank=True, null=True)
     
     # Для токенов
     contract_address = models.CharField(max_length=255, blank=True, null=True, verbose_name=_('Contract Address'))
@@ -131,19 +130,18 @@ class UserWallet(models.Model):
         null=True, # Разрешаем Null для системных кошельков
         blank=True # Разрешаем Blank для системных кошельков
     )
-    currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, verbose_name=_('Currency')) # Переименовал crypto в currency для единообразия
+    currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, verbose_name=_('Currency'))
     
     balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Total Balance'))
-    # address = models.CharField(max_length=255, blank=True, null=True) # Адрес пока не используем активно для внутренней логики
+    # address = models.CharField(max_length=255, blank=True, null=True)
     
     available_balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Available Balance'))
-    locked_balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Locked Balance')) # Для ордеров, инвестиций и т.д.
+    locked_balance = models.DecimalField(max_digits=24, decimal_places=8, default=Decimal('0.0'), verbose_name=_('Locked Balance'))
     
     deposit_address = models.CharField(max_length=255, blank=True, null=True, verbose_name=_('Deposit Address'))
 
     is_system_wallet = models.BooleanField(default=False, verbose_name=_('System Wallet'))
 
-    # Храним приватный ключ для системного кошелька в зашифрованном виде (Fernet)
     encrypted_private_key = models.TextField(blank=True, null=True, verbose_name=_('Encrypted Private Key'))
     is_active = models.BooleanField(default=True, verbose_name=_('Active'))
     
@@ -154,9 +152,8 @@ class UserWallet(models.Model):
         if self.is_system_wallet:
             return f"System Wallet - {self.currency.symbol}"
         if self.user:
-            return f"{self.user.email} - {self.currency.symbol} Wallet" # Используем email, так как это USERNAME_FIELD
+            return f"{self.user.email} - {self.currency.symbol} Wallet"
         return f"Orphaned Wallet - {self.currency.symbol}"
-
 
     def save(self, *args, **kwargs):
         # МОНИТОРИНГ: Отслеживаем ВСЕ изменения deposit_address
@@ -165,7 +162,7 @@ class UserWallet(models.Model):
                 old_wallet = UserWallet.objects.get(pk=self.pk)
                 if old_wallet.deposit_address != self.deposit_address:
                     import traceback
-                    stack_trace = ''.join(traceback.format_stack()[-10:])  # Ещё больше кадров
+                    stack_trace = ''.join(traceback.format_stack()[-10:])
                     
                     change_type = "UNKNOWN"
                     if old_wallet.deposit_address and not self.deposit_address:
@@ -183,7 +180,6 @@ class UserWallet(models.Model):
                     logger.error(f"   Type: {change_type}")
                     logger.error(f"   Call stack:\n{stack_trace}")
                     
-                    # Также логируем в файл для надёжности
                     try:
                         with open('/tmp/address_changes.log', 'a') as f:
                             from datetime import datetime
@@ -200,31 +196,10 @@ class UserWallet(models.Model):
         if self.is_system_wallet:
             self.user = None
 
-        # ОТКЛЮЧЕНО: Автоматическая генерация адресов в модели
-        # Адреса теперь генерируются только через DepositService или после консолидации
-        # if self.currency.currency_type == 'crypto' and not self.deposit_address and not self.is_system_wallet:
-        #     import traceback
-        #     stack_trace = ''.join(traceback.format_stack()[-5:])  # Последние 5 кадров
-        #     logger.warning(f"🚨 AUTO-GENERATING ADDRESS for {self.currency.symbol} user {self.user.email if self.user else 'None'}")
-        #     logger.warning(f"🚨 Call stack:\n{stack_trace}")
-        #     try:
-        #         # Используем фабрику для получения нужного сервиса
-        #         service = get_blockchain_service(self.currency.network)
-        #         # create_new_address теперь может возвращать кортеж (адрес, приватный ключ)
-        #         new_address, private_key = service.create_new_address()
-        #         self.deposit_address = new_address
-        #         # В проде здесь должно быть шифрование
-        #         self.encrypted_private_key = private_key 
-        #         logger.warning(f"🚨 Generated new {self.currency.symbol} address {new_address} for user {self.user.email if self.user else 'None'}")
-        #     except Exception as e:
-        #         logger.error(f"Could not generate address for {self.currency.symbol}: {e}")
-        pass  # Заглушка для правильного синтаксиса
-
-        # При создании кошелька или если available_balance не был установлен вручную
+        # Обновление available_balance в пределах инвариантов
         if self.pk is None or self.available_balance == Decimal('0.0') and self.locked_balance == Decimal('0.0'):
-             self.available_balance = self.balance - self.locked_balance
+            self.available_balance = self.balance - self.locked_balance
         else:
-            # Available balance не может быть больше общего баланса
             self.available_balance = self.balance - self.locked_balance
             if self.available_balance < 0:
                 self.available_balance = Decimal('0.0')
@@ -234,11 +209,9 @@ class UserWallet(models.Model):
         super().save(*args, **kwargs)
 
     class Meta:
-        unique_together = ('user', 'currency', 'is_system_wallet') # Гарантируем уникальность кошелька для пользователя/системы и валюты
+        unique_together = ('user', 'currency', 'is_system_wallet')
         verbose_name = _('wallet')
         verbose_name_plural = _('wallets')
-
-
 
 
 class SystemWalletAddress(models.Model):
@@ -332,14 +305,6 @@ class ExchangeOrder(models.Model):
         return f"{self.from_amount} {self.from_currency.symbol} -> {self.to_currency.symbol} ({self.status})"
 
 
-# -------------------------------------------------------------
-#  CommissionWallet – внутренний кошелёк для накопления дохода
-# -------------------------------------------------------------
-# Отдельная таблица, чтобы не усложнять существующую модель UserWallet
-# дополнительными флагами. Для каждой активной валюты хранится
-# агрегированный баланс комиссии (profit) платформы. Видно только админам.
-
-
 class CommissionWallet(models.Model):
     """Внутренний кошелёк для накопления комиссии платформы по каждой валюте."""
 
@@ -368,12 +333,9 @@ class CommissionWallet(models.Model):
         verbose_name_plural = _('commission wallets')
 
     def __str__(self):
-        return f"Commission Wallet – {self.currency.symbol}"  
+        return f"Commission Wallet – {self.currency.symbol}"
 
 
-# -------------------------------------------------------------
-#  CommissionTransaction – история начисления комиссий
-# -------------------------------------------------------------
 class CommissionTransaction(models.Model):
     """История начисления комиссий платформы (exchange, withdraw и др.)."""
     COMMISSION_TYPE_CHOICES = [
@@ -393,12 +355,10 @@ class CommissionTransaction(models.Model):
         verbose_name_plural = 'commission transactions'
 
     def __str__(self):
-        return f"{self.get_commission_type_display()} {self.amount} {self.currency.symbol} ({self.created_at:%Y-%m-%d %H:%M})"  
+        return f"{self.get_commission_type_display()} {self.amount} {self.currency.symbol} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
-# --- Фикстура для автозаполнения популярных валют и сетей ---
 def create_default_cryptocurrencies():
-    # Примеры: BTC, ETH, USDT-ERC20, USDT-TRC20, BNB, XRP, LTC, SOL, MATIC
     default_cryptos = [
         {"name": "Bitcoin", "symbol": "BTC", "network": "BTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
         {"name": "Ethereum", "symbol": "ETH", "network": "ERC20", "decimals": 18, "requires_memo": False, "icon_b64": None},
@@ -425,44 +385,30 @@ def create_default_cryptocurrencies():
             if crypto_data["icon_b64"]:
                 obj.icon.save(f"{crypto_data['symbol']}.png", ContentFile(base64.b64decode(crypto_data["icon_b64"])), save=True)
         else:
-            # Update existing records if needed
             obj.decimals = crypto_data["decimals"]
             obj.requires_memo = crypto_data["requires_memo"]
         
         obj.is_active = True
         obj.save()
 
-# Вызов при миграции или через shell
-
 
 class GeneratedWallet(models.Model):
-    """
-    Отслеживает все сгенерированные кошельки для предотвращения потери соответствия ключ-адрес
-    """
     address = models.CharField(max_length=255, unique=True, verbose_name=_('Wallet Address'), db_index=True)
     encrypted_private_key = models.TextField(verbose_name=_('Encrypted Private Key'))
     currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, verbose_name=_('Currency'))
     network = models.CharField(max_length=50, verbose_name=_('Network'))
-    
-    # Связь с пользователем (может быть None для системных кошельков)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, verbose_name=_('User'))
-    
-    # Тип кошелька
     WALLET_TYPE_CHOICES = [
         ('user', _('User Wallet')),
         ('system', _('System Wallet')),
         ('test', _('Test Wallet')),
     ]
     wallet_type = models.CharField(max_length=10, choices=WALLET_TYPE_CHOICES, default='user', verbose_name=_('Wallet Type'))
-    
-    # Метаданные
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Created At'))
-    created_by = models.CharField(max_length=100, blank=True, verbose_name=_('Created By'))  # Функция/модуль создания
+    created_by = models.CharField(max_length=100, blank=True, verbose_name=_('Created By'))
     is_active = models.BooleanField(default=True, verbose_name=_('Is Active'))
-    
-    # Дополнительная информация
     notes = models.TextField(blank=True, verbose_name=_('Notes'))
-    
+
     class Meta:
         verbose_name = _('Generated Wallet')
         verbose_name_plural = _('Generated Wallets')
@@ -473,17 +419,13 @@ class GeneratedWallet(models.Model):
             models.Index(fields=['user', 'wallet_type']),
             models.Index(fields=['created_at']),
         ]
-    
+
     def __str__(self):
         user_info = f"User {self.user.id}" if self.user else "System"
         return f"{self.address} ({self.currency.symbol}/{self.network}) - {user_info}"
-    
+
     @classmethod
-    def record_generated_wallet(cls, address: str, private_key: str, currency, network: str, 
-                              user=None, wallet_type: str = 'user', created_by: str = '', notes: str = ''):
-        """
-        Записывает сгенерированный кошелек в БД
-        """
+    def record_generated_wallet(cls, address: str, private_key: str, currency, network: str, user=None, wallet_type: str = 'user', created_by: str = '', notes: str = ''):
         return cls.objects.create(
             address=address,
             encrypted_private_key=private_key,
@@ -494,26 +436,19 @@ class GeneratedWallet(models.Model):
             created_by=created_by,
             notes=notes
         )
-    
+
     @classmethod
     def get_wallet_by_address(cls, address: str):
-        """
-        Получить информацию о кошельке по адресу
-        """
         try:
             return cls.objects.get(address=address)
         except cls.DoesNotExist:
             return None
-    
+
     @classmethod
     def verify_key_address_match(cls, address: str, private_key: str) -> bool:
-        """
-        Проверяет соответствие приватного ключа и адреса
-        """
         try:
             from eth_account import Account
             account = Account.from_key(private_key)
             return account.address.lower() == address.lower()
         except Exception:
             return False
-

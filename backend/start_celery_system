@@ -2,29 +2,34 @@
 # Полный запуск Celery системы (Workers + Beat)
 
 cd /home/chaizer/projects/Cryptoobmen/backend
-source venv/bin/activate
 
 echo "🚀 Запуск полной Celery системы..."
 echo ""
 
 # Останавливаем все старые процессы
 echo "🛑 Остановка старых процессов..."
-pkill -f celery 2>/dev/null
+pkill -f "celery.*worker" 2>/dev/null
+pkill -f "celery.*beat" 2>/dev/null
+echo "   Процессы остановлены"
 sleep 3
+echo "   Ожидание завершено"
 
 echo ""
 echo "🔧 Запуск Workers..."
 
-# Запускаем workers
-celery -A core worker -l info -Q high_priority -n high_priority_worker --concurrency=2 &
+# Запускаем workers с активированным виртуальным окружением
+echo "   🚀 Запуск High priority worker..."
+nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q high_priority -n high_priority_worker --concurrency=2" > /tmp/celery_high.log 2>&1 &
 HIGH_PID=$!
 echo "   ⚡ High priority worker: PID $HIGH_PID"
 
-celery -A core worker -l info -Q medium_priority -n medium_priority_worker --concurrency=2 &
+echo "   🚀 Запуск Medium priority worker..."
+nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q medium_priority -n medium_priority_worker --concurrency=2" > /tmp/celery_medium.log 2>&1 &
 MEDIUM_PID=$!
 echo "   🔄 Medium priority worker: PID $MEDIUM_PID"
 
-celery -A core worker -l info -Q low_priority -n low_priority_worker --concurrency=2 &
+echo "   🚀 Запуск Low priority worker..."
+nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q low_priority -n low_priority_worker --concurrency=2" > /tmp/celery_low.log 2>&1 &
 LOW_PID=$!
 echo "   📊 Low priority worker: PID $LOW_PID"
 
@@ -32,7 +37,8 @@ sleep 3
 
 echo ""
 echo "⏰ Запуск Beat scheduler..."
-celery -A core beat --loglevel=info &
+echo "   🚀 Запуск Beat scheduler..."
+nohup bash -c "source venv/bin/activate && celery -A core beat --loglevel=info" > /tmp/celery_beat.log 2>&1 &
 BEAT_PID=$!
 echo "   🕒 Beat scheduler: PID $BEAT_PID"
 
@@ -49,11 +55,11 @@ echo "   Beat: $BEAT_COUNT процесс"
 
 echo ""
 echo "🔧 Управление:"
-echo "   Остановка всего: pkill -f celery"
+echo "   Остановка всего: ./stop_celery_system"
 echo "   Только workers: pkill -f 'celery.*worker'"
 echo "   Только beat: pkill -f 'celery.*beat'"
 echo "   Статус: ps aux | grep celery"
-echo "   Мониторинг: celery -A core inspect active"
+echo "   Мониторинг: bash -c 'source venv/bin/activate && celery -A core inspect active'"
 
 echo ""
 echo "🟢 Система готова к работе!"
@@ -64,7 +70,7 @@ if [ "$1" != "--daemon" ]; then
     echo "💡 Нажмите Ctrl+C для остановки системы"
     
     # Обработчик сигналов
-    trap 'echo ""; echo "🛑 Остановка системы..."; pkill -f celery; echo "✅ Система остановлена"; exit 0' SIGINT SIGTERM
+    trap 'echo ""; echo "🛑 Остановка системы..."; pkill -f "celery.*worker" 2>/dev/null; pkill -f "celery.*beat" 2>/dev/null; sleep 2; echo "✅ Система остановлена"; exit 0' SIGINT SIGTERM
     
     # Ждем сигнала
     wait
