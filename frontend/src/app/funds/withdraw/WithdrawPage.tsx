@@ -83,6 +83,22 @@ export const WithdrawPage: React.FC = () => {
     useState<WithdrawalStatus | null>(null);
   const [cancelling, setCancelling] = useState<boolean>(false);
 
+  // Состояния для MEMO
+  const [requiresMemo, setRequiresMemo] = useState<boolean>(false);
+  const [memo, setMemo] = useState<string>("");
+
+  // Состояния для расчета стоимости вывода
+  const [withdrawalCost, setWithdrawalCost] = useState<{
+    withdrawal_amount: string;
+    gas_cost: string;
+    platform_fee: string;
+    total_cost: string;
+    calculation_method: string;
+    currency_symbol: string;
+  } | null>(null);
+  const [costLoading, setCostLoading] = useState<boolean>(false);
+  const [maxAmountLoading, setMaxAmountLoading] = useState<boolean>(false);
+
   // Функция загрузки кошельков
   const fetchWallets = async () => {
     try {
@@ -200,35 +216,43 @@ export const WithdrawPage: React.FC = () => {
 
   // Обновление расчета комиссии при изменении суммы или кошелька
   useEffect(() => {
-    if (selectedWalletId && amount && !isNaN(parseFloat(amount))) {
+    if (selectedWalletId && amount && !isNaN(parseFloat(amount)) && destinationAddress) {
       const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
       if (selectedWallet) {
+        // Используем новый API для расчета стоимости
+        calculateWithdrawalCost(selectedWalletId, amount, destinationAddress, memo || undefined);
+      }
+    } else {
+      setFee("0");
+      setFeeUsd("0");
+      setNetAmount("0");
+      setWithdrawalCost(null);
+    }
+  }, [selectedWalletId, amount, destinationAddress, memo, wallets]);
 
+  // Обновление отображения комиссий на основе данных от API
+  useEffect(() => {
+    if (withdrawalCost) {
+      const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
+      if (selectedWallet) {
+        // Используем данные от API
+        setFee(withdrawalCost.platform_fee);
+        setNetAmount(withdrawalCost.withdrawal_amount);
+        
+        // Для USD конвертации используем старую логику
         let cryptoPrice = null;
         if (selectedWallet.currency.symbol === 'USDT') {
           cryptoPrice = prices.find(p => p.symbol === 'USDT');
         } else {
           cryptoPrice = prices.find(p => p.crypto_id === selectedWallet.currency.id);
         }
-
+        
         if (cryptoPrice) {
-          // Расчет комиссии (примерно 0.1% от суммы вывода)
-          const feePercentage = 0.1;
-          const amountValue = parseFloat(amount);
-          const feeValue = (amountValue * feePercentage) / 100;
-          const netAmountValue = amountValue - feeValue;
-
-          setFee(feeValue.toFixed(8));
-          setFeeUsd((feeValue * cryptoPrice.prices.usd).toFixed(2));
-          setNetAmount(netAmountValue.toFixed(8));
+          setFeeUsd((parseFloat(withdrawalCost.platform_fee) * cryptoPrice.prices.usd).toFixed(2));
         }
       }
-    } else {
-      setFee("0");
-      setFeeUsd("0");
-      setNetAmount("0");
     }
-  }, [selectedWalletId, amount, wallets, prices]);
+  }, [withdrawalCost, selectedWalletId, wallets, prices]);
 
   // Обработчики изменения полей формы
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -249,11 +273,154 @@ export const WithdrawPage: React.FC = () => {
     return wallet.available_balance;
   };
 
-  // Установка максимальной доступной суммы
-  const setMaxAmount = () => {
-    const maxAmount = getMaxAvailableAmount();
-    setAmount(maxAmount);
+  // Расчет стоимости вывода с учетом газа и комиссий
+  const calculateWithdrawalCost = async (walletId: number, amount: string, destinationAddress: string, memo?: string) => {
+    try {
+      setCostLoading(true);
+      console.log('=== РАСЧЕТ СТОИМОСТИ ВЫВОДА ===');
+      console.log('Параметры запроса:', {
+        walletId,
+        amount,
+        destinationAddress,
+        memo
+      });
+
+      // Получаем crypto_id из выбранного кошелька
+      const wallet = wallets.find((w) => w.id === walletId);
+      if (!wallet) {
+        throw new Error('Кошелек не найден');
+      }
+
+      const requestData = {
+        crypto_id: wallet.currency.id,
+        destination_address: destinationAddress,
+        amount: parseFloat(amount)
+      };
+
+      console.log('Найденный кошелек:', wallet);
+      console.log('crypto_id из кошелька:', wallet.currency.id);
+      console.log('amount для расчета:', parseFloat(amount));
+      console.log('Данные для отправки:', requestData);
+
+      const response = await api.post('/transactions/withdrawals/calculate-cost/', requestData);
+      
+      console.log('=== ОТВЕТ ОТ СЕРВЕРА ===');
+      console.log('Полный ответ:', response);
+      console.log('Тип ответа:', typeof response);
+      console.log('Ключи ответа:', Object.keys(response || {}));
+      
+      if (response) {
+        console.log('Структура ответа:');
+        Object.entries(response).forEach(([key, value]) => {
+          console.log(`  ${key}:`, value, `(тип: ${typeof value})`);
+        });
+        
+        // Сохраняем результат в состояние
+        setWithdrawalCost(response);
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Ошибка при расчете стоимости вывода:', error);
+      console.error('Детали ошибки:', {
+        message: error?.message,
+        status: error?.status,
+        response: error?.response
+      });
+      setWithdrawalCost(null);
+      throw error;
+    } finally {
+      setCostLoading(false);
+    }
   };
+
+  // Установка максимальной доступной суммы с учетом газа и комиссий
+  const setMaxAmount = async () => {
+    console.log('=== КНОПКА МАКС НАЖАТА ===');
+    console.log('selectedWalletId:', selectedWalletId);
+    console.log('destinationAddress:', destinationAddress);
+    
+    if (!selectedWalletId || !destinationAddress) {
+      // Если нет выбранного кошелька или адреса, используем старую логику
+      console.log('Нет кошелька или адреса, используем старую логику');
+      const maxAmount = getMaxAvailableAmount();
+      setAmount(maxAmount);
+      return;
+    }
+
+    setMaxAmountLoading(true);
+    setError(null);
+
+    try {
+      const wallet = wallets.find((w) => w.id === selectedWalletId);
+      if (!wallet) return;
+
+      const availableBalance = parseFloat(wallet.available_balance);
+      
+      // Используем бинарный поиск для нахождения максимальной суммы
+      let left = 0;
+      let right = availableBalance;
+      let maxWithdrawable = 0;
+      const precision = 0.00000001; // 8 знаков после запятой
+      
+      console.log('=== БИНАРНЫЙ ПОИСК МАКСИМАЛЬНОЙ СУММЫ ===');
+      console.log('Доступный баланс:', availableBalance);
+      
+      while (right - left > precision) {
+        const mid = (left + right) / 2;
+        const testAmount = mid.toFixed(8);
+        
+        try {
+          const response = await calculateWithdrawalCost(
+            selectedWalletId,
+            testAmount,
+            destinationAddress,
+            memo || undefined
+          );
+          
+          if (response && response.total_cost) {
+            const totalCost = parseFloat(response.total_cost);
+            const withdrawalAmount = parseFloat(response.withdrawal_amount);
+            
+            // Проверяем, что общая стоимость не превышает доступный баланс
+            if (totalCost <= availableBalance) {
+              maxWithdrawable = withdrawalAmount;
+              left = mid;
+            } else {
+              right = mid;
+            }
+          } else {
+            right = mid;
+          }
+        } catch (error) {
+          console.log('Ошибка при тестировании суммы:', testAmount, error);
+          right = mid;
+        }
+      }
+      
+      console.log('=== РЕЗУЛЬТАТ ПОИСКА ===');
+      console.log('Максимально возможная сумма для вывода:', maxWithdrawable);
+      
+      if (maxWithdrawable > 0) {
+        const maxAmount = maxWithdrawable.toFixed(8);
+        console.log('Устанавливаем сумму:', maxAmount);
+        setAmount(maxAmount);
+        setError(null);
+      } else {
+        console.log('Недостаточно средств для покрытия комиссий');
+        setAmount("0");
+        setError("Недостаточно средств для покрытия комиссий и газа");
+      }
+    } catch (error) {
+      console.error('Ошибка при расчете максимальной суммы:', error);
+      // Fallback на старую логику
+      const maxAmount = getMaxAvailableAmount();
+      setAmount(maxAmount);
+    } finally {
+      setMaxAmountLoading(false);
+    }
+  };
+
 
   // Получение requires_memo для выбранного кошелька
   useEffect(() => {
@@ -288,9 +455,6 @@ export const WithdrawPage: React.FC = () => {
     };
     fetchRequiresMemo();
   }, [selectedWallet]);
-
-  const [requiresMemo, setRequiresMemo] = useState<boolean>(false);
-  const [memo, setMemo] = useState<string>("");
 
   // Отправка формы
   const handleSubmit = async (e: React.FormEvent) => {
@@ -668,10 +832,21 @@ export const WithdrawPage: React.FC = () => {
               />
               <button
                 type="button"
-                onClick={setMaxAmount}
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-purple-600 hover:bg-purple-700 text-white text-xs py-1 px-2 rounded transition"
+                onClick={(e) => {
+                  console.log('Кнопка МАКС нажата!', e);
+                  setMaxAmount();
+                }}
+                disabled={maxAmountLoading}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed text-white text-xs py-1 px-2 rounded transition flex items-center gap-1"
               >
-                МАКС
+                {maxAmountLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                    <span>...</span>
+                  </>
+                ) : (
+                  "МАКС"
+                )}
               </button>
             </div>
             {selectedWalletId && (
@@ -740,41 +915,83 @@ export const WithdrawPage: React.FC = () => {
                 <h3 className="text-sm font-medium text-gray-300 mb-3">
                   Детали вывода:
                 </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Сумма вывода:</span>
-                    <span>
-                      {amount}{" "}
-                      {
-                        wallets.find((w) => w.id === selectedWalletId)?.currency
-                          .symbol
-                      }
-                    </span>
+                {costLoading ? (
+                  <div className="text-center text-gray-400">
+                    <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span className="ml-2">Расчет стоимости...</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Комиссия (0.1%):</span>
-                    <span className="text-yellow-400">
-                      {fee}{" "}
-                      {
-                        wallets.find((w) => w.id === selectedWalletId)?.currency
-                          .symbol
-                      }{" "}
-                      (≈${feeUsd})
-                    </span>
+                ) : withdrawalCost ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Сумма вывода:</span>
+                      <span>
+                        {withdrawalCost.withdrawal_amount}{" "}
+                        {withdrawalCost.currency_symbol}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Комиссия платформы:</span>
+                      <span className="text-yellow-400">
+                        {withdrawalCost.platform_fee}{" "}
+                        {withdrawalCost.currency_symbol}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Стоимость газа:</span>
+                      <span className="text-orange-400">
+                        {withdrawalCost.gas_cost}{" "}
+                        {withdrawalCost.currency_symbol}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-medium pt-2 border-t border-gray-600">
+                      <span>Общая стоимость:</span>
+                      <span className="text-red-400">
+                        {withdrawalCost.total_cost}{" "}
+                        {withdrawalCost.currency_symbol}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">
+                      Метод расчета: {withdrawalCost.calculation_method}
+                    </div>
                   </div>
-                  <div className="flex justify-between font-medium pt-2 border-t border-gray-600">
-                    <span>Итого к получению:</span>
-                    <span className="text-green-400">
-                      {netAmount}{" "}
-                      {
-                        wallets.find((w) => w.id === selectedWalletId)?.currency
-                          .symbol
-                      }
-                    </span>
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Сумма вывода:</span>
+                      <span>
+                        {amount}{" "}
+                        {
+                          wallets.find((w) => w.id === selectedWalletId)?.currency
+                            .symbol
+                        }
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Комиссия:</span>
+                      <span className="text-yellow-400">
+                        {fee}{" "}
+                        {
+                          wallets.find((w) => w.id === selectedWalletId)?.currency
+                            .symbol
+                        }{" "}
+                        (≈${feeUsd})
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-medium pt-2 border-t border-gray-600">
+                      <span>Итого к получению:</span>
+                      <span className="text-green-400">
+                        {netAmount}{" "}
+                        {
+                          wallets.find((w) => w.id === selectedWalletId)?.currency
+                            .symbol
+                        }
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
+
 
           {/* Предупреждение о безопасности */}
           <div className="mb-6 p-4 bg-yellow-900 bg-opacity-20 rounded-lg border-l-4 border-yellow-500">

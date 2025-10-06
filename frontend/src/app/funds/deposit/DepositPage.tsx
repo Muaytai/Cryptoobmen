@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
+import GasWarningModal from '@/components/modalWindows/GasWarningModal';
 
 console.log('--- Файл DepositPage.tsx ЗАГРУЖЕН (v2) ---');
 
@@ -27,6 +28,13 @@ interface DepositInfo {
   memo?: string;
   requires_memo?: boolean;
   qr_code?: string; // добавлено поле для QR-кода
+  currency_symbol?: string;
+  network?: string;
+  gas_info?: {
+    estimated_gas_cost: string;
+    currency_symbol: string;
+    calculation_method: string;
+  };
 }
 
 interface SavedDepositInfo {
@@ -80,6 +88,8 @@ export const DepositPage: React.FC = () => {
   const [copiedMemo, setCopiedMemo] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showBypass, setShowBypass] = useState<boolean>(false);
+  const [showGasWarning, setShowGasWarning] = useState<boolean>(false);
+  const [pendingDepositData, setPendingDepositData] = useState<any>(null);
 
   const { walletId, crypto } = useDepositParams();
 
@@ -119,6 +129,34 @@ export const DepositPage: React.FC = () => {
     });
     router.push('/funds/deposit');
   }, [router]);
+
+  const handleGasWarningClose = useCallback(() => {
+    setShowGasWarning(false);
+    setPendingDepositData(null);
+    setStatus('select_currency');
+  }, []);
+
+  const handleGasWarningConfirm = useCallback(() => {
+    if (pendingDepositData) {
+      setDepositInfo({
+        address: pendingDepositData.address,
+        memo: pendingDepositData.memo,
+        requires_memo: pendingDepositData.requires_memo,
+        qr_code: pendingDepositData.qr_code,
+        currency_symbol: pendingDepositData.currency_symbol,
+        network: pendingDepositData.network,
+        gas_info: pendingDepositData.gas_info,
+      });
+      setStatus('waiting');
+      setShowGasWarning(false);
+      setPendingDepositData(null);
+      
+      toast.success('Адрес для пополнения получен', {
+        duration: 5000,
+        position: 'top-center',
+      });
+    }
+  }, [pendingDepositData]);
 
   const fetchCurrencies = useCallback(async () => {
     console.log('DepositPage: fetchCurrencies начало выполнения');
@@ -407,20 +445,41 @@ export const DepositPage: React.FC = () => {
         throw new Error('Сервер вернул некорректные данные без адреса');
       }
       
-      setDepositInfo({
-        address: data.address,
-        memo: data.memo,
-        requires_memo: data.requires_memo,
-        qr_code: data.qr_code, // сохраняем qr_code, если есть
-      });
-      
-      // Важно: устанавливаем статус waiting только после успешного получения всех данных
-      setStatus('waiting');
-      
-      toast.success('Адрес для пополнения получен', {
-        duration: 5000,
-        position: 'top-center',
-      });
+      // Проверяем, есть ли информация о газе (прокси кошелек)
+      if (data.gas_info) {
+        // Сохраняем данные для модального окна
+        setPendingDepositData({
+          address: data.address,
+          memo: data.memo,
+          requires_memo: data.requires_memo,
+          qr_code: data.qr_code,
+          currency_symbol: data.currency_symbol,
+          network: data.network,
+          gas_info: data.gas_info,
+        });
+        
+        // Показываем модальное окно с предупреждением
+        setShowGasWarning(true);
+        setStatus('select_currency'); // Возвращаемся к выбору валюты до подтверждения
+      } else {
+        // Обычный депозит без прокси кошелька
+        setDepositInfo({
+          address: data.address,
+          memo: data.memo,
+          requires_memo: data.requires_memo,
+          qr_code: data.qr_code,
+          currency_symbol: data.currency_symbol,
+          network: data.network,
+          gas_info: data.gas_info,
+        });
+        
+        setStatus('waiting');
+        
+        toast.success('Адрес для пополнения получен', {
+          duration: 5000,
+          position: 'top-center',
+        });
+      }
     } catch (err: any) {
       toast.dismiss();
       console.error('DepositPage: ошибка при получении информации для депозита:', err);
@@ -774,11 +833,11 @@ export const DepositPage: React.FC = () => {
         
       case 'select_currency':
         return (
-          <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
-            <h2 className="text-xl font-bold mb-6 text-center">Выберите валюту для пополнения</h2>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md border border-gray-200 dark:border-gray-700">
+            <h2 className="text-xl font-bold mb-6 text-center text-gray-900 dark:text-white">Выберите валюту для пополнения</h2>
             
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-400 mb-2">Криптовалюта:</label>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Криптовалюта:</label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {availableCurrencies
                   .filter((c, index, self) => 
@@ -791,7 +850,7 @@ export const DepositPage: React.FC = () => {
                       className={`p-3 rounded-lg flex flex-col items-center justify-center transition ${
                         selectedCurrency === currency.symbol 
                           ? 'bg-purple-700 border-2 border-purple-500' 
-                          : 'bg-gray-700 hover:bg-gray-650'
+                          : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-650'
                       }`}
                     >
                       {currency.icon && currency.icon.trim() !== '' ? (() => {
@@ -820,7 +879,7 @@ export const DepositPage: React.FC = () => {
                                 }}
                               />
                               <div 
-                                className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold"
+                                className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold text-gray-800 dark:text-white"
                                 style={{ display: 'none' }}
                               >
                                 {currency.symbol.slice(0, 2)}
@@ -830,17 +889,17 @@ export const DepositPage: React.FC = () => {
                         } catch (error) {
                           console.error('DepositPage: Некорректный URL иконки валюты:', iconUrl, error);
                           return (
-                            <div className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold">
+                            <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold text-gray-800 dark:text-white">
                               {currency.symbol.slice(0, 2)}
                             </div>
                           );
                         }
                       })() : (
-                        <div className="w-8 h-8 bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold">
+                        <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold text-gray-800 dark:text-white">
                           {currency.symbol.slice(0, 2)}
                         </div>
                       )}
-                      <span className="text-sm">{currency.symbol}</span>
+                      <span className="text-sm text-gray-800 dark:text-white">{currency.symbol}</span>
                     </button>
                   ))
                 }
@@ -849,7 +908,7 @@ export const DepositPage: React.FC = () => {
             
             {selectedCurrency && networkOptions.length > 0 && (
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-400 mb-2">Выберите сеть:</label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Выберите сеть:</label>
                 <div className="grid grid-cols-1 gap-2">
                   {networkOptions.map(network => (
                     <button
@@ -858,15 +917,15 @@ export const DepositPage: React.FC = () => {
                       className={`p-3 rounded-lg text-center transition ${
                         selectedNetwork === network 
                           ? 'bg-purple-700 border-2 border-purple-500' 
-                          : 'bg-gray-700 hover:bg-gray-650'
+                          : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-650'
                       }`}
                     >
-                      {network}
+                      <span className="text-gray-800 dark:text-white">{network}</span>
                     </button>
                   ))}
                 </div>
                 {networkOptions.length > 1 && (
-                  <p className="text-xs text-yellow-500 mt-2">
+                  <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-2">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
@@ -914,7 +973,7 @@ export const DepositPage: React.FC = () => {
         if (!depositInfo) return null;
         
         return (
-          <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-center mb-6">
               {selectedCurrency && (() => {
                 const currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
@@ -936,8 +995,8 @@ export const DepositPage: React.FC = () => {
                 if (!iconPath || iconPath.trim() === '') {
                   console.warn('DepositPage: Пустой путь к иконке для валюты:', selectedCurrency);
                   return (
-                    <div className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center">
-                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                    <div className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full mr-3 flex items-center justify-center">
+                      <span className="text-gray-800 dark:text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
                     </div>
                   );
                 }
@@ -951,8 +1010,8 @@ export const DepositPage: React.FC = () => {
                 } catch (error) {
                   console.error('DepositPage: Некорректный URL для изображения:', fullImageUrl, error);
                   return (
-                    <div className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center">
-                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                    <div className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full mr-3 flex items-center justify-center">
+                      <span className="text-gray-800 dark:text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
                     </div>
                   );
                 }
@@ -976,33 +1035,33 @@ export const DepositPage: React.FC = () => {
                       }}
                     />
                     <div 
-                      className="w-12 h-12 bg-gray-600 rounded-full mr-3 flex items-center justify-center"
+                      className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full mr-3 flex items-center justify-center"
                       style={{ display: 'none' }}
                     >
-                      <span className="text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
+                      <span className="text-gray-800 dark:text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
                     </div>
                   </>
                 );
               })()}
               <div>
-                <h2 className="text-xl font-bold">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.name}</h2>
-                <p className="text-gray-400">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol} ({selectedNetwork})</p>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.name}</h2>
+                <p className="text-gray-600 dark:text-gray-400">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol} ({selectedNetwork})</p>
               </div>
             </div>
             
             <div className="mb-4">
-              <label htmlFor="deposit-address" className="block text-sm font-medium text-gray-400">Адрес кошелька для пополнения:</label>
+              <label htmlFor="deposit-address" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Адрес кошелька для пополнения:</label>
               <div className="mt-1 relative">
                 <input
                   id="deposit-address"
                   type="text"
                   readOnly
                   value={depositInfo.address}
-                  className="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2 pr-10"
+                  className="block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-900 dark:text-white p-2 pr-10"
                 />
                 <button 
                   onClick={() => copyToClipboard(depositInfo.address, 'address')}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white"
                   title="Копировать адрес"
                 >
                   {copiedAddress ? (
@@ -1020,7 +1079,7 @@ export const DepositPage: React.FC = () => {
             {/* QR-код для депозита */}
             {depositInfo.qr_code && (
               <div className="mb-6 flex flex-col items-center">
-                <label className="block text-sm font-medium text-gray-400 mb-2">QR-код для пополнения:</label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">QR-код для пополнения:</label>
                 <img
                   src={depositInfo.qr_code}
                   alt="QR-код для пополнения"
@@ -1032,18 +1091,18 @@ export const DepositPage: React.FC = () => {
             {depositInfo.requires_memo && (
               <>
                 <div className="mb-6">
-                  <label htmlFor="deposit-memo" className="block text-sm font-medium text-gray-400">MEMO (обязательно для зачисления):</label>
+                  <label htmlFor="deposit-memo" className="block text-sm font-medium text-gray-600 dark:text-gray-400">MEMO (обязательно для зачисления):</label>
                   <div className="mt-1 relative">
                     <input
                       id="deposit-memo"
                       type="text"
                       readOnly
                       value={depositInfo.memo}
-                      className="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white p-2 pr-10"
+                      className="block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-900 dark:text-white p-2 pr-10"
                     />
                     <button 
                       onClick={() => copyToClipboard(depositInfo.memo || '', 'memo')}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white"
                       title="Копировать MEMO"
                     >
                       {copiedMemo ? (
@@ -1058,7 +1117,7 @@ export const DepositPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
-                <div className="bg-yellow-900 border-l-4 border-yellow-500 text-yellow-200 p-4 rounded-md mb-6">
+                <div className="bg-yellow-50 dark:bg-yellow-900 border-l-4 border-yellow-500 text-yellow-800 dark:text-yellow-200 p-4 rounded-md mb-6">
                   <h4 className="font-bold flex items-center">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -1072,7 +1131,7 @@ export const DepositPage: React.FC = () => {
                     <li>Минимальная сумма пополнения: 10 {selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol}.</li>
                   </ul>
                 </div>
-                <div className="bg-blue-900 border-l-4 border-blue-500 text-blue-200 p-4 rounded-md mb-6">
+                <div className="bg-blue-50 dark:bg-blue-900 border-l-4 border-blue-500 text-blue-800 dark:text-blue-200 p-4 rounded-md mb-6">
                   <h4 className="font-bold flex items-center">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
@@ -1090,6 +1149,25 @@ export const DepositPage: React.FC = () => {
               </>
             )}
             
+            {/* Информация о газе для прокси кошелька */}
+            {depositInfo.gas_info && (
+              <div className="bg-amber-50 dark:bg-amber-900 bg-opacity-20 dark:bg-opacity-20 border-l-4 border-amber-500 p-4 rounded-md mb-6">
+                <h4 className="font-bold text-amber-800 dark:text-amber-300 mb-2 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  Информация о газе
+                </h4>
+                <div className="text-amber-700 dark:text-amber-200 text-sm">
+                  <p><strong>Сеть:</strong> {depositInfo.network}</p>
+                  <p><strong>Примерная стоимость газа:</strong> {depositInfo.gas_info.estimated_gas_cost} {depositInfo.gas_info.currency_symbol}</p>
+                  <p className="text-xs text-amber-600 dark:text-amber-300 mt-2">
+                    * Газ будет списан дважды: при переводе на прокси и с прокси на финальный адрес
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 text-center text-blue-400 animate-pulse flex items-center justify-center">
               <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -1101,7 +1179,7 @@ export const DepositPage: React.FC = () => {
             <div className="mt-6 text-center">
               <button 
                 onClick={handleCancel}
-                className="text-purple-400 hover:text-purple-300 transition"
+                className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition"
               >
                 Отменить и выбрать другую валюту
               </button>
@@ -1115,6 +1193,16 @@ export const DepositPage: React.FC = () => {
     <div className="container mx-auto p-4 flex flex-col items-center">
       <h1 className="text-2xl font-bold mb-8 text-center">Пополнение кошелька</h1>
       {renderContent()}
+      
+      {/* Модальное окно с предупреждением о газе */}
+      <GasWarningModal
+        isOpen={showGasWarning}
+        onClose={handleGasWarningClose}
+        onConfirm={handleGasWarningConfirm}
+        gasInfo={pendingDepositData?.gas_info || null}
+        currencySymbol={pendingDepositData?.currency_symbol || selectedCurrency || ''}
+        network={pendingDepositData?.network || selectedNetwork || ''}
+      />
     </div>
   );
 };
