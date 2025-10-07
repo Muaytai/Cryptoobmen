@@ -10,6 +10,8 @@ from .serializers import (
     UserProfileSerializer
 )
 from .models import UserDocument, UserProfile
+from .decorators import site_admin_required, site_admin_or_staff_required
+from .mixins import SiteAdminRequiredMixin, SiteAdminOrStaffRequiredMixin
 from django.db.models import Q
 from django.conf import settings
 from django.http import HttpResponseRedirect
@@ -158,3 +160,50 @@ class SocialLoginCallbackView(View):
         except Exception as e:
             logger.error(f"Ошибка при обработке социальной авторизации: {str(e)}")
             return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?error=server_error")
+
+
+# Примеры использования декораторов и миксинов для администраторов сайта
+
+@api_view(['GET'])
+@site_admin_required
+def admin_dashboard(request):
+    """Пример представления только для администраторов сайта"""
+    return Response({
+        'message': 'Добро пожаловать в панель администратора сайта!',
+        'user': request.user.email,
+        'is_site_admin': request.user.is_site_admin,
+        'is_superuser': request.user.is_superuser
+    })
+
+
+@api_view(['GET'])
+@site_admin_or_staff_required
+def admin_or_staff_dashboard(request):
+    """Пример представления для администраторов сайта или персонала"""
+    return Response({
+        'message': 'Добро пожаловать в панель управления!',
+        'user': request.user.email,
+        'is_site_admin': request.user.is_site_admin,
+        'is_staff': request.user.is_staff,
+        'is_superuser': request.user.is_superuser
+    })
+
+
+class AdminOnlyViewSet(SiteAdminRequiredMixin, viewsets.ModelViewSet):
+    """Пример ViewSet только для администраторов сайта"""
+    queryset = User.objects.all()
+    serializer_class = UserDetailsSerializer
+    
+    def list(self, request, *args, **kwargs):
+        """Список всех пользователей - только для администраторов сайта"""
+        return super().list(request, *args, **kwargs)
+
+
+class AdminOrStaffViewSet(SiteAdminOrStaffRequiredMixin, viewsets.ModelViewSet):
+    """Пример ViewSet для администраторов сайта или персонала"""
+    queryset = UserDocument.objects.all()
+    serializer_class = UserDocumentSerializer
+    
+    def list(self, request, *args, **kwargs):
+        """Список всех документов - для администраторов сайта или персонала"""
+        return super().list(request, *args, **kwargs)
