@@ -26,6 +26,7 @@ def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
         'BTC': Decimal('0.0001'),
         'ETH': Decimal('0.01'),
         'TRX': Decimal('10'),
+        'SOL': Decimal('0.01'),    # Минимум для SOL (с запасом комиссии сети)
     }
     return minimums.get(currency.symbol, Decimal('0.001'))
 
@@ -36,6 +37,7 @@ def get_gas_reserve(currency: Cryptocurrency) -> Decimal:
         'BTC': Decimal('0.00005'), 
         'ETH': Decimal('0.005'),
         'TRX': Decimal('5'),
+        'SOL': Decimal('0.002'),   # Резерв под комиссии Solana (~несколько тысяч лампортов)
     }
     return reserves.get(currency.symbol, Decimal('0.001'))
 
@@ -120,7 +122,11 @@ def check_consolidation_confirmations():
                     
                     # Рассчитываем реальные комиссии
                     gas_fee = tx.fee if tx.fee else Decimal('0')  # Комиссия за газ (уже записана в транзакции)
-                    platform_fee = Decimal('0')  # TODO: Платформенная комиссия (будет реализована позже)
+                    
+                    # Платформенная комиссия за консолидацию (процент от суммы депозита)
+                    platform_fee_percentage = tx.crypto.fee_percentage or Decimal('0.2')  # По умолчанию 0.2%
+                    platform_fee = (tx.amount * platform_fee_percentage) / Decimal('100')
+                    
                     total_fees = gas_fee + platform_fee
                     
                     # Списываем только комиссии с баланса пользователя
@@ -130,9 +136,28 @@ def check_consolidation_confirmations():
                         user_wallet.save()
                         logger.info(f"Deducted fees from user {tx.user.id}: gas={gas_fee}, platform={platform_fee}, total={total_fees}")
                         
-                        # Обновляем баланс пользователя с учетом зачисленного депозита минус газ
-                        # Депозит уже был зачислен ранее, теперь списываем только газ
-                        logger.info(f"User {tx.user.id} balance after consolidation: {user_wallet.balance} {tx.crypto.symbol} (deposit: {tx.amount}, gas deducted: {gas_fee})")
+                        # Начисляем платформенную комиссию на CommissionWallet
+                        if platform_fee > 0:
+                            from .models import CommissionWallet, CommissionTransaction
+                            
+                            commission_wallet, _ = CommissionWallet.objects.get_or_create(currency=tx.crypto)
+                            commission_wallet.balance += platform_fee
+                            commission_wallet.save()
+                            
+                            # Логируем транзакцию комиссии
+                            CommissionTransaction.objects.create(
+                                user=tx.user,
+                                currency=tx.crypto,
+                                amount=platform_fee,
+                                commission_type='consolidation',
+                                related_object_id=str(tx.id)
+                            )
+                            
+                            logger.info(f"Platform fee {platform_fee} {tx.crypto.symbol} added to commission wallet")
+                        
+                        # Обновляем баланс пользователя с учетом зачисленного депозита минус комиссии
+                        # Депозит уже был зачислен ранее, теперь списываем только комиссии
+                        logger.info(f"User {tx.user.id} balance after consolidation: {user_wallet.balance} {tx.crypto.symbol} (deposit: {tx.amount}, fees deducted: {total_fees})")
                     
                     logger.info(f"Consolidation confirmed: {tx.tx_hash} for {tx.amount} {tx.crypto.symbol} - funds secured, user balance preserved (fees: {total_fees})")
                     confirmed += 1

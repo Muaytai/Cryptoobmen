@@ -114,22 +114,24 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
     """
     logger.info(f"[BATCH] Starting batch processing for {len(user_wallets)} addresses of {currency.symbol}")
     
-    # Сначала получаем все балансы одним батчем
+    # Сначала получаем список адресов и сопоставление кошельков
     addresses = [wallet.deposit_address for wallet in user_wallets]
     address_to_wallet = {wallet.deposit_address: wallet for wallet in user_wallets}
-    
-    # Получаем балансы всех адресов батчем
-    balances = cached_batch_processor.batch_get_balances_cached(service, addresses)
-    
-    # Фильтруем адреса с ненулевыми балансами
+
+    # Для Solana не фильтруем по текущему балансу, чтобы не пропускать депозиты,
+    # которые уже были быстро сконсолидированы и баланс стал 0
+    is_solana = (currency.symbol.upper() == 'SOL') or ((currency.network or '').lower() == 'solana')
+
     active_addresses = []
     transaction_params = []
-    
-    for address, balance in balances.items():
-        if balance > 0:
+
+    if not is_solana:
+        # Получаем балансы всех адресов батчем и фильтруем > 0 для экономии RPC
+        balances = cached_batch_processor.batch_get_balances_cached(service, addresses)
+        for address, balance in balances.items():
+            if balance <= 0:
+                continue
             wallet = address_to_wallet[address]
-            
-            # Получаем последнюю транзакцию для расчёта min_timestamp
             from transactions.models import Transaction
             last_tx = Transaction.objects.filter(
                 user=wallet.user,
@@ -137,10 +139,7 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
                 tx_hash__isnull=False
             ).order_by("-timestamp").first()
             min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
-            
             active_addresses.append(address)
-            
-            # Подготавливаем параметры для get_transactions
             if currency.symbol == 'POL':
                 current_block = service.w3.eth.block_number
                 from_block = max(current_block - 500, 1)
@@ -149,10 +148,33 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
                 params = {'min_timestamp': min_ts, 'contract_address': currency.contract_address}
             else:
                 params = {'min_timestamp': min_ts}
-            
+            transaction_params.append((address, params))
+    else:
+        # Solana: обрабатываем все адреса, используя min_timestamp для ограничения
+        from transactions.models import Transaction
+        from datetime import timedelta
+        for address in addresses:
+            wallet = address_to_wallet[address]
+            last_tx = Transaction.objects.filter(
+                user=wallet.user,
+                crypto=currency,
+                tx_hash__isnull=False
+            ).order_by("-timestamp").first()
+            # Для SOL расширяем окно сканирования: минус 24 часа от последней tx,
+            # чтобы не пропустить депозиты при редких сканах/смещениях времени RPC
+            if last_tx:
+                widened_time = last_tx.timestamp - timedelta(hours=24)
+                min_ts = int(widened_time.timestamp() * 1000)
+            else:
+                min_ts = 0
+            active_addresses.append(address)
+            params = {'min_timestamp': min_ts}
             transaction_params.append((address, params))
     
-    logger.info(f"[BATCH] Found {len(active_addresses)} addresses with balance > 0 for {currency.symbol}")
+    if is_solana:
+        logger.info(f"[BATCH] (SOL) Processing all {len(active_addresses)} addresses with timestamp filtering")
+    else:
+        logger.info(f"[BATCH] Found {len(active_addresses)} addresses with balance > 0 for {currency.symbol}")
     
     results = {}
     
@@ -303,19 +325,10 @@ def check_blockchain_deposits():
                     logger.info(f"Updating balance for user {user.id} and wallet {wallet.currency.symbol}")
                     user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
                     
-                    # Для валют с мемо газ не нужен, зачисляем полную сумму
-                    if wallet.currency.requires_memo:
-                        user_wallet.balance += amount
-                        logger.info(f"[MEMO] Full amount credited: {amount} {wallet.currency.symbol}")
-                    else:
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        deposit_info = calculate_net_deposit_amount(
-                            currency=wallet.currency,
-                            deposit_amount=amount,
-                            user_address=user_wallet.deposit_address
-                        )
-                        user_wallet.balance += deposit_info['net_amount']
-                        logger.info(f"[NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
+                    # Для всех депозитов зачисляем ПОЛНУЮ сумму без вычета газа
+                    # Газ будет вычитаться только при выводе средств
+                    user_wallet.balance += amount
+                    logger.info(f"[DEPOSIT] Full amount credited: {amount} {wallet.currency.symbol} (gas will be deducted on withdrawal)")
                     
                     user_wallet.save()
 
@@ -475,24 +488,14 @@ def check_blockchain_deposits():
                     if Transaction.objects.filter(tx_hash=tx_hash).exists():
                         logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
                         continue
+                    
+                    # Для депозитов зачисляем ПОЛНУЮ сумму без вычета газа
+                    # Газ будет вычитаться только при выводе средств
+                    net_amount = amount
+                    gas_cost = Decimal('0')  # При депозите газ не вычитается
+                    logger.info(f"[BATCH] Full deposit amount credited: {amount} {currency.symbol} (gas will be deducted on withdrawal)")
                         
                     with transaction.atomic():
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        if not currency.requires_memo:
-                            deposit_info = calculate_net_deposit_amount(
-                                currency=currency,
-                                deposit_amount=amount,
-                                user_address=user_wallet.deposit_address
-                            )
-                            net_amount = deposit_info['net_amount']
-                            gas_cost = deposit_info['gas_cost']
-                            logger.info(f"[BATCH] Gas calculation: gross={amount}, net={net_amount}, gas={gas_cost} {currency.symbol}")
-                        else:
-                            # Для валют с мемо зачисляем полную сумму
-                            net_amount = amount
-                            gas_cost = Decimal('0')
-                            logger.info(f"[BATCH] Full amount for memo currency: {amount} {currency.symbol}")
-                        
                         user_wallet.balance += net_amount
                         user_wallet.save()
                         
@@ -615,19 +618,9 @@ def check_blockchain_deposits():
                 with transaction.atomic():
                     user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
                     
-                    # Для XRP (с мемо) газ не нужен, зачисляем полную сумму
-                    if wallet.currency.requires_memo:
-                        user_wallet.balance += amount
-                        logger.info(f"[XRP] Full amount credited: {amount} {wallet.currency.symbol}")
-                    else:
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        deposit_info = calculate_net_deposit_amount(
-                            currency=wallet.currency,
-                            deposit_amount=amount,
-                            user_address=user_wallet.deposit_address
-                        )
-                        user_wallet.balance += deposit_info['net_amount']
-                        logger.info(f"[XRP_NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
+                    # Для всех депозитов зачисляем ПОЛНУЮ сумму без вычета газа
+                    user_wallet.balance += amount
+                    logger.info(f"[XRP] Full amount credited: {amount} {wallet.currency.symbol}")
                     
                     user_wallet.save()
                     # Обновляем системный кошелек
@@ -688,6 +681,22 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
         return f"error:not_found"
 
     try:
+        # Рассчитываем стоимость газа ВНЕ транзакции
+        crypto = withdrawal.transaction.crypto
+        amount_to_send = withdrawal.transaction.amount
+        platform_fee = withdrawal.transaction.fee
+        
+        try:
+            gas_cost = calculate_withdrawal_gas_cost(
+                currency=crypto,
+                withdrawal_amount=amount_to_send,
+                destination_address=withdrawal.destination_address
+            )
+        except Exception as e:
+            logger.error(f"Failed to calculate gas cost for withdrawal {withdrawal_id}: {e}. Using default gas cost.")
+            # Используем минимальный газ в случае ошибки
+            gas_cost = Decimal('0.0001')
+
         # Используем одну транзакцию БД для всех проверок и начальных изменений
         with transaction.atomic():
             # Перезагружаем объект внутри транзакции для безопасности
@@ -706,17 +715,6 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
                 elif withdrawal.transaction.status == 'failed':
                     logger.warning(f"Withdrawal {withdrawal_id} already failed. Status: {withdrawal.transaction.status}. Skipping.")
                     return f"skip:already_failed"
-
-            crypto = withdrawal.transaction.crypto
-            amount_to_send = withdrawal.transaction.amount
-            platform_fee = withdrawal.transaction.fee
-            
-            # Рассчитываем стоимость газа для вывода
-            gas_cost = calculate_withdrawal_gas_cost(
-                currency=crypto,
-                withdrawal_amount=amount_to_send,
-                destination_address=withdrawal.destination_address
-            )
             
             total_amount = amount_to_send + platform_fee + gas_cost
             
@@ -914,9 +912,26 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal, D
         
         # Выполняем консолидацию
         logger.info(f"[CONSOLIDATION] Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet")
-        
+
+        # Готовим приватный ключ для отправки: используем сохранённый в UserWallet,
+        # а если его нет/пустой – пробуем взять из GeneratedWallet по адресу
+        private_key_input = user_wallet.encrypted_private_key or ""
+        if not private_key_input:
+            try:
+                from crypto.models import GeneratedWallet
+                gw = GeneratedWallet.objects.filter(address=user_wallet.deposit_address).order_by('-created_at').first()
+                if gw and gw.private_key:
+                    private_key_input = gw.private_key
+                    logger.info(f"[CONSOLIDATION] Loaded private key from GeneratedWallet for {user_wallet.deposit_address}")
+                else:
+                    logger.warning(f"[CONSOLIDATION] Private key not found for {user_wallet.deposit_address}; skipping consolidation")
+                    return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
+            except Exception as key_err:
+                logger.error(f"[CONSOLIDATION] Failed to load private key for {user_wallet.deposit_address}: {key_err}")
+                return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
+
         tx_hash = blockchain_service.send_transaction(
-            private_key=user_wallet.encrypted_private_key,
+            private_key=private_key_input,
             to_address=system_wallet_address,
             amount=amount_to_send,
         )
@@ -980,7 +995,21 @@ def process_pending_deposits():
             
             # Подготавливаем аргументы для параллельной обработки
             consolidation_args = []
+            from transactions.models import Transaction as TxModel
+            from django.utils import timezone as dj_tz
+            recent_window = dj_tz.now() - timedelta(hours=24)
             for user_wallet in user_wallets_with_funds:
+                # ВАЖНО: консолидацию делаем только если у пользователя есть недавний депозит в БД
+                has_recent_deposit = TxModel.objects.filter(
+                    user=user_wallet.user,
+                    crypto=currency,
+                    type="deposit",
+                    status="completed",
+                    timestamp__gte=recent_window
+                ).exists()
+                if not has_recent_deposit:
+                    logger.info(f"[CONSOLIDATION] Skip {user_wallet.deposit_address}: no recent deposit tx found for user {user_wallet.user.id}")
+                    continue
                 consolidation_args.append((currency, user_wallet, blockchain_service, system_wallet_address, min_threshold))
             
             logger.info(f"[CONSOLIDATION] Processing {len(consolidation_args)} wallets for {currency.symbol} in parallel")
