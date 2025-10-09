@@ -55,7 +55,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
       margin: '0 auto',
       padding: '20px 16px',
       minHeight: isMobile ? 140 : 160,
-      marginTop: deviceType === 'mobile' || deviceType === 'mobile-small' ? '160px' : '180px',
+      marginTop: deviceType === 'mobile' || deviceType === 'mobile-small' ? '120px' : '140px',
       marginLeft: deviceType === 'mobile' || deviceType === 'mobile-small' ? '-5px' : '0px',
       background: 'transparent',
       borderRadius: '0',
