@@ -7,9 +7,7 @@ import { useTheme } from '@/lib/ThemeProvider';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { AnimatedHeroText } from '@/components/ui/AnimatedHeroText';
-import { AnimatedHeroTextV2 } from '@/components/ui/AnimatedHeroTextV2';
 import { AnimatedHeroTextV3 } from '@/components/ui/AnimatedHeroTextV3';
-import { AnimatedHeroTextV5 } from '@/components/ui/AnimatedHeroTextV5';
 
 // Простое модальное окно (вам нужно будет стилизовать его)
 const EmailConfirmedModal = ({ onClose }: { onClose: () => void }) => {
@@ -312,7 +310,7 @@ const HomePageContent = () => {
         <div className="stable-container" style={currentStyles.contentContainer}>
           {/* Левая колонка */}
           <div className="stable-container" style={currentStyles.textContainer}>
-            <AnimatedHeroTextV5 deviceType={deviceType} />
+            <AnimatedHeroTextV3 deviceType={deviceType} />
           </div>
           {/* Правая колонка */}
           <div className="stable-container" style={currentStyles.imageContainer}>
