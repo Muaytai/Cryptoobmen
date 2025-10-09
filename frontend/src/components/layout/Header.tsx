@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import LogoComponent from '@/components/Logo';
+import Image from 'next/image';
 import { useTheme } from '@/lib/ThemeProvider';
 import styles from './Header.module.css';
 
@@ -145,10 +146,21 @@ export function Header() {
   const isDarkMode = theme === 'dark';
 
   return (
-    <header className={`${styles.header} ${!isDarkMode ? styles.light : ''}`}>
+    <header className={`${styles.header} ${!isDarkMode ? styles.light : ''}`} style={{ minHeight: '64px', contain: 'layout style' }}>
       {/* Логотип слева */}
-      <div className={styles.logoContainer}>
-        <LogoComponent />
+      <div className={styles.logoContainer} style={{ minWidth: '50px', minHeight: '50px', contain: 'layout style' }}>
+        <Link href="/" className="no-underline">
+          <div className="flex items-center justify-center">
+            <Image
+              src="/images/logo.png"
+              alt="GX Exchange"
+              width={50}
+              height={50}
+              priority
+              style={{ contain: 'layout style' }}
+            />
+          </div>
+        </Link>
       </div>
       {/* Навигация посередине */}
       <nav className={styles.navigation}>
@@ -160,7 +172,7 @@ export function Header() {
         <NavLink href="/faq">FAQ</NavLink>
       </nav>
       {/* Кнопки действий справа */}
-      <div className={styles.actions}>
+      <div className={styles.actions} style={{ minWidth: '120px', minHeight: '40px', contain: 'layout style' }}>
         <button 
           onClick={toggleTheme} 
           className={styles.themeToggle} 
@@ -188,7 +200,9 @@ export function Header() {
           )
         ) : isClientMounted && isLoading ? (
           <div className={styles.loadingText}>Загрузка...</div>
-        ) : null}
+        ) : (
+          <div style={{ minWidth: '60px', minHeight: '32px' }}></div>
+        )}
       </div>
     </header>
   );

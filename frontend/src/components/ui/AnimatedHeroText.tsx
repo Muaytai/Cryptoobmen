@@ -11,50 +11,40 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
   const { theme } = useTheme();
   const isDarkMode = theme === 'dark';
   
-  const [visibleLines, setVisibleLines] = useState<number[]>([]);
+  const [visibleLines, setVisibleLines] = useState<number[]>([0, 1]); // Только первые две строки видны
   const [animationPhase, setAnimationPhase] = useState<'building' | 'disappearing' | 'final'>('building');
   const [visibleWords, setVisibleWords] = useState<number[]>([]);
+  const [animatedLines, setAnimatedLines] = useState<number[]>([0, 1]); // Только первые две строки анимированы
   
   const lines = [
-  "Инвестируй с умом",
+  "Инвестируй как гроссмейстер",
   "Получай от 10% годовых в USDT",
-  "Твоя стратегия - стабильный доход",
-  "Партия начинается здесь"
+  "Твоя стратегия - твоя прибыль.",
+  "Партия начинается здесь."
   ];
 
   // Разбиваем финальную фразу на слова для анимации
   const finalPhraseWords = ["Партия", "начинается", "здесь"];
 
 
+  // Анимация появления строк
   useEffect(() => {
     const timeouts: NodeJS.Timeout[] = [];
     
-    // Фаза 1: Появление всех строк, кроме финальной
-    const nonFinalCount = lines.length - 1;
-    lines.slice(0, nonFinalCount).forEach((_, index) => {
-      const timeout = setTimeout(() => {
-        setVisibleLines(prev => [...prev, index]);
-      }, index * 1200); // 1200ms задержка между строками
+    // Третья строка появляется справа через 1500ms
+    const thirdTimeout = setTimeout(() => {
+      setVisibleLines(prev => [...prev, 2]);
+      setAnimatedLines(prev => [...prev, 2]);
+    }, 1500);
+    timeouts.push(thirdTimeout);
 
-      timeouts.push(timeout);
-    });
-
-    // Фаза 2: Появление финальной строки (без исчезновения предыдущих)
-    const finalTimeout = setTimeout(() => {
+    // Четвертая строка появляется в той же строке через 2500ms
+    const fourthTimeout = setTimeout(() => {
       setAnimationPhase('final');
-      setVisibleLines(prev => [...prev, lines.length - 1]); // Добавляем финальную строку
-
-      // Анимация слов в финальной фразе
-      finalPhraseWords.forEach((_, wordIndex) => {
-        const wordTimeout = setTimeout(() => {
-          setVisibleWords(prev => [...prev, wordIndex]);
-        }, wordIndex * 800); // 800ms задержка между словами
-
-        timeouts.push(wordTimeout);
-      });
-    }, (nonFinalCount) * 1200 + 1200); // После появления первых строк + пауза
-    
-    timeouts.push(finalTimeout);
+      setVisibleLines(prev => [...prev, 3]);
+      setAnimatedLines(prev => [...prev, 3]);
+    }, 2500);
+    timeouts.push(fourthTimeout);
 
     return () => {
       timeouts.forEach(clearTimeout);
@@ -63,127 +53,98 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
 
   const getLineStyles = (index: number) => {
     const isVisible = visibleLines.includes(index);
+    const isAnimated = animatedLines.includes(index);
     const isLastLine = index === lines.length - 1;
     const isFinalPhrase = isLastLine;
     const isMobile = deviceType === 'mobile' || deviceType === 'mobile-small';
     const isSmallMobile = deviceType === 'mobile-small';
     const isTablet = deviceType === 'tablet';
 
-    // Определяем видимость в зависимости от фазы анимации
-    let shouldShow = false;
-    if (animationPhase === 'building') {
-      shouldShow = isVisible && !isFinalPhrase; // Показываем только первые три
-    } else if (animationPhase === 'final') {
-      shouldShow = isVisible; // Показываем все видимые строки
-    }
-    
-    // Дополнительная проверка: финальные строки должны быть скрыты в начальных фазах
-    if (isFinalPhrase && animationPhase !== 'final') {
-      shouldShow = false;
-    }
-    
-    // Принудительно скрываем финальные строки если они не должны быть видны
-    if (isFinalPhrase && !isVisible) {
-      shouldShow = false;
-    }
-
-    // Базовые стили для анимации в шахматном порядке (строго по горизонтали) с 3D эффектами
+    // Стили с анимацией
     const baseStyles = {
-      opacity: shouldShow ? 1 : 0,
-      transform: shouldShow
-        ? 'translateX(0) scale(1)'
-        : index % 2 === 0 
-          ? 'translateX(-50px) scale(0.95)' // Четные индексы (0,2) - "Твоя стратегия", "Твоя прибыль" - слева направо
-          : 'translateX(50px) scale(0.95)', // Нечетные индексы (1) - "Твой ход" - справа налево
-      transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)', // Более плавный переход
-      // Индивидуальные отступы между строками
+      opacity: isVisible ? 1 : 0,
+      transform: isVisible 
+        ? (index === 2 ? 'translateX(0)' : 'translateX(0) scale(1)')
+        : (index === 2 ? 'translateX(100px)' : 'translateX(0) scale(0.95)'),
+      transition: isVisible 
+        ? 'opacity 0.6s ease-out, transform 0.6s ease-out'
+        : 'opacity 0.3s ease-in, transform 0.3s ease-in',
       marginBottom: (() => {
         if (isFinalPhrase) return 0;
-        // после второй строки увеличиваем отступ ещё сильнее, после третьей — уменьшаем
-        if (index === 1) return isMobile ? 34 : 46;
-        if (index === 2) return isMobile ? 10 : 14;
-        return isMobile ? 22 : 26;
+        if (index === 1) return isMobile ? 50 : 60; // Увеличиваем отступ после второй строки
+        if (index === 2) return isMobile ? 8 : 12; // Увеличиваем отступ после третьей строки
+        return isMobile ? 24 : 30;
       })(),
-      lineHeight: 1.2,
-      fontWeight: isFinalPhrase ? 700 : 600,
-      whiteSpace: 'nowrap' as const, // Всегда в одну строку на всех устройствах
-      // Простые тени для объемного эффекта
+      lineHeight: 1.1,
+      fontWeight: isFinalPhrase ? 600 : index === 0 ? 700 : 500,
+      whiteSpace: 'nowrap' as const,
+      // Простые тени для читаемости
       textShadow: isFinalPhrase
-        ? '2px 2px 4px rgba(0,0,0,0.3), 4px 4px 8px rgba(0,0,0,0.2), 6px 6px 12px rgba(0,0,0,0.1), 0 0 20px rgba(139, 33, 254, 0.3)'
-        : '1px 1px 2px rgba(0,0,0,0.2), 2px 2px 4px rgba(0,0,0,0.1), 3px 3px 6px rgba(0,0,0,0.05)',
-      // Полностью скрываем финальные строки в начальных фазах
-      ...(isFinalPhrase && animationPhase !== 'final' && { 
-        display: 'none',
-        opacity: 0,
-        visibility: 'hidden' as const
-      }),
+        ? isDarkMode 
+          ? '0 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(124, 58, 237, 0.5)'
+          : '0 2px 4px rgba(255,255,255,0.8), 0 0 10px rgba(124, 58, 237, 0.6)'
+        : isDarkMode 
+          ? '0 1px 2px rgba(0,0,0,0.5)'
+          : '0 1px 2px rgba(255,255,255,0.5)',
     };
 
-    // Размеры шрифта в зависимости от устройства и позиции (увеличенные размеры)
+    // Размеры шрифта - возвращаем к предыдущему варианту
     let fontSize: number;
     if (isFinalPhrase) {
-      // Малые поддерживающие строки (оба одинаковые)
-      fontSize = isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 20 : 22;
-    } else if (index === 0 || index === 1) {
-      // Первые две строки — одинаковая крупность, немного уменьшена, чтобы помещалась в одну строку
+      fontSize = isSmallMobile ? 14 : isMobile ? 16 : isTablet ? 18 : 20;
+    } else if (index === 0) {
+      // Главный заголовок - самый крупный
       fontSize = isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 30 : 36;
+    } else if (index === 1) {
+      // Вторая строка - крупная, но меньше первой
+      fontSize = isSmallMobile ? 18 : isMobile ? 20 : isTablet ? 24 : 28;
     } else {
-      fontSize = isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 20 : 22;
+      fontSize = isSmallMobile ? 12 : isMobile ? 14 : isTablet ? 16 : 18;
     }
 
-    // Цвета из существующей палитры проекта
-    const color = isFinalPhrase 
-      ? '#8b21fe' // Акцент для финальной строки
-      : isDarkMode 
-        ? '#e5e5e5'
-        : '#333333';
+    // Простые, четкие цвета для максимальной читаемости
+    const color = isDarkMode 
+      ? '#FFFFFF' // Чистый белый для темной темы
+      : '#000000'; // Чистый черный для светлой темы
 
     return {
       ...baseStyles,
       fontSize,
       color,
-      textAlign: 'left' as const, // Все фразы выровнены по левому краю
-              // Специальное позиционирование для первых трех фраз - все выровнены по левому краю
-              ...(!isFinalPhrase && {
-                marginLeft: 0, // Все фразы выровнены по одной точке от левого края
-        width: 'auto', // Автоматическая ширина
-        maxWidth: 'none', // Убираем ограничение ширины
-        display: 'block' as const, // Блочный элемент
-        // Первая строка выше остальных
+      textAlign: 'left' as const,
+      // Специальное позиционирование для первых трех фраз
+      ...(!isFinalPhrase && {
+        marginLeft: 0,
+        width: 'auto',
+        maxWidth: 'none',
+        display: 'block' as const,
         ...(index === 0 && {
-          marginTop: isMobile ? '-6px' : '-6px',
+          marginTop: isMobile ? '-8px' : '-8px',
         }),
       }),
-      // Дополнительные эффекты для финальной строки (прозрачный как стекло с переливами и 3D)
+      // Простые эффекты для финальной строки
       ...(isFinalPhrase && {
         letterSpacing: '0.5px',
-        background: 'linear-gradient(135deg, #e5e7eb 0%, #cfd2da 50%, #eef0f5 100%)',
-        backgroundSize: '200% 200%',
-        backgroundClip: 'text',
-        WebkitBackgroundClip: 'text',
-        WebkitTextFillColor: 'transparent',
-        animation: 'gradientShift 4s ease-in-out infinite',
-        opacity: 0.9,
-        // Дополнительные эффекты для финальной фразы
-                marginLeft: 0, // Финальная фраза тоже выровнена по левому краю
-        width: '100%', // Полная ширина для использования всего доступного пространства
-        maxWidth: 'none', // Убираем ограничение ширины
-        display: 'block' as const, // Блочный элемент
-                marginTop: isMobile ? '28px' : '36px', // Блок поддержки опущен ниже
-                marginBottom: isMobile ? '20px' : '30px', // Отступ снизу
+        color: isDarkMode ? '#FFFFFF' : '#FFFFFF', // Белый цвет
+        marginLeft: 0,
+        width: '100%',
+        maxWidth: 'none',
+        display: 'block' as const,
+        marginTop: isMobile ? '32px' : '40px',
+        marginBottom: isMobile ? '24px' : '32px',
+        fontWeight: 600
       }),
-      // Чёткий стеклянный эффект для первой строки (без размытого свечения)
+      // Простой стиль для первой строки - без переходов
       ...(index === 0 && {
-        background: 'linear-gradient(180deg, #ffffff 0%, #e6e6f1 40%, #a259ff 100%)',
-        backgroundClip: 'text',
-        WebkitBackgroundClip: 'text',
-        WebkitTextFillColor: 'transparent',
-        WebkitTextStroke: isDarkMode ? '0.4px rgba(255,255,255,0.35)' : '0.4px rgba(0,0,0,0.25)',
-        textShadow: '0 1px 0 rgba(255,255,255,0.25), 0 0 0 rgba(0,0,0,0)'
+        color: isDarkMode ? '#FFFFFF' : '#000000',
+        fontWeight: 700,
+        transition: 'none' // Убираем переходы для предотвращения мигания
       }),
-      // Чуть усилим вторую строку, чтобы визуально рифмовалась с первой
+      // Простой стиль для второй строки - без переходов
       ...(index === 1 && {
-        color: isDarkMode ? '#f3f4f6' : '#222222'
+        color: isDarkMode ? '#FFFFFF' : '#000000',
+        fontWeight: 500,
+        transition: 'none' // Убираем переходы для предотвращения мигания
       })
     };
   };
@@ -193,54 +154,28 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
     const isFinalPhrase = isLastLine;
 
     if (isFinalPhrase) {
-      // Финальная строка - рендерим слова по отдельности с анимацией
-      return (
-        <>
-          {finalPhraseWords.map((word, wordIndex) => {
-            const isWordVisible = visibleWords.includes(wordIndex);
-            return (
-              <span
-                key={wordIndex}
-                style={{
-                  opacity: isWordVisible ? 1 : 0,
-                  transform: isWordVisible 
-                    ? 'translateX(0) scale(1)' 
-                    : 'translateX(20px) scale(0.9)',
-                  transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
-                  display: 'inline-block',
-                  marginRight: '8px'
-                }}
-              >
-                {word}
-              </span>
-            );
-          })}
-        </>
-      );
+      // Финальная строка - рендерим полностью без анимации слов
+      return <span>{line}</span>;
     } else {
-      // Первая строка: акцент на слове "ход"
+      // Первая строка: акцент на слове "гроссмейстер"
       if (index === 0) {
-        // Явно выводим полный текст: "Инвестируй с умом"
-        const first = 'Инвестируй';
-        const second = 'с умом';
+        const first = 'Инвестируй как';
+        const second = 'гроссмейстер';
         return (
           <>
-            <span style={{ color: 'hsl(var(--primary))' }}>{first}</span>{' '}
+            <span style={{ 
+              color: isDarkMode ? '#FFFFFF' : '#000000',
+              fontWeight: 600
+            }}>{first}</span>{' '}
             <span style={{
-              background: 'linear-gradient(135deg, #e5e7eb 0%, #d1d5db 25%, #9ca3af 50%, #d1d5db 75%, #e5e7eb 100%)',
-              backgroundSize: '200% 200%',
-              backgroundClip: 'text',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              animation: 'pearlShimmer 3s ease-in-out infinite',
-              fontSize: '0.9em',
-              opacity: 0.95
+              color: '#7C3AED',
+              fontWeight: 700
             }}>{second}</span>
           </>
         );
       }
 
-      // Вторая строка: выделяем "10%" и "USDT"
+      // Вторая строка: выделяем "10%" и "USDT" крупнее
       if (index === 1) {
         const withTokens = line.replace('10%', '__TEN__').replace('USDT', '__USDT__');
         const tokens = withTokens.split(' ');
@@ -250,8 +185,9 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
               if (t.includes('__TEN__')) {
                 return (
                   <span key={i} style={{
-                    color: 'hsl(var(--primary))',
-                    textShadow: '0 0 10px rgba(162,89,255,0.55)'
+                    color: '#7C3AED',
+                    fontWeight: 700,
+                    fontSize: '1.1em'
                   }}>10%</span>
                 );
               }
@@ -260,14 +196,48 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
                   <span key={i} style={{
                     padding: '2px 8px',
                     marginLeft: '6px',
-                    borderRadius: '999px',
-                    background: isDarkMode ? 'rgba(162,89,255,0.12)' : 'rgba(162,89,255,0.12)',
-                    border: '1px solid rgba(162,89,255,0.35)'
+                    borderRadius: '12px',
+                    background: isDarkMode ? 'rgba(124, 58, 237, 0.2)' : 'rgba(124, 58, 237, 0.1)',
+                    border: '1px solid #7C3AED',
+                    color: '#7C3AED',
+                    fontWeight: 600,
+                    fontSize: '1.1em'
                   }}>USDT</span>
                 );
               }
               return <span key={i} style={{ marginRight: '6px' }}>{t}</span>;
             })}
+          </>
+        );
+      }
+
+      // Третья строка: выделяем "ТВОЯ" и "ТВОЙ" большим шрифтом
+      if (index === 2) {
+        const parts = line.split(' - ');
+        const firstPart = parts[0]; // "Твоя стратегия"
+        const secondPart = parts[1]; // "твоя прибыль"
+        
+        return (
+          <>
+            <span style={{ 
+              color: isDarkMode ? '#FFFFFF' : '#000000', // Правильный цвет для светлой темы
+              fontWeight: 500,
+              transition: 'none'
+            }}>
+              <span style={{ fontSize: '1.2em', fontWeight: 700, color: '#7C3AED' }}>ТВОЯ</span> стратегия
+            </span>
+            <span style={{ 
+              color: isDarkMode ? '#FFFFFF' : '#000000', // Правильный цвет для светлой темы
+              margin: '0 8px',
+              transition: 'none'
+            }}>-</span>
+            <span style={{
+              color: isDarkMode ? '#FFFFFF' : '#000000', // Правильный цвет для светлой темы
+              fontWeight: 600,
+              transition: 'none'
+            }}>
+              <span style={{ fontSize: '1.2em', fontWeight: 700, color: '#7C3AED' }}>ТВОЯ</span> прибыль.
+            </span>
           </>
         );
       }
@@ -318,37 +288,120 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
                 maxWidth: 'none',
                 margin: '0 auto',
                 padding: '0 10px',
-                minHeight: '300px',
+                minHeight: '200px', // Еще больше уменьшаем высоту рамки
                 position: 'relative',
-                marginTop: deviceType === 'mobile' || deviceType === 'mobile-small' ? '90px' : '120px',
+                marginTop: deviceType === 'mobile' || deviceType === 'mobile-small' ? '110px' : '140px', // Смещаем ниже
                 marginLeft: deviceType === 'mobile' || deviceType === 'mobile-small' ? '30px' : '60px',
+                // Предотвращаем скачки при загрузке
+                contain: 'layout style',
+                willChange: 'auto'
               }}>
-        {/* Слой глубины позади текста: мягкая подсветка + тонкая сетка */}
+        {/* Многослойный фон с глубиной */}
         <div style={{
           position: 'absolute',
           inset: 0,
           zIndex: 0,
           pointerEvents: 'none',
-          backgroundImage: `
-            radial-gradient(800px 260px at 0% 40%, rgba(162,89,255,0.18), rgba(162,89,255,0) 60%),
-            linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)
-          `,
-          backgroundSize: 'auto, 28px 28px, 28px 28px',
-          backgroundPosition: 'left center, left top, left top',
-          opacity: isDarkMode ? 1 : 0.6,
-          maskImage: 'linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.9) 75%, rgba(0,0,0,0.65) 100%)',
-          WebkitMaskImage: 'linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.9) 75%, rgba(0,0,0,0.65) 100%)'
+          background: isDarkMode 
+            ? `
+              radial-gradient(ellipse 1000px 500px at 0% 50%, rgba(124,58,237,0.12) 0%, transparent 70%),
+              radial-gradient(ellipse 600px 300px at 20% 30%, rgba(168,85,247,0.06) 0%, transparent 60%),
+              linear-gradient(135deg, rgba(124,58,237,0.04) 0%, transparent 50%)
+            `
+            : `
+              radial-gradient(ellipse 1000px 500px at 0% 50%, rgba(124,58,237,0.08) 0%, transparent 70%),
+              radial-gradient(ellipse 600px 300px at 20% 30%, rgba(168,85,247,0.04) 0%, transparent 60%),
+              linear-gradient(135deg, rgba(124,58,237,0.03) 0%, transparent 50%)
+            `,
+          opacity: 1
         }} />
-        <div style={{ position: 'relative', zIndex: 1 }}>
-        {lines.map((line, index) => (
-          <div
-            key={index}
-            style={getLineStyles(index)}
-          >
-            {renderLine(line, index)}
-          </div>
-        ))}
+        
+        {/* Дополнительный слой глубины */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: 'none',
+          background: isDarkMode 
+            ? `
+              linear-gradient(180deg, rgba(0,0,0,0.02) 0%, transparent 30%),
+              linear-gradient(90deg, rgba(124,58,237,0.01) 0%, transparent 100%)
+            `
+            : `
+              linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 30%),
+              linear-gradient(90deg, rgba(124,58,237,0.01) 0%, transparent 100%)
+            `,
+          opacity: 0.8
+        }} />
+        
+        {/* Тонкие рамки слева и сверху - менее яркие */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '1px',
+          background: isDarkMode 
+            ? 'linear-gradient(90deg, rgba(124,58,237,0.15) 0%, transparent 100%)'
+            : 'linear-gradient(90deg, rgba(124,58,237,0.1) 0%, transparent 100%)',
+          zIndex: 1
+        }} />
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          bottom: 0,
+          width: '1px',
+          background: isDarkMode 
+            ? 'linear-gradient(180deg, rgba(124,58,237,0.15) 0%, transparent 100%)'
+            : 'linear-gradient(180deg, rgba(124,58,237,0.1) 0%, transparent 100%)',
+          zIndex: 1
+        }} />
+        <div style={{ 
+          position: 'relative', 
+          zIndex: 1,
+          // Фиксированная высота для предотвращения скачков
+          minHeight: '180px', // Еще больше уменьшаем высоту внутреннего контейнера
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-start',
+          paddingTop: deviceType === 'mobile' || deviceType === 'mobile-small' ? 8 : 12
+        }}>
+        {lines.map((line, index) => {
+          if (index === 3) {
+            // Четвертую строку рендерим внутри третьей — тут пропускаем
+            return null;
+          }
+          if (index === 2) {
+            // Комбинированная строка: третья + четвертая в одну линию
+            const baseStyle = getLineStyles(index);
+            return (
+              <div key={index} style={{ ...baseStyle, whiteSpace: 'nowrap' }}>
+                {renderLine(line, index)}
+                <span
+                  style={{
+                    // Анимация справа налево для четвертой части
+                    display: 'inline-block',
+                    marginLeft: 18,
+                    color: isDarkMode ? '#FFFFFF' : '#000000', // Правильный цвет для светлой темы
+                    fontWeight: 600,
+                    fontSize: '0.95em',
+                    opacity: visibleLines.includes(3) ? 1 : 0,
+                    transform: visibleLines.includes(3) ? 'translateX(0)' : 'translateX(50px)',
+                    transition: 'opacity 0.6s ease-out, transform 0.6s ease-out'
+                  }}
+                >
+                  {lines[3]}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div key={index} style={getLineStyles(index)}>
+              {renderLine(line, index)}
+            </div>
+          );
+        })}
         </div>
       </div>
     </>

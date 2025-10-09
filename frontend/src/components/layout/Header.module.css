@@ -9,6 +9,10 @@
   align-items: center;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   z-index: 1000;
+  /* Стабилизация для предотвращения скачков */
+  min-height: 64px;
+  contain: layout style;
+  will-change: auto;
 }
 
 /* Светлая тема применяется только при явном указании класса light */
@@ -19,6 +23,11 @@
 
 .logoContainer {
   margin-right: 16px;
+  /* Стабилизация для предотвращения скачков */
+  min-width: 50px;
+  min-height: 50px;
+  contain: layout style;
+  will-change: auto;
 }
 
 .navigation {
@@ -68,6 +77,11 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  /* Стабилизация для предотвращения скачков */
+  min-width: 120px;
+  min-height: 40px;
+  contain: layout style;
+  will-change: auto;
 }
 
 .themeToggle {
