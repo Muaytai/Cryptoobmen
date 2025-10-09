@@ -27,14 +27,16 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         : index === 1
         ? (isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 26)
         : (isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 26),
-      fontWeight: 400,
+      fontWeight: isDarkMode ? 400 : 500,
       lineHeight: 1.2,
       textAlign: 'left' as const,
-      color: '#FFFFFF',
+      color: isDarkMode ? '#FFFFFF' : '#666666',
       marginBottom: isMobile ? 8 : 12,
       padding: '8px 0',
       position: 'relative' as const,
-      textShadow: '0 2px 8px rgba(0,0,0,0.6)',
+      textShadow: isDarkMode 
+        ? '0 2px 8px rgba(0,0,0,0.6)'
+        : '0 2px 8px rgba(255,255,255,0.8)',
       letterSpacing: '0.02em'
     };
   };
@@ -74,7 +76,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         bottom: 0,
         background: isDarkMode 
           ? 'linear-gradient(135deg, rgba(17, 16, 20, 0.08) 0%, rgba(30, 27, 35, 0.04) 100%)'
-          : 'linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(248, 250, 252, 0.04) 100%)',
+          : 'linear-gradient(135deg, rgba(255, 255, 255, 0.005) 0%, rgba(248, 250, 252, 0.002) 100%)',
         borderRadius: '0',
         backdropFilter: 'blur(60px)',
         WebkitBackdropFilter: 'blur(60px)',
@@ -92,7 +94,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         bottom: '-30px',
         background: isDarkMode 
           ? 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.06) 0%, transparent 70%)'
-          : 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.04) 0%, transparent 70%)',
+          : 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.003) 0%, transparent 70%)',
         borderRadius: '0',
         zIndex: -2,
         transform: 'translateZ(0)',
@@ -108,7 +110,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         bottom: '-50px',
         background: isDarkMode 
           ? 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.1) 0%, transparent 80%)'
-          : 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.05) 0%, transparent 80%)',
+          : 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.003) 0%, transparent 80%)',
         borderRadius: '0',
         zIndex: -3,
         transform: 'translateZ(0)',
@@ -124,7 +126,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         bottom: '-80px',
         background: isDarkMode 
           ? 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.08) 0%, transparent 90%)'
-          : 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.05) 0%, transparent 90%)',
+          : 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.003) 0%, transparent 90%)',
         borderRadius: '0',
         backdropFilter: 'blur(100px)',
         WebkitBackdropFilter: 'blur(100px)',
@@ -142,7 +144,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         bottom: '-120px',
         background: isDarkMode 
           ? 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.15) 0%, transparent 95%)'
-          : 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.08) 0%, transparent 95%)',
+          : 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.003) 0%, transparent 95%)',
         borderRadius: '0',
         backdropFilter: 'blur(150px)',
         WebkitBackdropFilter: 'blur(150px)',
@@ -160,7 +162,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         bottom: '-180px',
         background: isDarkMode 
           ? 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.12) 0%, transparent 98%)'
-          : 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.08) 0%, transparent 98%)',
+          : 'radial-gradient(ellipse at center, rgba(124, 58, 237, 0.003) 0%, transparent 98%)',
         borderRadius: '0',
         backdropFilter: 'blur(200px)',
         WebkitBackdropFilter: 'blur(200px)',
@@ -178,7 +180,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         bottom: '-250px',
         background: isDarkMode 
           ? 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.2) 0%, transparent 99%)'
-          : 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.12) 0%, transparent 99%)',
+          : 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.003) 0%, transparent 99%)',
         borderRadius: '0',
         backdropFilter: 'blur(300px)',
         WebkitBackdropFilter: 'blur(300px)',
@@ -196,7 +198,7 @@ export const AnimatedHeroTextV5 = ({ deviceType }: AnimatedHeroTextV5Props) => {
         bottom: '-350px',
         background: isDarkMode 
           ? 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.25) 0%, transparent 99.5%)'
-          : 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.15) 0%, transparent 99.5%)',
+          : 'radial-gradient(ellipse at center, rgba(0, 0, 0, 0.003) 0%, transparent 99.5%)',
         borderRadius: '0',
         backdropFilter: 'blur(500px)',
         WebkitBackdropFilter: 'blur(500px)',
