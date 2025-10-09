@@ -37,7 +37,7 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Пользователь может видеть только свой профиль"""
-        if self.request.user.is_staff:
+        if self.request.user.is_staff or getattr(self.request.user, 'is_site_administrator', lambda: False)():
             return User.objects.all()
         return User.objects.filter(id=self.request.user.id)
     
@@ -72,8 +72,14 @@ class UserDocumentViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Пользователь может видеть только свои документы"""
-        return UserDocument.objects.filter(user=self.request.user)
+        """Пользователь видит свои документы, site-admin/staff могут видеть по user параметру"""
+        user = self.request.user
+        if getattr(user, 'is_site_administrator', lambda: False)() or user.is_staff:
+            target_user_id = self.request.query_params.get('user')
+            if target_user_id:
+                return UserDocument.objects.filter(user_id=target_user_id)
+            return UserDocument.objects.all()
+        return UserDocument.objects.filter(user=user)
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
