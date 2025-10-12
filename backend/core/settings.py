@@ -573,6 +573,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'crypto.tasks_consolidation.check_consolidation_confirmations',
         'schedule': 60.0,
     },
+    'sync-system-wallets-balance-every-5-minutes': {
+        'task': 'crypto.tasks.sync_system_wallets_balance',
+        'schedule': 300.0,  # 5 минут
+    },
 }
 
 

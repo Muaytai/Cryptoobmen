@@ -36,6 +36,7 @@ def get_gas_reserve(currency: Cryptocurrency) -> Decimal:
         'BTC': Decimal('0.00005'), 
         'ETH': Decimal('0.005'),
         'TRX': Decimal('5'),
+        'BNB': Decimal('0.000021'),
     }
     return reserves.get(currency.symbol, Decimal('0.001'))
 

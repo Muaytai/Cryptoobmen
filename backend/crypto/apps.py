@@ -34,17 +34,24 @@ class CryptoConfig(AppConfig):
                 from django_celery_beat.models import PeriodicTask, IntervalSchedule
                 from celery import current_app
 
+                # Регистрируем задачу проверки депозитов
                 task_name = "crypto.tasks.check_blockchain_deposits"
-                # Проверяем, зарегистрирована ли задача в Celery
-                if task_name not in current_app.tasks:
-                    return  # задача ещё не импортирована, пропускаем
+                if task_name in current_app.tasks:
+                    schedule, _ = IntervalSchedule.objects.get_or_create(every=30, period=IntervalSchedule.SECONDS)
+                    PeriodicTask.objects.get_or_create(
+                        name="Scan TRC20 deposits (every 30s)",
+                        task=task_name,
+                        defaults={"interval": schedule, "enabled": True},
+                    )
 
-                schedule, _ = IntervalSchedule.objects.get_or_create(every=30, period=IntervalSchedule.SECONDS)
-
-                PeriodicTask.objects.get_or_create(
-                    name="Scan TRC20 deposits (every 30s)",
-                    task=task_name,
-                    defaults={"interval": schedule, "enabled": True},
-                )
+                # Регистрируем задачу синхронизации балансов системных кошельков
+                sync_task_name = "crypto.tasks.sync_system_wallets_balance"
+                if sync_task_name in current_app.tasks:
+                    sync_schedule, _ = IntervalSchedule.objects.get_or_create(every=5, period=IntervalSchedule.MINUTES)
+                    PeriodicTask.objects.get_or_create(
+                        name="Sync system wallets balance (every 5 minutes)",
+                        task=sync_task_name,
+                        defaults={"interval": sync_schedule, "enabled": True},
+                    )
             except Exception:  # noqa: BLE001 – игнорируем любые ошибки БД при миграциях
                 pass

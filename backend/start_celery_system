@@ -1,7 +1,16 @@
 #!/bin/bash
 # Полный запуск Celery системы (Workers + Beat)
 
-cd /home/chaizer/projects/Cryptoobmen/backend
+# Определяем текущую директорию скрипта и корневую папку проекта
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+# Проверяем наличие виртуального окружения
+if [ ! -f "$PROJECT_ROOT/venv/bin/activate" ]; then
+    echo "❌ Ошибка: Виртуальное окружение не найдено в $PROJECT_ROOT/venv"
+    exit 1
+fi
 
 echo "🚀 Запуск полной Celery системы..."
 echo ""
@@ -19,17 +28,17 @@ echo "🔧 Запуск Workers..."
 
 # Запускаем workers с активированным виртуальным окружением
 echo "   🚀 Запуск High priority worker..."
-nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q high_priority -n high_priority_worker --concurrency=2" > /tmp/celery_high.log 2>&1 &
+nohup bash -c "source $PROJECT_ROOT/venv/bin/activate && celery -A core worker -l info -Q high_priority -n high_priority_worker --concurrency=2" > /tmp/celery_high.log 2>&1 &
 HIGH_PID=$!
 echo "   ⚡ High priority worker: PID $HIGH_PID"
 
 echo "   🚀 Запуск Medium priority worker..."
-nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q medium_priority -n medium_priority_worker --concurrency=2" > /tmp/celery_medium.log 2>&1 &
+nohup bash -c "source $PROJECT_ROOT/venv/bin/activate && celery -A core worker -l info -Q medium_priority -n medium_priority_worker --concurrency=2" > /tmp/celery_medium.log 2>&1 &
 MEDIUM_PID=$!
 echo "   🔄 Medium priority worker: PID $MEDIUM_PID"
 
 echo "   🚀 Запуск Low priority worker..."
-nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q low_priority -n low_priority_worker --concurrency=2" > /tmp/celery_low.log 2>&1 &
+nohup bash -c "source $PROJECT_ROOT/venv/bin/activate && celery -A core worker -l info -Q low_priority -n low_priority_worker --concurrency=2" > /tmp/celery_low.log 2>&1 &
 LOW_PID=$!
 echo "   📊 Low priority worker: PID $LOW_PID"
 
@@ -38,7 +47,7 @@ sleep 3
 echo ""
 echo "⏰ Запуск Beat scheduler..."
 echo "   🚀 Запуск Beat scheduler..."
-nohup bash -c "source venv/bin/activate && celery -A core beat --loglevel=info" > /tmp/celery_beat.log 2>&1 &
+nohup bash -c "source $PROJECT_ROOT/venv/bin/activate && celery -A core beat --loglevel=info" > /tmp/celery_beat.log 2>&1 &
 BEAT_PID=$!
 echo "   🕒 Beat scheduler: PID $BEAT_PID"
 
@@ -59,7 +68,7 @@ echo "   Остановка всего: ./stop_celery_system"
 echo "   Только workers: pkill -f 'celery.*worker'"
 echo "   Только beat: pkill -f 'celery.*beat'"
 echo "   Статус: ps aux | grep celery"
-echo "   Мониторинг: bash -c 'source venv/bin/activate && celery -A core inspect active'"
+echo "   Мониторинг: bash -c 'source $PROJECT_ROOT/venv/bin/activate && celery -A core inspect active'"
 
 echo ""
 echo "🟢 Система готова к работе!"

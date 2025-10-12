@@ -303,19 +303,9 @@ def check_blockchain_deposits():
                     logger.info(f"Updating balance for user {user.id} and wallet {wallet.currency.symbol}")
                     user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
                     
-                    # Для валют с мемо газ не нужен, зачисляем полную сумму
-                    if wallet.currency.requires_memo:
-                        user_wallet.balance += amount
-                        logger.info(f"[MEMO] Full amount credited: {amount} {wallet.currency.symbol}")
-                    else:
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        deposit_info = calculate_net_deposit_amount(
-                            currency=wallet.currency,
-                            deposit_amount=amount,
-                            user_address=user_wallet.deposit_address
-                        )
-                        user_wallet.balance += deposit_info['net_amount']
-                        logger.info(f"[NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
+                    # Зачисляем полную сумму для всех валют (газ учитывается только при консолидации)
+                    user_wallet.balance += amount
+                    logger.info(f"[DEPOSIT] Full amount credited: {amount} {wallet.currency.symbol}")
                     
                     user_wallet.save()
 
@@ -477,21 +467,10 @@ def check_blockchain_deposits():
                         continue
                         
                     with transaction.atomic():
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        if not currency.requires_memo:
-                            deposit_info = calculate_net_deposit_amount(
-                                currency=currency,
-                                deposit_amount=amount,
-                                user_address=user_wallet.deposit_address
-                            )
-                            net_amount = deposit_info['net_amount']
-                            gas_cost = deposit_info['gas_cost']
-                            logger.info(f"[BATCH] Gas calculation: gross={amount}, net={net_amount}, gas={gas_cost} {currency.symbol}")
-                        else:
-                            # Для валют с мемо зачисляем полную сумму
-                            net_amount = amount
-                            gas_cost = Decimal('0')
-                            logger.info(f"[BATCH] Full amount for memo currency: {amount} {currency.symbol}")
+                        # Зачисляем полную сумму для всех валют (газ учитывается только при консолидации)
+                        net_amount = amount
+                        gas_cost = Decimal('0')
+                        logger.info(f"[BATCH] Full amount credited: {amount} {currency.symbol}")
                         
                         user_wallet.balance += net_amount
                         user_wallet.save()
@@ -1328,4 +1307,72 @@ def consolidate_funds():
                 logger.error(f"[CONSOLIDATE] Failed to consolidate for user {u_wallet.user.id}, currency {currency.symbol}. Error: {e}", exc_info=True)
 
     logger.info("[CONSOLIDATE] Finished funds consolidation task.")
+
+
+@shared_task
+@single_instance_task(timeout=300)  # 5 минут блокировка
+def sync_system_wallets_balance():
+    """
+    Автоматическая синхронизация балансов системных кошельков с реальными балансами в блокчейне.
+    Обновляет балансы для всех активных системных кошельков.
+    """
+    logger.info("[SYNC_SYSTEM_WALLETS] Starting system wallets balance synchronization")
+    
+    updated_count = 0
+    error_count = 0
+    
+    try:
+        # Получаем все системные кошельки для активных криптовалют
+        system_wallets = UserWallet.objects.filter(
+            is_system_wallet=True,
+            currency__is_active=True,
+            deposit_address__isnull=False
+        ).exclude(deposit_address='')
+        
+        logger.info(f"[SYNC_SYSTEM_WALLETS] Found {system_wallets.count()} system wallets to sync")
+        
+        for wallet in system_wallets:
+            try:
+                currency = wallet.currency
+                logger.info(f"[SYNC_SYSTEM_WALLETS] Syncing {currency.symbol} ({currency.network}) wallet")
+                
+                # Получаем blockchain service для данной валюты
+                service = get_blockchain_service(currency.network)
+                
+                # Получаем реальный баланс из блокчейна
+                real_balance = service.get_balance(wallet.deposit_address)
+                db_balance = wallet.balance
+                
+                # Проверяем, нужно ли обновлять баланс
+                if real_balance != db_balance:
+                    difference = real_balance - db_balance
+                    
+                    logger.info(f"[SYNC_SYSTEM_WALLETS] Balance mismatch for {currency.symbol}:")
+                    logger.info(f"  Address: {wallet.deposit_address}")
+                    logger.info(f"  DB balance: {db_balance}")
+                    logger.info(f"  Real balance: {real_balance}")
+                    logger.info(f"  Difference: {difference}")
+                    
+                    # Обновляем баланс в базе данных
+                    old_locked = wallet.locked_balance
+                    wallet.balance = real_balance
+                    wallet.available_balance = real_balance - old_locked
+                    wallet.save()
+                    
+                    logger.info(f"[SYNC_SYSTEM_WALLETS] Updated {currency.symbol} balance from {db_balance} to {real_balance}")
+                    updated_count += 1
+                else:
+                    logger.debug(f"[SYNC_SYSTEM_WALLETS] {currency.symbol} balance is already in sync: {real_balance}")
+                    
+            except Exception as e:
+                logger.error(f"[SYNC_SYSTEM_WALLETS] Error syncing {wallet.currency.symbol} wallet: {e}")
+                error_count += 1
+                continue
+        
+        logger.info(f"[SYNC_SYSTEM_WALLETS] Synchronization completed. Updated: {updated_count}, Errors: {error_count}")
+        return {"updated": updated_count, "errors": error_count}
+        
+    except Exception as e:
+        logger.error(f"[SYNC_SYSTEM_WALLETS] Critical error during synchronization: {e}")
+        return {"updated": updated_count, "errors": error_count + 1}
 
