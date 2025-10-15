@@ -7,6 +7,8 @@ import { useTheme } from '@/lib/ThemeProvider';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { AnimatedHeroText } from '@/components/ui/AnimatedHeroText';
+import { AnimatedHeroTextV3 } from '@/components/ui/AnimatedHeroTextV3';
+import { AnimatedHeroTextV4 } from '@/components/ui/AnimatedHeroTextV4';
 
 // Простое модальное окно (вам нужно будет стилизовать его)
 const EmailConfirmedModal = ({ onClose }: { onClose: () => void }) => {
@@ -73,9 +75,9 @@ const HomePageContent = () => {
       contentContainer: {
         display: 'flex',
         flexDirection: isMobile ? 'column' as const : 'row' as const,
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: 0,
+        justifyContent: 'flex-start',
+        alignItems: 'flex-start',
+        gap: isMobile ? 20 : 40,
         marginBottom: isMobile ? 15 : 20,
         minHeight: isMobile ? 400 : 500,
         height: isMobile ? 400 : 500,
@@ -84,14 +86,14 @@ const HomePageContent = () => {
       } as CSSProperties,
 
       textContainer: {
-        maxWidth: isMobile ? '100%' : isTablet ? '60%' : 1100,
+        maxWidth: '100%',
         zIndex: 2,
         position: 'relative' as const,
         textAlign: isMobile ? 'center' as const : 'left' as const,
         marginBottom: isMobile ? '30px' : 0,
-        marginLeft: isMobile ? 0 : isTablet ? -60 : -100,
+        marginLeft: 0,
         padding: isMobile ? '0 15px' : '0 20px',
-        width: isMobile ? '100%' : 'auto',
+        width: '100%',
         overflowWrap: 'break-word' as const,
         wordWrap: 'break-word' as const,
         minHeight: isMobile ? 200 : isTablet ? 240 : 300
@@ -309,7 +311,7 @@ const HomePageContent = () => {
         <div className="stable-container" style={currentStyles.contentContainer}>
           {/* Левая колонка */}
           <div className="stable-container" style={currentStyles.textContainer}>
-            <AnimatedHeroText deviceType={deviceType} />
+            <AnimatedHeroTextV4 deviceType={deviceType} />
           </div>
           {/* Правая колонка */}
           <div className="stable-container" style={currentStyles.imageContainer}>
