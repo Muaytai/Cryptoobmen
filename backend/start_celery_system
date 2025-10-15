@@ -1,7 +1,7 @@
 #!/bin/bash
 # Полный запуск Celery системы (Workers + Beat)
 
-cd /mnt/c/Users/Makc/Проекты/Cryptoobmen/backend
+cd /mnt/d/progects/Cryptoobmen/backend
 
 echo "🚀 Запуск полной Celery системы..."
 echo ""
