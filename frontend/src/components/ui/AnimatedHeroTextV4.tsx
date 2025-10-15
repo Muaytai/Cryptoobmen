@@ -41,7 +41,7 @@ export function AnimatedHeroTextV4({ deviceType }: AnimatedHeroTextV4Props) {
     maxWidth: isMobile ? 'none' : isTablet ? 660 : 760,
     margin: '0 auto',
     // Сместим заметно правее
-    marginLeft: isMobile ? '10px' : isTablet ? '20px' : '28px',
+    marginLeft: isMobile ? '4px' : isTablet ? '12px' : '20px',
     padding: isMobile ? '8px 12px' : '16px 16px',
     background: 'transparent',
     contain: 'layout style',
@@ -64,13 +64,13 @@ export function AnimatedHeroTextV4({ deviceType }: AnimatedHeroTextV4Props) {
     ...phraseBase,
     fontWeight: 700,
     fontSize: isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 32 : 42,
-    transitionDelay: '220ms',
+    transitionDelay: '0ms',
   };
   const phrase2: CSSProperties = {
     ...phraseBase,
     fontWeight: 700,
     fontSize: isSmallMobile ? 18 : isMobile ? 20 : isTablet ? 26 : 32,
-    transitionDelay: '420ms',
+    transitionDelay: '200ms',
   };
   const strongAccent: CSSProperties = { color: colors.accent };
   // Третья строка — немного мельче
@@ -78,13 +78,13 @@ export function AnimatedHeroTextV4({ deviceType }: AnimatedHeroTextV4Props) {
     ...phraseBase,
     fontWeight: 600,
     fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 26,
-    transitionDelay: '680ms',
+    transitionDelay: '400ms',
   };
   const phrase4: CSSProperties = {
     ...phraseBase,
     fontWeight: 400,
     fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 24,
-    transitionDelay: '1400ms',
+    transitionDelay: '800ms',
   };
   // Пятая и шестая строки — отделяем увеличенным промежутком и паузой
   const phrase5: CSSProperties = {
@@ -93,13 +93,13 @@ export function AnimatedHeroTextV4({ deviceType }: AnimatedHeroTextV4Props) {
     fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 24,
     color: colors.muted,
     marginTop: isMobile ? 16 : 22,
-    transitionDelay: '2000ms',
+    transitionDelay: '1200ms',
   };
   const phrase6: CSSProperties = {
     ...phraseBase,
     fontWeight: 400,
     fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 24,
-    transitionDelay: '2300ms',
+    transitionDelay: '1500ms',
   };
 
   const btnRow: CSSProperties = {
@@ -107,6 +107,10 @@ export function AnimatedHeroTextV4({ deviceType }: AnimatedHeroTextV4Props) {
     gap: isMobile ? 10 : 14,
     marginTop: isMobile ? 48 : 60,
     flexWrap: 'wrap',
+    // Появление кнопок после текста
+    opacity: mounted ? 1 : 0,
+    transform: mounted ? 'translateY(0)' : 'translateY(8px)',
+    transition: 'opacity 600ms ease 1700ms, transform 600ms ease 1700ms',
   };
 
   const btnBase: CSSProperties = {

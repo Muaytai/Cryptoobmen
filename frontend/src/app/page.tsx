@@ -124,7 +124,7 @@ const HomePageContent = () => {
       spacer: {
         flex: 0,
         // Отодвигаем иконки сразу за пределы первого экрана, но без исчезновения
-        height: 'clamp(280px, 65vh, 900px)'
+        height: 'clamp(480px, 82vh, 1200px)'
       } as CSSProperties,
 
       cryptoIconsContainer: {
