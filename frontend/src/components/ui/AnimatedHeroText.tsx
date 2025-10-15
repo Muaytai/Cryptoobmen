@@ -1,275 +1,245 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/ThemeProvider';
 
 interface AnimatedHeroTextProps {
-  deviceType: string;
+  deviceType: 'mobile-small' | 'mobile' | 'tablet' | 'desktop';
 }
 
+// Вариант A — «Кинетическая доска»
 export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
   const { theme } = useTheme();
-  const isDarkMode = theme === 'dark';
-  
-  const [visibleLines, setVisibleLines] = useState<number[]>([]);
-  const [animationPhase, setAnimationPhase] = useState<'building' | 'disappearing' | 'final'>('building');
-  const [visibleWords, setVisibleWords] = useState<number[]>([]);
-  
-  const lines = [
-    "Твоя стратегия",
-    "Твой ход",
-    "Твоя прибыль", 
-    "Партия начинается здесь"
-  ];
+  const isDark = theme === 'dark';
+  const router = useRouter();
 
-  // Разбиваем четвертую фразу на слова для анимации
-  const finalPhraseWords = ["Партия", "начинается", "здесь"];
+  const isSmallMobile = deviceType === 'mobile-small';
+  const isMobile = deviceType === 'mobile' || isSmallMobile;
+  const isTablet = deviceType === 'tablet';
 
+  // Тайминги анимации строк (каскад с лёгким overshoot)
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    const timeouts: NodeJS.Timeout[] = [];
-    
-    // Фаза 1: Появление первых трех строк (собираются вместе)
-    lines.slice(0, 3).forEach((_, index) => {
-      const timeout = setTimeout(() => {
-        setVisibleLines(prev => [...prev, index]);
-      }, index * 1200); // 1200ms задержка между строками
+  const colors = useMemo(() => ({
+    fg: isDark ? '#FFFFFF' : '#0A0A0A',
+    muted: isDark ? 'rgba(255,255,255,0.72)' : '#4B5563',
+    accent: '#7C3AED',
+    accentHover: '#9333EA',
+    bgA: isDark
+      ? 'linear-gradient(135deg, rgba(17,16,20,0.08) 0%, rgba(30,27,35,0.04) 100%)'
+      : 'linear-gradient(135deg, rgba(255,255,255,0.005) 0%, rgba(248,250,252,0.002) 100%)',
+    depthRadialSoft: isDark
+      ? 'radial-gradient(ellipse at center, rgba(124,58,237,0.06) 0%, transparent 70%)'
+      : 'radial-gradient(ellipse at center, rgba(124,58,237,0.02) 0%, transparent 70%)',
+  }), [isDark]);
 
-      timeouts.push(timeout);
-    });
-
-    // Фаза 2: Появление финальной строки (без исчезновения первых трех)
-    const finalTimeout = setTimeout(() => {
-      setAnimationPhase('final');
-      setVisibleLines(prev => [...prev, 3]); // Добавляем четвертую строку к существующим
-
-      // Анимация слов в финальной фразе
-      finalPhraseWords.forEach((_, wordIndex) => {
-        const wordTimeout = setTimeout(() => {
-          setVisibleWords(prev => [...prev, wordIndex]);
-        }, wordIndex * 800); // 800ms задержка между словами
-
-        timeouts.push(wordTimeout);
-      });
-    }, 3 * 1200 + 2000); // После появления всех трех + 2 секунды показа
-    
-    timeouts.push(finalTimeout);
-
-    return () => {
-      timeouts.forEach(clearTimeout);
-    };
-  }, []);
-
-  const getLineStyles = (index: number) => {
-    const isVisible = visibleLines.includes(index);
-    const isLastLine = index === lines.length - 1;
-    const isFinalPhrase = isLastLine;
-    const isMobile = deviceType === 'mobile' || deviceType === 'mobile-small';
-    const isSmallMobile = deviceType === 'mobile-small';
-    const isTablet = deviceType === 'tablet';
-
-    // Определяем видимость в зависимости от фазы анимации
-    let shouldShow = false;
-    if (animationPhase === 'building') {
-      shouldShow = isVisible && !isFinalPhrase; // Показываем только первые три
-    } else if (animationPhase === 'final') {
-      shouldShow = isVisible; // Показываем все видимые строки
-    }
-    
-    // Дополнительная проверка: финальные строки должны быть скрыты в начальных фазах
-    if (isFinalPhrase && animationPhase !== 'final') {
-      shouldShow = false;
-    }
-    
-    // Принудительно скрываем финальные строки если они не должны быть видны
-    if (isFinalPhrase && !isVisible) {
-      shouldShow = false;
-    }
-
-    // Базовые стили для анимации в шахматном порядке (строго по горизонтали) с 3D эффектами
-    const baseStyles = {
-      opacity: shouldShow ? 1 : 0,
-      transform: shouldShow
-        ? 'translateX(0) scale(1)'
-        : index % 2 === 0 
-          ? 'translateX(-50px) scale(0.95)' // Четные индексы (0,2) - "Твоя стратегия", "Твоя прибыль" - слева направо
-          : 'translateX(50px) scale(0.95)', // Нечетные индексы (1) - "Твой ход" - справа налево
-      transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)', // Более плавный переход
-      marginBottom: isFinalPhrase ? 0 : (isMobile ? 25 : 30), // Расстояние между первыми тремя строками
-      lineHeight: 1.2,
-      fontWeight: isFinalPhrase ? 700 : 500,
-      whiteSpace: 'nowrap' as const, // Все фразы в одну строку
-      // Простые тени для объемного эффекта
-      textShadow: isFinalPhrase
-        ? '2px 2px 4px rgba(0,0,0,0.3), 4px 4px 8px rgba(0,0,0,0.2), 6px 6px 12px rgba(0,0,0,0.1), 0 0 20px rgba(139, 33, 254, 0.3)'
-        : '1px 1px 2px rgba(0,0,0,0.2), 2px 2px 4px rgba(0,0,0,0.1), 3px 3px 6px rgba(0,0,0,0.05)',
-      // Полностью скрываем финальные строки в начальных фазах
-      ...(isFinalPhrase && animationPhase !== 'final' && { 
-        display: 'none',
-        opacity: 0,
-        visibility: 'hidden' as const
-      }),
-    };
-
-    // Размеры шрифта в зависимости от устройства и позиции (увеличенные размеры)
-    let fontSize: number;
-    if (isFinalPhrase) {
-      // Финальная строка - немного уменьшенный размер для баланса
-      fontSize = isSmallMobile ? 20 : isMobile ? 25 : isTablet ? 32 : 40;
-    } else {
-      // Первые три строки - немного меньше финальной
-      fontSize = isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 30 : 38;
-    }
-
-    // Цвета из существующей палитры проекта
-    const color = isFinalPhrase 
-      ? '#8b21fe' // Фиолетовый акцент (как в оригинале)
-      : isDarkMode 
-        ? '#bdbdbd' // Серый для темной темы (как в оригинале)
-        : '#666666'; // Серый для светлой темы (как в оригинале)
-
-    return {
-      ...baseStyles,
-      fontSize,
-      color,
-      textAlign: 'left' as const, // Все фразы выровнены по левому краю
-              // Специальное позиционирование для первых трех фраз - все выровнены по левому краю
-              ...(!isFinalPhrase && {
-                marginLeft: 0, // Все фразы выровнены по одной точке от левого края
-        width: 'auto', // Автоматическая ширина
-        maxWidth: 'none', // Убираем ограничение ширины
-        display: 'block' as const, // Блочный элемент
-        // Первая строка выше остальных
-        ...(index === 0 && {
-          marginTop: isMobile ? '-20px' : '-30px', // Поднимаем первую строку выше
-        }),
-      }),
-      // Дополнительные эффекты для финальной строки (прозрачный как стекло с переливами и 3D)
-      ...(isFinalPhrase && {
-        letterSpacing: '0.5px',
-        background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 25%, hsl(var(--accent)) 50%, hsl(var(--secondary)) 75%, hsl(var(--primary)) 100%)',
-        backgroundSize: '200% 200%',
-        backgroundClip: 'text',
-        WebkitBackgroundClip: 'text',
-        WebkitTextFillColor: 'transparent',
-        animation: 'gradientShift 4s ease-in-out infinite',
-        opacity: 0.9,
-        // Дополнительные эффекты для финальной фразы
-                marginLeft: 0, // Финальная фраза тоже выровнена по левому краю
-        width: '100%', // Полная ширина для использования всего доступного пространства
-        maxWidth: 'none', // Убираем ограничение ширины
-        display: 'block' as const, // Блочный элемент
-                marginTop: isMobile ? '60px' : '80px', // Отступ сверху между 3-й и 4-й фразой
-                marginBottom: isMobile ? '20px' : '30px', // Отступ снизу
-      }),
-    };
+  const container: CSSProperties = {
+    position: 'relative',
+    width: isMobile ? '100%' : isTablet ? '75%' : '65%',
+    maxWidth: isMobile ? 'none' : isTablet ? 660 : 760,
+    margin: '0 auto',
+    // Сместим заметно правее
+    marginLeft: isMobile ? '4px' : isTablet ? '12px' : '20px',
+    padding: isMobile ? '8px 12px' : '16px 16px',
+    background: 'transparent',
+    contain: 'layout style',
+    willChange: 'auto',
   };
 
-  const renderLine = (line: string, index: number) => {
-    const isLastLine = index === lines.length - 1;
-    const isFinalPhrase = isLastLine;
+  const phraseBase: CSSProperties = {
+    color: colors.fg,
+    textAlign: 'left',
+    lineHeight: 1.18,
+    letterSpacing: '0.01em',
+    marginBottom: isMobile ? 6 : 10,
+    transform: mounted ? 'translateY(0px)' : 'translateY(10px)',
+    opacity: mounted ? 1 : 0,
+    transition: 'opacity 1000ms ease, transform 1000ms cubic-bezier(.2,.9,.2,1.2)',
+    textShadow: isDark ? '0 2px 8px rgba(0,0,0,0.55)' : '0 2px 8px rgba(255,255,255,0.6)',
+  };
 
-    if (isFinalPhrase) {
-      // Финальная строка - рендерим слова по отдельности с анимацией
-      return (
-        <>
-          {finalPhraseWords.map((word, wordIndex) => {
-            const isWordVisible = visibleWords.includes(wordIndex);
-            return (
-              <span
-                key={wordIndex}
-                style={{
-                  opacity: isWordVisible ? 1 : 0,
-                  transform: isWordVisible 
-                    ? 'translateX(0) scale(1)' 
-                    : 'translateX(20px) scale(0.9)',
-                  transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
-                  display: 'inline-block',
-                  marginRight: '8px'
-                }}
-              >
-                {word}
-              </span>
-            );
-          })}
-        </>
-      );
-    } else {
-      // Для первых трех строк выделяем "Твоя/Твой" фиолетовым, остальные слова - жемчужно-серым с градиентом
-      const parts = line.split(' ');
-      const firstWord = parts[0]; // "Твоя" или "Твой"
-      const restWords = parts.slice(1).join(' ');
+  const phrase1: CSSProperties = {
+    ...phraseBase,
+    fontWeight: 700,
+    fontSize: isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 32 : 42,
+    transitionDelay: '0ms',
+  };
+  const phrase2: CSSProperties = {
+    ...phraseBase,
+    fontWeight: 700,
+    fontSize: isSmallMobile ? 18 : isMobile ? 20 : isTablet ? 26 : 32,
+    transitionDelay: '200ms',
+  };
+  const strongAccent: CSSProperties = { color: colors.accent };
+  // Третья строка — немного мельче
+  const phrase3Title: CSSProperties = {
+    ...phraseBase,
+    fontWeight: 600,
+    fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 26,
+    transitionDelay: '400ms',
+  };
+  const phrase4: CSSProperties = {
+    ...phraseBase,
+    fontWeight: 400,
+    fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 24,
+    transitionDelay: '800ms',
+  };
+  // Пятая и шестая строки — отделяем увеличенным промежутком и паузой
+  const phrase5: CSSProperties = {
+    ...phraseBase,
+    fontWeight: 400,
+    fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 24,
+    color: colors.muted,
+    marginTop: isMobile ? 16 : 22,
+    transitionDelay: '1200ms',
+  };
+  const phrase6: CSSProperties = {
+    ...phraseBase,
+    fontWeight: 400,
+    fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 24,
+    transitionDelay: '1500ms',
+  };
 
-      return (
-        <>
-          <span style={{ color: 'hsl(var(--primary))' }}>{firstWord}</span>
-          <span style={{
-            background: 'linear-gradient(135deg, #e5e7eb 0%, #d1d5db 25%, #9ca3af 50%, #d1d5db 75%, #e5e7eb 100%)',
-            backgroundSize: '200% 200%',
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            animation: 'pearlShimmer 3s ease-in-out infinite'
-          }}> {restWords}</span>
-        </>
-      );
-    }
+  const btnRow: CSSProperties = {
+    display: 'flex',
+    gap: isMobile ? 10 : 14,
+    marginTop: isMobile ? 48 : 60,
+    flexWrap: 'wrap',
+    // Появление кнопок после текста
+    opacity: mounted ? 1 : 0,
+    transform: mounted ? 'translateY(0)' : 'translateY(8px)',
+    transition: 'opacity 600ms ease 1700ms, transform 600ms ease 1700ms',
+  };
+
+  const btnBase: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: isMobile ? '10px 18px' : '12px 26px',
+    borderRadius: 9999,
+    fontWeight: 600,
+    fontSize: isMobile ? 14 : 16,
+    cursor: 'pointer',
+    transition: 'all .25s ease',
+    border: `1px solid ${colors.accent}`,
+    background: 'transparent',
+    color: colors.accent,
+    boxShadow: isDark ? 'inset 0 0 0 0 rgba(124,58,237,0.2)' : 'inset 0 0 0 0 rgba(124,58,237,0.12)',
+  };
+  const btnPrimary: CSSProperties = {
+    ...btnBase,
+    background: 'rgba(124,58,237,0.14)',
+  };
+
+  const handleRegister = () => router.push('/register');
+  const handleAbout = () => router.push('/about');
+
+  // Лёгкая интерактивность слов при наведении без сдвигов макета
+  const renderInteractiveLine = (
+    text: string,
+    lineStyle: CSSProperties,
+    highlightWords: string[] = []
+  ) => {
+    const words = text.split(' ');
+    return (
+      <div style={lineStyle}>
+        {words.map((word, idx) => {
+          const isHighlight = highlightWords.includes(word);
+          const base: CSSProperties = {
+            display: 'inline-block',
+            marginRight: idx === words.length - 1 ? 0 : 6,
+            transition: 'transform 220ms ease, text-shadow 220ms ease, color 220ms ease',
+            transform: 'scale(1)',
+            transformOrigin: 'left bottom',
+            color: isHighlight ? colors.accent : undefined,
+            textShadow: 'none',
+            willChange: 'transform, text-shadow, color',
+          };
+          return (
+            <span
+              key={`${word}-${idx}`}
+              style={base}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.04)';
+                e.currentTarget.style.textShadow = isDark
+                  ? '0 0 10px rgba(124,58,237,0.35)'
+                  : '0 0 10px rgba(124,58,237,0.25)';
+                if (isHighlight) e.currentTarget.style.color = colors.accentHover;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.textShadow = 'none';
+                if (isHighlight) e.currentTarget.style.color = colors.accent;
+              }}
+            >
+              {word}
+            </span>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
-    <>
-      {/* CSS анимация для плавного переливания градиента */}
-      <style jsx>{`
-        @keyframes gradientShift {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
-        }
-        
-        @keyframes pearlShimmer {
-          0% {
-            background-position: 0% 50%;
-            filter: brightness(1);
-          }
-          50% {
-            background-position: 100% 50%;
-            filter: brightness(1.2);
-          }
-          100% {
-            background-position: 0% 50%;
-            filter: brightness(1);
-          }
-        }
-        
-        
-      `}</style>
-      
-      
-              <div style={{
-                display: 'block',
-                width: '100%',
-                maxWidth: 'none',
-                margin: '0 auto',
-                padding: '0 10px',
-                minHeight: '300px',
-                marginTop: deviceType === 'mobile' || deviceType === 'mobile-small' ? '90px' : '130px',
-                marginLeft: deviceType === 'mobile' || deviceType === 'mobile-small' ? '30px' : '60px',
-              }}>
-        {lines.map((line, index) => (
-          <div
-            key={index}
-            style={getLineStyles(index)}
-          >
-            {renderLine(line, index)}
-          </div>
-        ))}
+    <div style={container}>
+      {/* Глубина: мягкие объединяющие слои, без видимых краёв */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: colors.bgA,
+        backdropFilter: 'blur(50px)', WebkitBackdropFilter: 'blur(50px)',
+        zIndex: -1,
+      }} />
+      <div style={{
+        position: 'absolute',
+        top: -40, left: -40, right: -20, bottom: -40,
+        background: colors.depthRadialSoft,
+        zIndex: -2,
+        pointerEvents: 'none',
+      }} />
+
+      {/* Текстовые строки */}
+      {renderInteractiveLine('ОБМЕН', phrase1)}
+      {renderInteractiveLine('КРИПТОВАЛЮТ', phrase2)}
+      {renderInteractiveLine('БЕЗ ЛИШНИХ ХОДОВ', phrase3Title)}
+      {renderInteractiveLine('БЫСТРО ЧЕТКО ПО‑ТВОЕМУ', phrase4, ['ПО‑ТВОЕМУ'])}
+      {renderInteractiveLine('Комиссия только при выводе', phrase5)}
+      {renderInteractiveLine('Экономь фигуры для решающей партии', phrase6)}
+
+      {/* Кнопки */}
+      <div style={btnRow}>
+        <button
+          type="button"
+          onClick={handleRegister}
+          aria-label="Сделай первый ход"
+          style={btnPrimary}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(124,58,237,0.22)';
+            e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(124,58,237,0.35)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(124,58,237,0.14)';
+            e.currentTarget.style.boxShadow = 'inset 0 0 0 0 rgba(124,58,237,0.2)';
+          }}
+        >
+          Сделай первый ход
+        </button>
+        <button
+          type="button"
+          onClick={handleAbout}
+          aria-label="Правила игры"
+          style={btnBase}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(124,58,237,0.08)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          Правила игры
+        </button>
       </div>
-    </>
+    </div>
   );
 };
