@@ -21,6 +21,13 @@ class User(AbstractUser):
     notify_via_email = models.BooleanField(default=True)
     notify_via_telegram = models.BooleanField(default=False)
     
+    # Права администратора сайта (отдельно от is_staff)
+    is_site_admin = models.BooleanField(
+        default=False,
+        verbose_name=_('Site Administrator'),
+        help_text=_('Designates this user as a site administrator who can manage the platform.')
+    )
+    
     # Дата последнего входа
     last_login_ip = models.GenericIPAddressField(blank=True, null=True)
     
@@ -58,6 +65,10 @@ class User(AbstractUser):
         if self.full_name:
             return self.full_name
         return self.username
+    
+    def is_site_administrator(self):
+        """Проверяет, является ли пользователь администратором сайта"""
+        return self.is_site_admin or self.is_superuser
 
 
 class UserProfile(models.Model):

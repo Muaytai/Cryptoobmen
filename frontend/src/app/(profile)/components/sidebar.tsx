@@ -9,6 +9,7 @@ import {clsx} from "clsx";
 import Image from "next/image";
 
 import {useTheme} from 'next-themes';
+import {useAuthStore} from '@/store/useAuthStore';
 import ImageDependTheme from "@/components/imageDependTheme/imageDependTheme";
 
 const navItems = [
@@ -30,6 +31,12 @@ const navItems = [
     title: "Реквезиты",
     path: "/details",
   },
+  {
+    icon: "/images/profile/settings.svg",
+    alt: "Admin",
+    title: "Админ-панель",
+    path: "/admin",
+  },
 ];
 
 export const SideBar = (): JSX.Element => {
@@ -38,6 +45,7 @@ export const SideBar = (): JSX.Element => {
   const [isOpen, setIsOpen] = useState(false);
 
   const {theme} = useTheme();
+  const user = useAuthStore(state => state.user);
 
   useEffect(() => {
     const handleResize = () => {
@@ -128,7 +136,15 @@ export const SideBar = (): JSX.Element => {
             )} */}
 
             <div className={styles.navItems}>
-              {navItems.map((item, index) => {
+              {navItems
+                .filter(item => {
+                  // Скрываем пункт "Админ-панель" для пользователей без прав администратора сайта
+                  if (item.path === '/admin') {
+                    return !!user?.is_site_admin;
+                  }
+                  return true;
+                })
+                .map((item, index) => {
                 const isActive = pathname?.startsWith(item.path);
 
                 return (
