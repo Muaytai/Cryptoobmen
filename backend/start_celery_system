@@ -1,7 +1,8 @@
 #!/bin/bash
 # Полный запуск Celery системы (Workers + Beat)
 
-cd /home/chaizer/projects/Cryptoobmen/backend
+# Переходим в директорию, где лежит сам скрипт (backend), чтобы не хардкодить путь
+cd /mnt/d/progects/Cryptoobmen/backend
 
 echo "🚀 Запуск полной Celery системы..."
 echo ""

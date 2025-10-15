@@ -1,7 +1,8 @@
 #!/bin/bash
 # Простой скрипт запуска Celery workers
 
-cd /home/chaizer/projects/Cryptoobmen/backend
+# Переходим в директорию, где лежит сам скрипт (backend), без хардкода путей
+cd /mnt/d/progects/Cryptoobmen/backend
 source venv/bin/activate
 
 echo "🛑 Останавливаем старые процессы..."

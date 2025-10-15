@@ -25,6 +25,43 @@ const hydrationFadeInStyle = `
   }
 `;
 
+// Критический CSS для предотвращения layout shift в Firefox
+const criticalLayoutFix = `
+  html { 
+    overflow-y: scroll !important; 
+    scrollbar-gutter: stable both-edges !important; 
+    height: 100% !important;
+    --header-h: 64px;
+    contain: layout style !important;
+    will-change: auto !important;
+  }
+  body { 
+    height: 100vh !important; 
+    min-height: 100vh !important; 
+    overflow-y: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    contain: layout style !important;
+    will-change: auto !important;
+    box-sizing: border-box !important;
+  }
+  * { 
+    box-sizing: border-box !important; 
+    contain: layout style !important;
+  }
+  img {
+    contain: layout style !important;
+    will-change: auto !important;
+  }
+  [data-fixed] {
+    contain: layout style paint !important;
+  }
+  div, main, section, article, header, footer {
+    contain: layout style !important;
+    will-change: auto !important;
+  }
+`;
+
 export const metadata: Metadata = {
   title: "Cryptoobmen - Обмен криптовалют",
   description: "Надежная платформа для обмена криптовалют с лучшими курсами"
@@ -37,6 +74,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" suppressHydrationWarning className="dark">
+      <head>
+        <style dangerouslySetInnerHTML={{ __html: criticalLayoutFix }} />
+        <style dangerouslySetInnerHTML={{ __html: hydrationFadeInStyle }} />
+      </head>
       <body suppressHydrationWarning className={`${inter.className} antialiased bg-black text-white dark`}>
         <ThemeProvider>
           <AuthProvider>
