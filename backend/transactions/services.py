@@ -19,6 +19,7 @@ from accounts.models import User
 from crypto.services import get_exchange_rates
 from crypto.models import ExchangePair
 from transactions.models import Exchange as TransactionExchange
+from crypto.gas_calculation import calculate_withdrawal_total_cost, calculate_max_withdrawal_amount
 
 logger = logging.getLogger(__name__)
 
@@ -162,21 +163,30 @@ class WithdrawalService:
             wallet = UserWallet.objects.get(user=user, currency=crypto, is_active=True)
             logger.info(f"Найден кошелек: ID={wallet.id}, баланс={wallet.balance}")
             
-            # Проверяем баланс
-            if wallet.balance < amount:
-                logger.error(f"Недостаточно средств: баланс={wallet.balance}, запрошено={amount}")
-                raise serializers.ValidationError(f"Недостаточно средств. Баланс: {wallet.balance} {crypto.symbol}")
+            # Рассчитываем общую стоимость вывода (сумма + газ + комиссия)
+            withdrawal_cost_info = calculate_withdrawal_total_cost(
+                currency=crypto,
+                withdrawal_amount=amount,
+                destination_address=destination_address
+            )
+            
+            total_cost = withdrawal_cost_info['total_cost']
+            gas_cost = withdrawal_cost_info['gas_cost']
+            platform_fee = withdrawal_cost_info['platform_fee']
+            
+            logger.info(f"Withdrawal cost calculation: amount={amount}, gas={gas_cost}, platform_fee={platform_fee}, total={total_cost}")
+            
+            # Проверяем баланс с учетом газа
+            if wallet.balance < total_cost:
+                logger.error(f"Недостаточно средств: баланс={wallet.balance}, требуется={total_cost} (включая газ: {gas_cost})")
+                raise serializers.ValidationError(f"Недостаточно средств. Баланс: {wallet.balance} {crypto.symbol}, требуется: {total_cost} (включая газ: {gas_cost})")
             
             # Проверяем минимальную сумму
             if amount < crypto.min_exchange_amount:
                 logger.error(f"Сумма меньше минимальной: {amount} < {crypto.min_exchange_amount}")
                 raise serializers.ValidationError(f"Минимальная сумма вывода: {crypto.min_exchange_amount} {crypto.symbol}")
-            
-            # Рассчитываем комиссию
-            fee_percentage = crypto.fee_percentage
-            fee_amount = (amount * fee_percentage) / 100
 
-            amount_after_fee = amount - fee_amount
+            amount_after_fee = amount - platform_fee
             if amount_after_fee <= 0:
                 raise serializers.ValidationError("Сумма к выводу после комиссии должна быть положительной")
 
@@ -201,11 +211,11 @@ class WithdrawalService:
                 user=user,
                 type='withdrawal',
                 status='awaiting_confirmation',
-                amount=amount_after_fee,
-                fee=fee_amount,
+                amount=amount_after_fee,  # Сумма к выводу (без комиссии)
+                fee=platform_fee,  # Комиссия платформы
                 crypto=crypto,
                 ip_address=ip_address,
-                notes=f"Withdrawal request for {amount} {crypto.symbol} to {destination_address} (net: {amount_after_fee})"
+                notes=f"Withdrawal request for {amount} {crypto.symbol} to {destination_address} (net: {amount_after_fee}, gas: {gas_cost}, platform_fee: {platform_fee})"
             )
             logger.info(f"Создана транзакция: ID={transaction_obj.id}")
 

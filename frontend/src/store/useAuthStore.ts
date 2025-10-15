@@ -19,6 +19,7 @@ export interface User {
   telegram_id?: string;
   date_joined?: string;
   has_2fa?: boolean;
+  is_site_admin?: boolean; // Право администратора сайта (frontend-контроль доступа)
   notify_via_email?: boolean;
   notify_via_telegram?: boolean;
   profile?: {

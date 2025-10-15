@@ -33,11 +33,19 @@ class DepositInfoView(APIView):
             )
 
         try:
-            address, memo, qr_code = DepositService.get_deposit_info(
+            result = DepositService.get_deposit_info(
                 user=request.user,
                 currency_symbol=currency_symbol,
                 network=network
             )
+            
+            # Обрабатываем результат в зависимости от количества возвращаемых значений
+            if len(result) == 4:
+                address, memo, qr_code, gas_info = result
+            else:
+                # Обратная совместимость со старым форматом
+                address, memo, qr_code = result
+                gas_info = None
             
             response_data = {
                 'address': address,
@@ -46,6 +54,11 @@ class DepositInfoView(APIView):
                 'network': network,
                 'qr_code': qr_code
             }
+            
+            # Добавляем информацию о газе для валют без мемо
+            if gas_info is not None:
+                response_data['gas_info'] = gas_info
+            
             return Response(response_data, status=status.HTTP_200_OK)
 
         except ValueError as e:

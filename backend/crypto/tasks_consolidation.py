@@ -129,6 +129,10 @@ def check_consolidation_confirmations():
                         user_wallet.available_balance = user_wallet.balance - user_wallet.locked_balance
                         user_wallet.save()
                         logger.info(f"Deducted fees from user {tx.user.id}: gas={gas_fee}, platform={platform_fee}, total={total_fees}")
+                        
+                        # Обновляем баланс пользователя с учетом зачисленного депозита минус газ
+                        # Депозит уже был зачислен ранее, теперь списываем только газ
+                        logger.info(f"User {tx.user.id} balance after consolidation: {user_wallet.balance} {tx.crypto.symbol} (deposit: {tx.amount}, gas deducted: {gas_fee})")
                     
                     logger.info(f"Consolidation confirmed: {tx.tx_hash} for {tx.amount} {tx.crypto.symbol} - funds secured, user balance preserved (fees: {total_fees})")
                     confirmed += 1
