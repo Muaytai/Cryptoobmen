@@ -7,12 +7,14 @@ from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     UserDetailsSerializer, UserDocumentSerializer, UserUpdateSerializer,
     CustomLoginSerializer,
-    UserProfileSerializer
+    UserProfileSerializer, UserDetailedInfoSerializer, UserWithBalanceSerializer
 )
 from .models import UserDocument, UserProfile
 from .decorators import site_admin_required, site_admin_or_staff_required
 from .mixins import SiteAdminRequiredMixin, SiteAdminOrStaffRequiredMixin
-from django.db.models import Q
+from django.db.models import Q, Sum, Count
+from django.utils import timezone
+from datetime import timedelta
 from django.conf import settings
 from django.http import HttpResponseRedirect
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -37,7 +39,7 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Пользователь может видеть только свой профиль"""
-        if self.request.user.is_staff or getattr(self.request.user, 'is_site_administrator', lambda: False)():
+        if self.request.user.is_staff or self.request.user.is_site_admin:
             return User.objects.all()
         return User.objects.filter(id=self.request.user.id)
     
@@ -64,6 +66,129 @@ class UserViewSet(viewsets.ModelViewSet):
         
         serializer.save()
         return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def detailed_info(self, request, pk=None):
+        """Возвращает детальную информацию о пользователе включая кошельки и транзакции (только для админов)"""
+        if not (request.user.is_staff or request.user.is_site_admin):
+            return Response(
+                {"error": "У вас нет прав для просмотра детальной информации пользователей"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user = self.get_object()
+        serializer = UserDetailedInfoSerializer(user, context={'request': request})
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def admin_list(self, request):
+        """Возвращает список пользователей с балансами для админов"""
+        if not (request.user.is_staff or request.user.is_site_admin):
+            return Response(
+                {"error": "У вас нет прав для просмотра списка пользователей"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        users = User.objects.all()
+        serializer = UserWithBalanceSerializer(users, many=True, context={'request': request})
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def dashboard_stats(self, request):
+        """Возвращает статистику для дашборда администратора"""
+        if not (request.user.is_staff or request.user.is_site_admin):
+            return Response(
+                {"error": "У вас нет прав для просмотра статистики"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Импортируем модели здесь, чтобы избежать циклических импортов
+        from crypto.models import UserWallet, Cryptocurrency, ExchangePair
+        from transactions.models import Transaction
+        
+        now = timezone.now()
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday = today - timedelta(days=1)
+        week_ago = today - timedelta(days=7)
+        
+        # Статистика пользователей
+        total_users = User.objects.count()
+        active_users = User.objects.filter(is_active=True).count()
+        verified_users = User.objects.filter(is_verified=True).count()
+        kyc_verified_users = User.objects.filter(kyc_verified=True).count()
+        new_users_today = User.objects.filter(date_joined__gte=today).count()
+        
+        # Статистика транзакций
+        total_transactions = Transaction.objects.count()
+        pending_transactions = Transaction.objects.filter(
+            status__in=['pending', 'processing']
+        ).count()
+        completed_transactions = Transaction.objects.filter(status='completed').count()
+        failed_transactions = Transaction.objects.filter(status='failed').count()
+        
+        # Объемы торгов
+        volume_24h = Transaction.objects.filter(
+            timestamp__gte=yesterday,
+            status='completed'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        volume_7d = Transaction.objects.filter(
+            timestamp__gte=week_ago,
+            status='completed'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Статистика кошельков
+        total_wallets = UserWallet.objects.count()
+        active_currencies = UserWallet.objects.values('currency').distinct().count()
+        
+        # Общий баланс в USD (упрощенный расчет)
+        total_balance_usd = 0
+        for wallet in UserWallet.objects.select_related('currency').all():
+            if wallet.currency and hasattr(wallet.currency, 'prices'):
+                latest_price = wallet.currency.prices.first()
+                if latest_price:
+                    total_balance_usd += float(wallet.balance) * float(latest_price.price_usd)
+        
+        # Системная статистика
+        active_cryptocurrencies = Cryptocurrency.objects.filter(is_active=True).count()
+        total_exchange_pairs = ExchangePair.objects.count()
+        
+        # Определяем здоровье системы
+        system_health = 'good'
+        if total_transactions > 0:
+            failure_rate = failed_transactions / total_transactions
+            if failure_rate > 0.2:
+                system_health = 'critical'
+            elif failure_rate > 0.1:
+                system_health = 'warning'
+        
+        return Response({
+            'users': {
+                'total': total_users,
+                'active': active_users,
+                'verified': verified_users,
+                'kyc_verified': kyc_verified_users,
+                'new_today': new_users_today,
+            },
+            'transactions': {
+                'total': total_transactions,
+                'pending': pending_transactions,
+                'completed': completed_transactions,
+                'failed': failed_transactions,
+                'volume_24h': float(volume_24h),
+                'volume_7d': float(volume_7d),
+            },
+            'wallets': {
+                'total': total_wallets,
+                'total_balance_usd': total_balance_usd,
+                'active_currencies': active_currencies,
+            },
+            'system': {
+                'active_cryptocurrencies': active_cryptocurrencies,
+                'total_exchange_pairs': total_exchange_pairs,
+                'system_health': system_health,
+            }
+        })
 
 
 class UserDocumentViewSet(viewsets.ModelViewSet):

@@ -9,6 +9,7 @@ from django.conf import settings
 from crypto.tasks import process_withdrawal
 from transactions.models import Transfer
 from .services import WithdrawalService
+from accounts.serializers import UserDetailsSerializer
 
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -290,4 +291,91 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
             return DepositDetailSerializer(obj.deposit).data
         if obj.type == 'withdrawal' and hasattr(obj, 'withdrawal'):
             return WithdrawalDetailSerializer(obj.withdrawal).data
+        return None
+
+
+class AdminTransactionSerializer(serializers.ModelSerializer):
+    """Сериализатор для транзакций в админ-панели"""
+    user_info = serializers.SerializerMethodField()
+    crypto_info = serializers.SerializerMethodField()
+    type_display = serializers.ReadOnlyField(source='get_type_display')
+    status_display = serializers.ReadOnlyField(source='get_status_display')
+    exchange_info = serializers.SerializerMethodField()
+    deposit_info = serializers.SerializerMethodField()
+    withdrawal_info = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Transaction
+        fields = [
+            'id', 'transaction_id', 'type', 'status', 'amount', 'fee',
+            'crypto', 'timestamp', 'updated_at', 'tx_hash', 'block_number',
+            'notes', 'ip_address', 'type_display', 'status_display',
+            'user_info', 'crypto_info', 'exchange_info', 'deposit_info', 'withdrawal_info'
+        ]
+        read_only_fields = ['id', 'transaction_id', 'timestamp', 'updated_at']
+    
+    def get_user_info(self, obj):
+        """Информация о пользователе"""
+        return {
+            'id': obj.user.id,
+            'username': obj.user.username,
+            'email': obj.user.email,
+            'first_name': obj.user.first_name,
+            'last_name': obj.user.last_name,
+            'is_verified': obj.user.is_verified,
+            'kyc_verified': obj.user.kyc_verified,
+        }
+    
+    def get_crypto_info(self, obj):
+        """Информация о криптовалюте"""
+        return {
+            'id': obj.crypto.id,
+            'name': obj.crypto.name,
+            'symbol': obj.crypto.symbol,
+            'network': obj.crypto.network,
+            'icon': obj.crypto.icon.url if obj.crypto.icon else None,
+        }
+    
+    def get_exchange_info(self, obj):
+        """Информация об обмене (если есть)"""
+        if hasattr(obj, 'exchange') and obj.exchange:
+            return {
+                'from_crypto': {
+                    'symbol': obj.exchange.from_crypto.symbol,
+                    'name': obj.exchange.from_crypto.name,
+                },
+                'to_crypto': {
+                    'symbol': obj.exchange.to_crypto.symbol,
+                    'name': obj.exchange.to_crypto.name,
+                },
+                'from_amount': str(obj.exchange.from_amount),
+                'to_amount': str(obj.exchange.to_amount),
+                'rate': str(obj.exchange.rate),
+                'fee_percentage': str(obj.exchange.fee_percentage),
+                'fee_amount': str(obj.exchange.fee_amount),
+            }
+        return None
+    
+    def get_deposit_info(self, obj):
+        """Информация о депозите (если есть)"""
+        if hasattr(obj, 'deposit') and obj.deposit:
+            return {
+                'address': obj.deposit.address,
+                'confirmed': obj.deposit.confirmed,
+                'confirmation_date': obj.deposit.confirmation_date,
+            }
+        return None
+    
+    def get_withdrawal_info(self, obj):
+        """Информация о выводе (если есть)"""
+        if hasattr(obj, 'withdrawal') and obj.withdrawal:
+            return {
+                'destination_address': obj.withdrawal.destination_address,
+                'memo': obj.withdrawal.memo,
+                'is_email_confirmed': obj.withdrawal.is_email_confirmed,
+                'confirmed_by_admin': obj.withdrawal.confirmed_by_admin,
+                'rejected_reason': obj.withdrawal.rejected_reason,
+                'confirmation_date': obj.withdrawal.confirmation_date,
+                'refunded': obj.withdrawal.refunded,
+            }
         return None

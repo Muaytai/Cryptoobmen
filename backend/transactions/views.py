@@ -19,7 +19,7 @@ from crypto.gas_calculation import calculate_max_withdrawal_amount, calculate_wi
 from .serializers import (
     TransactionSerializer, ExchangeSerializer, DepositSerializer,
     WithdrawalSerializer, ExchangeCreateSerializer, WithdrawalCreateSerializer,
-    ReviewSerializer, TransactionHistorySerializer
+    ReviewSerializer, TransactionHistorySerializer, AdminTransactionSerializer
 )
 
 
@@ -32,6 +32,79 @@ class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
         """Пользователь может видеть только свои транзакции"""
         user = self.request.user
         return Transaction.objects.filter(user=user).order_by('-timestamp')
+    
+    @action(detail=False, methods=['get'])
+    def admin_list(self, request):
+        """Возвращает список всех транзакций для администраторов"""
+        if not (request.user.is_staff or request.user.is_site_admin):
+            return Response(
+                {"error": "У вас нет прав для просмотра всех транзакций"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Получаем параметры фильтрации
+        user_id = request.query_params.get('user_id')
+        transaction_type = request.query_params.get('type')
+        status_filter = request.query_params.get('status')
+        crypto_id = request.query_params.get('crypto_id')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        search = request.query_params.get('search')
+        
+        # Базовый queryset с оптимизацией
+        queryset = Transaction.objects.select_related(
+            'user', 'crypto'
+        ).prefetch_related(
+            'exchange', 'deposit', 'withdrawal'
+        ).order_by('-timestamp')
+        
+        # Применяем фильтры
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        
+        if transaction_type:
+            queryset = queryset.filter(type=transaction_type)
+        
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        if crypto_id:
+            queryset = queryset.filter(crypto_id=crypto_id)
+        
+        if date_from:
+            queryset = queryset.filter(timestamp__gte=date_from)
+        
+        if date_to:
+            queryset = queryset.filter(timestamp__lte=date_to)
+        
+        if search:
+            queryset = queryset.filter(
+                Q(transaction_id__icontains=search) |
+                Q(user__email__icontains=search) |
+                Q(user__username__icontains=search) |
+                Q(tx_hash__icontains=search) |
+                Q(crypto__symbol__icontains=search)
+            )
+        
+        # Пагинация
+        page_size = int(request.query_params.get('page_size', 50))
+        page = int(request.query_params.get('page', 1))
+        
+        start = (page - 1) * page_size
+        end = start + page_size
+        
+        transactions = queryset[start:end]
+        total_count = queryset.count()
+        
+        serializer = AdminTransactionSerializer(transactions, many=True)
+        
+        return Response({
+            'results': serializer.data,
+            'count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total_count + page_size - 1) // page_size
+        })
     
     @action(detail=False, methods=['get'])
     def by_type(self, request):

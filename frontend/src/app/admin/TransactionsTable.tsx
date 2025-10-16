@@ -3,48 +3,103 @@
 import React, { useEffect, useState } from "react";
 import api from "@/lib/api/fetch";
 import { useAuthStore } from "@/store/useAuthStore";
+import TransactionDetailsModal from "@/components/TransactionDetailsModal";
 
 type TransactionRow = {
-  id: number | string;
-  user: {
-    id: number | string;
-    email: string;
-    username: string;
-  };
+  id: number;
   transaction_id: string;
   type: string;
   status: string;
   amount: string;
   fee: string;
-  crypto: {
-    id: number | string;
-    name: string;
-    symbol: string;
-  };
-  tx_hash?: string;
-  block_number?: number;
   timestamp: string;
   updated_at: string;
+  tx_hash?: string;
+  block_number?: number;
+  notes?: string;
+  ip_address?: string;
+  type_display: string;
+  status_display: string;
+  user_info: {
+    id: number;
+    username: string;
+    email: string;
+    first_name?: string;
+    last_name?: string;
+    is_verified: boolean;
+    kyc_verified: boolean;
+  };
+  crypto_info: {
+    id: number;
+    name: string;
+    symbol: string;
+    network?: string;
+    icon?: string;
+  };
+  exchange_info?: any;
+  deposit_info?: any;
+  withdrawal_info?: any;
+};
+
+type TransactionsResponse = {
+  results: TransactionRow[];
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 };
 
 export default function TransactionsTable() {
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCrypto, setFilterCrypto] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [selectedTransactionId, setSelectedTransactionId] = useState<number | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    page_size: 50,
+    total_pages: 1,
+    count: 0
+  });
+  
   const getAuthHeaders = useAuthStore((s) => s.getAuthHeaders);
+  const user = useAuthStore((s) => s.user);
+  const checkAuthStatus = useAuthStore((s) => s.checkAuthStatus);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (page = 1) => {
     setLoading(true);
     setError(null);
     try {
       const headers = getAuthHeaders();
-      const res: any = await api.get("/transactions/transactions/", { headers });
-      const data = res?.data ?? res;
-      setTransactions(Array.isArray(data) ? data : []);
+      const params = new URLSearchParams({
+        page: page.toString(),
+        page_size: pagination.page_size.toString(),
+      });
+
+      if (searchTerm) params.append('search', searchTerm);
+      if (filterType !== 'all') params.append('type', filterType);
+      if (filterStatus !== 'all') params.append('status', filterStatus);
+      if (filterCrypto !== 'all') params.append('crypto_id', filterCrypto);
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+
+      const res: any = await api.get(`/transactions/transactions/admin_list/?${params}`, { headers });
+      const data: TransactionsResponse = res?.data ?? res;
+      
+      setTransactions(data.results || []);
+      setPagination({
+        page: data.page,
+        page_size: data.page_size,
+        total_pages: data.total_pages,
+        count: data.count
+      });
     } catch (e: any) {
       setError(e?.message || "Не удалось загрузить транзакции");
     } finally {
@@ -53,244 +108,420 @@ export default function TransactionsTable() {
   };
 
   useEffect(() => {
-    fetchTransactions();
-  }, [getAuthHeaders]);
+    const initData = async () => {
+      setAuthLoading(true);
+      try {
+        if (!user) {
+          await checkAuthStatus();
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        setError('Ошибка аутентификации');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    
+    initData();
+  }, [user, checkAuthStatus]);
 
-  const filteredTransactions = transactions.filter((tx) => {
-    const matchesSearch = 
-      tx.transaction_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tx.user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tx.user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (tx.tx_hash && tx.tx_hash.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    const matchesType = 
-      filterType === "all" ||
-      tx.type === filterType;
-
-    const matchesStatus = 
-      filterStatus === "all" ||
-      tx.status === filterStatus;
-
-    const matchesCrypto = 
-      filterCrypto === "all" ||
-      tx.crypto.symbol.toLowerCase() === filterCrypto.toLowerCase();
-
-    return matchesSearch && matchesType && matchesStatus && matchesCrypto;
-  });
-
-  const updateStatus = async (txId: string | number, newStatus: string) => {
-    try {
-      const headers = getAuthHeaders();
-      await api.patch(`/transactions/transactions/${txId}/`, 
-        { status: newStatus }, 
-        { headers }
-      );
-      await fetchTransactions();
-    } catch (e: any) {
-      setError(e?.message || "Не удалось обновить статус транзакции");
+  useEffect(() => {
+    if (user && !authLoading) {
+      fetchTransactions(1);
     }
+  }, [user, authLoading]);
+
+  const openTransactionDetails = (transactionId: number) => {
+    setSelectedTransactionId(transactionId);
+    setIsModalOpen(true);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return "bg-green-100 text-green-800";
-      case 'pending': return "bg-yellow-100 text-yellow-800";
-      case 'processing': return "bg-blue-100 text-blue-800";
-      case 'failed': return "bg-red-100 text-red-800";
-      case 'cancelled': return "bg-gray-100 text-gray-800";
-      case 'refunded': return "bg-purple-100 text-purple-800";
-      default: return "bg-gray-100 text-gray-800";
-    }
+  const closeTransactionDetails = () => {
+    setSelectedTransactionId(null);
+    setIsModalOpen(false);
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'deposit': return "bg-green-100 text-green-800";
-      case 'withdrawal': return "bg-red-100 text-red-800";
-      case 'exchange': return "bg-blue-100 text-blue-800";
-      case 'transfer': return "bg-purple-100 text-purple-800";
-      case 'fee': return "bg-orange-100 text-orange-800";
-      default: return "bg-gray-100 text-gray-800";
-    }
+  const handleSearch = () => {
+    fetchTransactions(1);
   };
 
-  if (loading) return <div className="py-4">Загрузка транзакций…</div>;
+  const handlePageChange = (newPage: number) => {
+    fetchTransactions(newPage);
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('ru-RU', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatAmount = (amount: string) => {
+    return parseFloat(amount).toFixed(8);
+  };
+
+  const getStatusBadge = (status: string) => {
+    const statusColors: Record<string, string> = {
+      'pending': 'bg-yellow-100 text-yellow-800',
+      'awaiting_confirmation': 'bg-orange-100 text-orange-800',
+      'processing': 'bg-blue-100 text-blue-800',
+      'completed': 'bg-green-100 text-green-800',
+      'failed': 'bg-red-100 text-red-800',
+      'cancelled': 'bg-gray-100 text-gray-800',
+      'refunded': 'bg-purple-100 text-purple-800',
+    };
+    
+    return statusColors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  const getTypeIcon = (type: string) => {
+    const typeIcons: Record<string, string> = {
+      'deposit': '⬇️',
+      'withdrawal': '⬆️',
+      'exchange': '🔄',
+      'transfer': '↔️',
+      'fee': '💰',
+      'consolidation': '📦',
+    };
+    
+    return typeIcons[type] || '📝';
+  };
+
+  if (authLoading) return <div className="py-4">Проверка аутентификации…</div>;
+  if (loading && transactions.length === 0) return <div className="py-4">Загрузка транзакций…</div>;
   if (error) return <div className="py-4 text-red-500">{error}</div>;
+  if (!user) return <div className="py-4 text-red-500">Необходима аутентификация</div>;
 
   return (
-    <div className="space-y-4">
-      {/* Фильтры и поиск */}
-      <div className="flex flex-wrap gap-4 p-4 bg-muted/20 rounded-lg">
-        <div className="flex-1 min-w-[200px]">
-          <input
-            type="text"
-            placeholder="Поиск по ID, email, hash..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-3 py-2 border rounded-md text-sm"
-          />
+    <div className="space-y-6">
+      {/* Заголовок */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-6 py-4">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📊</span>
+          <h1 className="text-2xl font-semibold text-gray-900">Управление транзакциями</h1>
         </div>
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="px-3 py-2 border rounded-md text-sm"
-        >
-          <option value="all">Все типы</option>
-          <option value="deposit">Депозит</option>
-          <option value="withdrawal">Вывод</option>
-          <option value="exchange">Обмен</option>
-          <option value="transfer">Перевод</option>
-          <option value="fee">Комиссия</option>
-        </select>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-3 py-2 border rounded-md text-sm"
-        >
-          <option value="all">Все статусы</option>
-          <option value="pending">В ожидании</option>
-          <option value="processing">В обработке</option>
-          <option value="completed">Завершено</option>
-          <option value="failed">Ошибка</option>
-          <option value="cancelled">Отменено</option>
-          <option value="refunded">Возвращено</option>
-        </select>
-        <select
-          value={filterCrypto}
-          onChange={(e) => setFilterCrypto(e.target.value)}
-          className="px-3 py-2 border rounded-md text-sm"
-        >
-          <option value="all">Все валюты</option>
-          {Array.from(new Set(transactions.map(tx => tx.crypto.symbol))).map(symbol => (
-            <option key={symbol} value={symbol}>{symbol}</option>
-          ))}
-        </select>
-        <button
-          onClick={fetchTransactions}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90"
-        >
-          Обновить
-        </button>
+      </div>
+
+      {/* Фильтры и поиск */}
+      <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-xl border border-blue-100">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              🔍 Поиск
+            </label>
+            <input
+              type="text"
+              placeholder="ID, email, username, hash..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-900 bg-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              📝 Тип
+            </label>
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            >
+              <option value="all">Все типы</option>
+              <option value="deposit">Депозит</option>
+              <option value="withdrawal">Вывод</option>
+              <option value="exchange">Обмен</option>
+              <option value="transfer">Перевод</option>
+              <option value="fee">Комиссия</option>
+              <option value="consolidation">Консолидация</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ✅ Статус
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            >
+              <option value="all">Все статусы</option>
+              <option value="pending">В ожидании</option>
+              <option value="awaiting_confirmation">Ожидает подтверждения</option>
+              <option value="processing">В обработке</option>
+              <option value="completed">Завершено</option>
+              <option value="failed">Ошибка</option>
+              <option value="cancelled">Отменено</option>
+              <option value="refunded">Возвращено</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              💰 Криптовалюта
+            </label>
+            <select
+              value={filterCrypto}
+              onChange={(e) => setFilterCrypto(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            >
+              <option value="all">Все валюты</option>
+              <option value="1">Bitcoin</option>
+              <option value="2">Ethereum</option>
+              <option value="3">USDT</option>
+              {/* Добавьте другие валюты по необходимости */}
+            </select>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              📅 Дата от
+            </label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              📅 Дата до
+            </label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSearch}
+            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-blue-700 hover:to-purple-700 transition-all transform hover:scale-105 shadow-lg"
+          >
+            🔍 Поиск
+          </button>
+          <button
+            onClick={() => {
+              setSearchTerm("");
+              setFilterType("all");
+              setFilterStatus("all");
+              setFilterCrypto("all");
+              setDateFrom("");
+              setDateTo("");
+              fetchTransactions(1);
+            }}
+            className="px-6 py-3 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition-all"
+          >
+            🗑️ Сбросить
+          </button>
+        </div>
+      </div>
+
+      {/* Статистика */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Всего транзакций</p>
+              <p className="text-2xl font-bold text-gray-900">{pagination.count}</p>
+            </div>
+            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+              <span className="text-2xl">📊</span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Завершено</p>
+              <p className="text-2xl font-bold text-green-600">
+                {transactions.filter(t => t.status === 'completed').length}
+              </p>
+            </div>
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+              <span className="text-2xl">✅</span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">В обработке</p>
+              <p className="text-2xl font-bold text-blue-600">
+                {transactions.filter(t => t.status === 'processing').length}
+              </p>
+            </div>
+            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+              <span className="text-2xl">⏳</span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Ошибки</p>
+              <p className="text-2xl font-bold text-red-600">
+                {transactions.filter(t => t.status === 'failed').length}
+              </p>
+            </div>
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+              <span className="text-2xl">❌</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Таблица */}
-      <div className="w-full overflow-x-auto border rounded-md">
-        <table className="min-w-[1400px] w-full text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <th className="text-left p-3">ID</th>
-              <th className="text-left p-3">Пользователь</th>
-              <th className="text-left p-3">Тип</th>
-              <th className="text-left p-3">Статус</th>
-              <th className="text-left p-3">Сумма</th>
-              <th className="text-left p-3">Комиссия</th>
-              <th className="text-left p-3">Валюта</th>
-              <th className="text-left p-3">Hash</th>
-              <th className="text-left p-3">Дата</th>
-              <th className="text-left p-3">Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTransactions.map((tx) => (
-              <tr key={tx.id} className="border-t hover:bg-muted/40">
-                <td className="p-3">
-                  <div className="font-mono text-xs">
-                    {tx.transaction_id.slice(0, 8)}...
-                  </div>
-                </td>
-                <td className="p-3">
-                  <div>
-                    <div className="font-medium">{tx.user.email}</div>
-                    <div className="text-xs text-muted-foreground">{tx.user.username}</div>
-                  </div>
-                </td>
-                <td className="p-3">
-                  <span className={`px-2 py-1 rounded-full text-xs ${getTypeColor(tx.type)}`}>
-                    {tx.type}
-                  </span>
-                </td>
-                <td className="p-3">
-                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(tx.status)}`}>
-                    {tx.status}
-                  </span>
-                </td>
-                <td className="p-3">
-                  <div className="font-mono">{tx.amount}</div>
-                </td>
-                <td className="p-3">
-                  <div className="font-mono text-xs">{tx.fee}</div>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-1">
-                    <span className="font-mono">{tx.crypto.symbol}</span>
-                    <span className="text-xs text-muted-foreground">({tx.crypto.name})</span>
-                  </div>
-                </td>
-                <td className="p-3">
-                  {tx.tx_hash ? (
-                    <div className="font-mono text-xs">
-                      {tx.tx_hash.slice(0, 10)}...
-                    </div>
-                  ) : "—"}
-                </td>
-                <td className="p-3">
-                  <div className="text-xs">
-                    <div>{tx.timestamp.slice(0, 10)}</div>
-                    <div className="text-muted-foreground">{tx.timestamp.slice(11, 19)}</div>
-                  </div>
-                </td>
-                <td className="p-3">
-                  <div className="flex gap-2">
-                    {tx.status === 'pending' && (
-                      <button
-                        onClick={() => updateStatus(tx.id, 'processing')}
-                        className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200"
-                      >
-                        В обработку
-                      </button>
-                    )}
-                    {tx.status === 'processing' && (
-                      <>
-                        <button
-                          onClick={() => updateStatus(tx.id, 'completed')}
-                          className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200"
-                        >
-                          Завершить
-                        </button>
-                        <button
-                          onClick={() => updateStatus(tx.id, 'failed')}
-                          className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs hover:bg-red-200"
-                        >
-                          Отклонить
-                        </button>
-                      </>
-                    )}
-                    {(tx.status === 'pending' || tx.status === 'processing') && (
-                      <button
-                        onClick={() => updateStatus(tx.id, 'cancelled')}
-                        className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-xs hover:bg-gray-200"
-                      >
-                        Отменить
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filteredTransactions.length === 0 && (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
               <tr>
-                <td className="p-4 text-center text-muted-foreground" colSpan={10}>
-                  Транзакции не найдены
-                </td>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Транзакция</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Пользователь</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Тип</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Статус</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Сумма</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Дата</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">Действия</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {transactions.map((transaction) => (
+                <tr key={transaction.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center space-x-3">
+                      <span className="text-2xl">{getTypeIcon(transaction.type)}</span>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {transaction.transaction_id.substring(0, 8)}...
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          ID: {transaction.id}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {transaction.user_info.username}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {transaction.user_info.email}
+                      </div>
+                      <div className="flex items-center space-x-1 mt-1">
+                        {transaction.user_info.is_verified && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                            ✓
+                          </span>
+                        )}
+                        {transaction.user_info.kyc_verified && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                            KYC
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm text-gray-900">{transaction.type_display}</div>
+                    <div className="text-xs text-gray-500">{transaction.crypto_info.symbol}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${getStatusBadge(transaction.status)}`}>
+                      {transaction.status_display}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm font-medium text-gray-900">
+                      {formatAmount(transaction.amount)} {transaction.crypto_info.symbol}
+                    </div>
+                    {parseFloat(transaction.fee) > 0 && (
+                      <div className="text-xs text-gray-500">
+                        Комиссия: {formatAmount(transaction.fee)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm text-gray-900">
+                      {formatDate(transaction.timestamp)}
+                    </div>
+                    {transaction.tx_hash && (
+                      <div className="text-xs text-blue-600 font-mono">
+                        {transaction.tx_hash.substring(0, 8)}...
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => openTransactionDetails(transaction.id)}
+                      className="px-3 py-1 rounded text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
+                      title="Просмотреть детали транзакции"
+                    >
+                      👁️ Детали
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {transactions.length === 0 && (
+                <tr>
+                  <td className="px-4 py-8 text-center text-gray-500" colSpan={7}>
+                    <p className="text-sm">Транзакции не найдены</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div className="text-sm text-muted-foreground">
-        Показано {filteredTransactions.length} из {transactions.length} транзакций
-      </div>
+      {/* Пагинация */}
+      {pagination.total_pages > 1 && (
+        <div className="flex items-center justify-between bg-white px-4 py-3 border border-gray-200 rounded-lg">
+          <div className="flex items-center">
+            <p className="text-sm text-gray-700">
+              Показано <span className="font-medium">{transactions.length}</span> из{' '}
+              <span className="font-medium">{pagination.count}</span> транзакций
+            </p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handlePageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+              className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Назад
+            </button>
+            <span className="px-3 py-1 text-sm text-gray-700">
+              Страница {pagination.page} из {pagination.total_pages}
+            </span>
+            <button
+              onClick={() => handlePageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.total_pages}
+              className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Вперед
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Transaction Details Modal */}
+      {selectedTransactionId && (
+        <TransactionDetailsModal
+          transactionId={selectedTransactionId}
+          isOpen={isModalOpen}
+          onClose={closeTransactionDetails}
+        />
+      )}
     </div>
   );
 }

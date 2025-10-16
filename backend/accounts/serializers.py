@@ -233,3 +233,97 @@ class CustomLoginSerializer(serializers.Serializer):
 
         attrs['user'] = user
         return attrs
+
+
+class UserDetailedInfoSerializer(serializers.ModelSerializer):
+    """Детальный сериализатор пользователя с кошельками и транзакциями для админов"""
+    profile = UserProfileSerializer(read_only=True)
+    wallets = serializers.SerializerMethodField()
+    transactions = serializers.SerializerMethodField()
+    total_balance_usd = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'username', 'first_name', 'last_name', 
+            'avatar', 'phone_number', 'is_verified', 'kyc_verified',
+            'telegram_id', 'date_joined', 'last_login', 'profile',
+            'notify_via_email', 'notify_via_telegram',
+            'date_of_birth', 'address', 'full_name',
+            'is_site_admin', 'is_staff', 'is_superuser', 'is_active',
+            'wallets', 'transactions', 'total_balance_usd'
+        ]
+        read_only_fields = ['id', 'email', 'date_joined', 'last_login']
+    
+    def get_wallets(self, obj):
+        """Получает все кошельки пользователя"""
+        from crypto.models import UserWallet
+        from crypto.serializers import UserWalletSerializer
+        
+        wallets = UserWallet.objects.filter(user=obj, is_system_wallet=False).select_related('currency')
+        return UserWalletSerializer(wallets, many=True).data
+    
+    def get_transactions(self, obj):
+        """Получает последние транзакции пользователя"""
+        from transactions.models import Transaction
+        from transactions.serializers import TransactionSerializer
+        
+        transactions = Transaction.objects.filter(user=obj).select_related('crypto').order_by('-timestamp')[:20]
+        return TransactionSerializer(transactions, many=True).data
+    
+    def get_total_balance_usd(self, obj):
+        """Вычисляет общий баланс в USD"""
+        from crypto.models import UserWallet, CryptoPrice
+        from decimal import Decimal
+        
+        wallets = UserWallet.objects.filter(user=obj, is_system_wallet=False).select_related('currency')
+        total_usd = Decimal('0.0')
+        
+        for wallet in wallets:
+            if wallet.balance > 0:
+                # Получаем последнюю цену криптовалюты
+                latest_price = CryptoPrice.objects.filter(crypto=wallet.currency).order_by('-timestamp').first()
+                if latest_price:
+                    usd_value = wallet.balance * latest_price.price_usd
+                    total_usd += usd_value
+                elif wallet.currency.symbol == 'USDT':
+                    # Для USDT считаем 1:1 к USD
+                    total_usd += wallet.balance
+        
+        return float(total_usd)
+
+
+class UserWithBalanceSerializer(serializers.ModelSerializer):
+    """Сериализатор пользователя с балансом для админской таблицы"""
+    total_balance_usd = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'username', 'first_name', 'last_name', 
+            'is_verified', 'kyc_verified', 'telegram_id', 'date_joined', 'last_login',
+            'is_site_admin', 'is_staff', 'is_superuser', 'is_active',
+            'total_balance_usd'
+        ]
+        read_only_fields = ['id', 'email', 'date_joined', 'last_login']
+    
+    def get_total_balance_usd(self, obj):
+        """Вычисляет общий баланс в USD"""
+        from crypto.models import UserWallet, CryptoPrice
+        from decimal import Decimal
+        
+        wallets = UserWallet.objects.filter(user=obj, is_system_wallet=False).select_related('currency')
+        total_usd = Decimal('0.0')
+        
+        for wallet in wallets:
+            if wallet.balance > 0:
+                # Получаем последнюю цену криптовалюты
+                latest_price = CryptoPrice.objects.filter(crypto=wallet.currency).order_by('-timestamp').first()
+                if latest_price:
+                    usd_value = wallet.balance * latest_price.price_usd
+                    total_usd += usd_value
+                elif wallet.currency.symbol == 'USDT':
+                    # Для USDT считаем 1:1 к USD
+                    total_usd += wallet.balance
+        
+        return float(total_usd)

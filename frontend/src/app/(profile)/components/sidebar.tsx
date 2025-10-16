@@ -16,7 +16,7 @@ const navItems = [
   {
     icon: "/images/profile/vector-5.svg",
     alt: "Profile",
-    title: "Главня",
+    title: "Главная",
     path: "/me",
   },
   {
@@ -28,7 +28,7 @@ const navItems = [
   {
     icon: "/images/profile/vector-4.svg",
     alt: "Details",
-    title: "Реквезиты",
+    title: "Реквизиты",
     path: "/details",
   },
   {
@@ -43,6 +43,7 @@ export const SideBar = (): JSX.Element => {
   const pathname = usePathname();
   const [isMobile, setIsMobile] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<number | null>(null);
 
   const {theme} = useTheme();
   const user = useAuthStore(state => state.user);
@@ -69,6 +70,17 @@ export const SideBar = (): JSX.Element => {
 
   const toggleMenu = () => {
     setIsOpen(!isOpen);
+  };
+
+  // Компонент тултипа
+  const Tooltip = ({ text, isVisible }: { text: string; isVisible: boolean }) => {
+    if (!isVisible) return null;
+    
+    return (
+      <div className={styles.tooltip}>
+        {text}
+      </div>
+    );
   };
 
   return (
@@ -155,6 +167,8 @@ export const SideBar = (): JSX.Element => {
                       }`}
                       whileHover={{scale: 1.05}}
                       whileTap={{scale: 0.95}}
+                      onMouseEnter={() => setHoveredItem(index)}
+                      onMouseLeave={() => setHoveredItem(null)}
                     >
                       {isActive && (
                         <motion.div
@@ -184,6 +198,13 @@ export const SideBar = (): JSX.Element => {
                         >
                           {item.title}
                         </motion.span>
+                      )}
+                      {/* Тултип для десктопной версии */}
+                      {isMobile === false && (
+                        <Tooltip 
+                          text={item.title} 
+                          isVisible={hoveredItem === index} 
+                        />
                       )}
                     </motion.div>
                   </Link>
