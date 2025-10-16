@@ -14,7 +14,7 @@ class Command(BaseCommand):
             defaults={
                 'name': 'Binance Coin',
                 'decimals': 18,
-                'requires_memo': True,  # BNB требует memo для депозитов
+                'requires_memo': False,  # BNB не требует memo для депозитов
                 'is_active': True,
                 'coingecko_id': 'binancecoin'
             }
