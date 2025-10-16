@@ -180,11 +180,12 @@ BLOCKCYPHER_API_KEY = os.getenv('BLOCKCYPHER_API_KEY', '')
 # TRON Network configuration
 TRON_NETWORK = os.getenv('TRON_NETWORK', 'mainnet') # По умолчанию mainnet
 
+# URL TronGrid берём из переменной окружения, с умным дефолтом по сети
 if TRON_NETWORK == 'nile':
-    TRON_API_URL = 'https://nile.trongrid.io'
+    TRON_API_URL = os.getenv('TRON_API_URL', 'https://nile.trongrid.io')
     USDT_CONTRACT_ADDRESS = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'
 else: # mainnet
-    TRON_API_URL = 'https://api.trongrid.io'
+    TRON_API_URL = os.getenv('TRON_API_URL', 'https://api.trongrid.io')
     USDT_CONTRACT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 
 USDT_TRC20_CONTRACT_ADDRESS = os.getenv("USDT_TRC20_CONTRACT_ADDRESS", "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj")

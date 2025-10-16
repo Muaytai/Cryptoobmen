@@ -146,6 +146,10 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
                 from_block = max(current_block - 500, 1)
                 params = {'from_block': from_block, 'to_block': current_block}
             elif currency.network and currency.network.upper() == 'ERC20':
+                # Для токенов ERC-20 обязательно указываем адрес контракта
+                params = {'min_timestamp': min_ts, 'contract_address': currency.contract_address}
+            elif currency.network and currency.network.upper() == 'TRC20':
+                # Для токенов TRC-20 (TRON/USDT и т.п.) также требуется адрес контракта
                 params = {'min_timestamp': min_ts, 'contract_address': currency.contract_address}
             else:
                 params = {'min_timestamp': min_ts}
@@ -699,7 +703,9 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
                 return f"skip:not_confirmed"
             
             # КРИТИЧЕСКАЯ ПРОВЕРКА: не обрабатывать уже отправленные или завершенные
-            if withdrawal.transaction.status in ['awaiting_confirmation', 'completed', 'failed']:
+            # Также игнорируем заявки в статусе 'processing' (уже в работе),
+            # чтобы избежать повторного блокирования средств при повторном запуске задачи
+            if withdrawal.transaction.status in ['awaiting_confirmation', 'processing', 'completed', 'failed']:
                 if withdrawal.transaction.tx_hash:
                     logger.warning(f"Withdrawal {withdrawal_id} already processed with tx_hash: {withdrawal.transaction.tx_hash}. Status: {withdrawal.transaction.status}. Skipping to avoid duplication.")
                     return f"skip:already_processed:{withdrawal.transaction.status}"
