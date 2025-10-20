@@ -345,7 +345,7 @@ def check_blockchain_deposits():
                     system_wallet.balance += amount
                     system_wallet.save()
 
-                    Transaction.objects.create(
+                    transaction_obj = Transaction.objects.create(
                         user=user,
                         crypto=wallet.currency,
                         amount=amount,
@@ -386,7 +386,8 @@ def check_blockchain_deposits():
     currencies_no_memo = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
     
     for currency in currencies_no_memo:
-        logger.info(f"[BATCH] Starting batch processing for {currency.symbol}, network={currency.network}, decimals={currency.decimals}, requires_memo={currency.requires_memo}")
+        print(f"[DEBUG] Processing currency: {currency.symbol} (ID: {currency.id}), network={currency.network}")
+        logger.info(f"[BATCH] Starting batch processing for {currency.symbol} (ID: {currency.id}), network={currency.network}, decimals={currency.decimals}, requires_memo={currency.requires_memo}")
         
         user_wallets = UserWallet.objects.filter(
             currency=currency, 
@@ -394,8 +395,12 @@ def check_blockchain_deposits():
             deposit_address__isnull=False
         ).exclude(deposit_address='')
         
+        print(f"[DEBUG] Found {user_wallets.count()} wallets for {currency.symbol} (ID: {currency.id})")
+        logger.info(f"[BATCH] Found {user_wallets.count()} wallets for {currency.symbol} (ID: {currency.id})")
+        
         if not user_wallets.exists():
-            logger.info(f"[BATCH] No user wallets found for {currency.symbol}")
+            print(f"[DEBUG] No wallets for {currency.symbol} (ID: {currency.id})")
+            logger.info(f"[BATCH] No user wallets found for {currency.symbol} (ID: {currency.id})")
             continue
         
         try:
@@ -409,22 +414,29 @@ def check_blockchain_deposits():
             
             # Обрабатываем результаты батча
             for address, (raw_transactions, success) in batch_results.items():
+                print(f"[DEBUG] Address {address}: {len(raw_transactions)} transactions, success: {success}")
                 if not success or not raw_transactions:
+                    print(f"[DEBUG] Skipping {address}: no transactions or failed")
                     continue
                 
                 user_wallet = address_to_wallet.get(address)
                 if not user_wallet:
+                    print(f"[DEBUG] No wallet found for address {address}")
                     continue
                 
+                print(f"[DEBUG] Processing {len(raw_transactions)} transactions for address {address}, user {user_wallet.user.id}")
                 logger.info(f"[BATCH] Processing {len(raw_transactions)} transactions for address {address}")
                 
                 # Обрабатываем найденные транзакции
                 for ev in raw_transactions:
                     tx_hash = ev.get("transaction_id")
                     amount_str = ev.get("value")
+                    print(f"[DEBUG] Processing transaction: {tx_hash}, amount: {amount_str}")
                     logger.info(f"[BATCH] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
                     existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).first()
+                    print(f"[DEBUG] Checking existing transaction: {tx_hash}, found: {existing_tx is not None}")
                     if existing_tx:
+                        print(f"[DEBUG] Duplicate transaction found, skipping")
                         logger.warning(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Re-sending signal.")
                         # Повторно отправляем сигнал, если транзакция уже существует
                         try:
@@ -447,7 +459,9 @@ def check_blockchain_deposits():
                             logger.error(f"[BATCH] Failed to re-send WebSocket signal for address {address}: {e}")
                         continue
                     
+                    print(f"[DEBUG] Transaction not found, proceeding with processing")
                     try:
+                        print(f"[DEBUG] Starting amount conversion")
                         # Логируем входные данные для диагностики
                         logger.info(f"[BATCH] Processing amount conversion: currency={currency.symbol}, network={currency.network}, amount_str={amount_str}, decimals={currency.decimals}")
                         
@@ -479,15 +493,20 @@ def check_blockchain_deposits():
                         
                         # Логируем результат
                         logger.info(f"[BATCH] Amount conversion result: {amount} {currency.symbol}")
+                        print(f"[DEBUG] Amount conversion successful: {amount} {currency.symbol}")
                         
                     except (ValueError, TypeError) as e:
+                        print(f"[DEBUG] Amount conversion error: {e}")
                         logger.error(f"[BATCH] Invalid amount: {amount_str}, error: {e}")
                         continue
                         
                     # Проверяем, что транзакция с таким hash еще не существует
                     if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                        print(f"[DEBUG] Transaction already exists globally, skipping")
                         logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
                         continue
+                    
+                    print(f"[DEBUG] Transaction not found globally, proceeding with database operations")
                     
                     # Для депозитов зачисляем ПОЛНУЮ сумму без вычета газа
                     # Газ будет вычитаться только при выводе средств
@@ -495,25 +514,54 @@ def check_blockchain_deposits():
                     gas_cost = Decimal('0')  # При депозите газ не вычитается
                     logger.info(f"[BATCH] Full deposit amount credited: {amount} {currency.symbol} (gas will be deducted on withdrawal)")
                         
-                    with transaction.atomic():
-                        user_wallet.balance += net_amount
-                        user_wallet.save()
-                        
-                        # Детальное логирование перед сохранением
-                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={net_amount}, tx_hash={tx_hash}")
-                        
-                        Transaction.objects.create(
-                            user=user_wallet.user,
-                            crypto=currency,
-                            amount=net_amount,  # Записываем чистую сумму
-                            fee=gas_cost,  # Записываем стоимость газа
-                            tx_hash=tx_hash,
-                            type="deposit",
-                            status="completed",
-                            timestamp=timezone.now()
-                        )
-                        processed += 1
-                        logger.info(f"[BATCH] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
+                    print(f"[DEBUG] Starting database operations")
+                    try:
+                        with transaction.atomic():
+                            print(f"[DEBUG] Updating user wallet balance")
+                            user_wallet.balance += net_amount
+                            user_wallet.save()
+                            print(f"[DEBUG] User wallet balance updated")
+                            
+                            # Детальное логирование перед сохранением
+                            logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={net_amount}, tx_hash={tx_hash}")
+                            
+                            transaction_obj = Transaction.objects.create(
+                                user=user_wallet.user,
+                                crypto=currency,
+                                amount=net_amount,  # Записываем чистую сумму
+                                fee=gas_cost,  # Записываем стоимость газа
+                                tx_hash=tx_hash,
+                                type="deposit",
+                                status="completed",
+                                timestamp=timezone.now()
+                            )
+                            processed += 1
+                            logger.info(f"[BATCH] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
+                            print(f"[DEBUG] Transaction created successfully")
+                            
+                            # Логируем и синхронизируем баланс системного кошелька для SOL
+                            if currency.symbol.upper() == 'SOL' or (currency.network or '').lower() == 'solana':
+                                try:
+                                    from .models import SystemWalletBalanceLog
+                                    service = get_blockchain_service(currency.network or currency.symbol)
+                                    system_balance = service.get_balance(user_wallet.deposit_address)
+                                    SystemWalletBalanceLog.log_system_wallet_balance(
+                                        currency=currency,
+                                        system_address=user_wallet.deposit_address,
+                                        blockchain_balance=system_balance,
+                                        transaction_type='deposit',
+                                        related_transaction=transaction_obj,
+                                        notes=f'Deposit detected: {amount} {currency.symbol} from user {user_wallet.user.id}',
+                                        sync_balance=True  # Синхронизируем баланс в БД
+                                    )
+                                    logger.info(f"[DEPOSIT] Logged and synced system wallet balance for SOL: {system_balance}")
+                                except Exception as log_error:
+                                    logger.error(f"[DEPOSIT] Failed to log/sync system wallet balance: {log_error}")
+
+                    except Exception as e:
+                        print(f"[DEBUG] Database operation error: {e}")
+                        logger.error(f"[BATCH] Database operation error: {e}")
+                        continue
 
                     # Отправляем WebSocket сигнал по адресу
                     try:
@@ -798,6 +846,24 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
             
             # Газ не начисляется на комиссионный кошелек - это просто стоимость транзакции
 
+        # Логируем и синхронизируем баланс системного кошелька для SOL после вывода
+        if crypto.symbol.upper() == 'SOL' or (crypto.network or '').lower() == 'solana':
+            try:
+                from .models import SystemWalletBalanceLog
+                system_balance = service.get_balance(system_wallet.deposit_address)
+                SystemWalletBalanceLog.log_system_wallet_balance(
+                    currency=crypto,
+                    system_address=system_wallet.deposit_address,
+                    blockchain_balance=system_balance,
+                    transaction_type='withdrawal',
+                    related_transaction=withdrawal.transaction,
+                    notes=f'Withdrawal sent: {amount_to_send} {crypto.symbol} to {withdrawal.destination_address}, platform fee: {platform_fee}, gas: {gas_cost}',
+                    sync_balance=True  # Синхронизируем баланс в БД
+                )
+                logger.info(f"[WITHDRAWAL] Logged and synced system wallet balance for SOL: {system_balance}")
+            except Exception as log_error:
+                logger.error(f"[WITHDRAWAL] Failed to log/sync system wallet balance: {log_error}")
+
         # Запускаем отложенную задачу для проверки подтверждения
         check_withdrawal_confirmation.apply_async(args=[withdrawal.id], countdown=60)
 
@@ -1048,7 +1114,7 @@ def process_pending_deposits():
                         if not Transaction.objects.filter(tx_hash=tx_hash).exists():
                             # Записываем транзакцию консолидации в БД
                             with db_transaction.atomic():
-                                Transaction.objects.create(
+                                transaction = Transaction.objects.create(
                                     user=user_wallet.user,
                                     crypto=currency,
                                     amount=amount_to_send,
@@ -1059,6 +1125,24 @@ def process_pending_deposits():
                                     fee=gas_cost,  # Теперь записываем реальную стоимость газа
                                 )
                                 logger.info(f"[CONSOLIDATION] Transaction saved to DB: {tx_hash}")
+                                
+                                # Логируем и синхронизируем баланс системного кошелька для SOL
+                                if currency.symbol.upper() == 'SOL' or (currency.network or '').lower() == 'solana':
+                                    try:
+                                        from .models import SystemWalletBalanceLog
+                                        system_balance = blockchain_service.get_balance(system_wallet_address)
+                                        SystemWalletBalanceLog.log_system_wallet_balance(
+                                            currency=currency,
+                                            system_address=system_wallet_address,
+                                            blockchain_balance=system_balance,
+                                            transaction_type='consolidation',
+                                            related_transaction=transaction,
+                                            notes=f'Consolidation: {amount_to_send} {currency.symbol} from user {user_wallet.user.id}, gas cost: {gas_cost}',
+                                            sync_balance=True  # Синхронизируем баланс в БД
+                                        )
+                                        logger.info(f"[CONSOLIDATION] Logged and synced system wallet balance for SOL: {system_balance}")
+                                    except Exception as log_error:
+                                        logger.error(f"[CONSOLIDATION] Failed to log/sync system wallet balance: {log_error}")
                                 
                                 # Генерируем новый адрес для пользователя сразу после консолидации
                                 try:
@@ -1190,6 +1274,28 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
                 # Обновляем сам вывод
                 withdrawal.confirmation_date = timezone.now()
                 withdrawal.save()
+                
+                # Логируем и синхронизируем баланс системного кошелька для SOL после подтверждения вывода
+                if withdrawal.transaction.crypto.symbol.upper() == 'SOL' or (withdrawal.transaction.crypto.network or '').lower() == 'solana':
+                    try:
+                        from .models import SystemWalletBalanceLog
+                        from .tasks_consolidation import get_system_wallet_address
+                        
+                        system_wallet_address = get_system_wallet_address(withdrawal.transaction.crypto)
+                        system_balance = service.get_balance(system_wallet_address)
+                        
+                        SystemWalletBalanceLog.log_system_wallet_balance(
+                            currency=withdrawal.transaction.crypto,
+                            system_address=system_wallet_address,
+                            blockchain_balance=system_balance,
+                            transaction_type='withdrawal',
+                            related_transaction=withdrawal.transaction,
+                            notes=f'Withdrawal confirmed: {withdrawal.transaction.amount} {withdrawal.transaction.crypto.symbol} to {withdrawal.destination_address}, total cost: {amount_to_withdraw}',
+                            sync_balance=True  # Синхронизируем баланс в БД
+                        )
+                        logger.info(f"[WITHDRAWAL_CONFIRMED] Logged and synced system wallet balance for SOL: {system_balance}")
+                    except Exception as log_error:
+                        logger.error(f"[WITHDRAWAL_CONFIRMED] Failed to log/sync system wallet balance: {log_error}")
 
             logger.info(f"Successfully finalized withdrawal {withdrawal.id}.")
             return f"success:confirmed_and_completed"

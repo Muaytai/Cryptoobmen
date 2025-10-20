@@ -160,6 +160,47 @@ def check_consolidation_confirmations():
                         logger.info(f"User {tx.user.id} balance after consolidation: {user_wallet.balance} {tx.crypto.symbol} (deposit: {tx.amount}, fees deducted: {total_fees})")
                     
                     logger.info(f"Consolidation confirmed: {tx.tx_hash} for {tx.amount} {tx.crypto.symbol} - funds secured, user balance preserved (fees: {total_fees})")
+                    
+                    # Логирование/синхронизацию баланса системного кошелька для SOL выполняем ПОСЛЕ коммита,
+                    # чтобы внешние ошибки не откатывали изменение статуса транзакции.
+                    if tx.crypto.symbol.upper() == 'SOL' or (tx.crypto.network or '').lower() == 'solana':
+                        currency_id = tx.crypto_id
+                        tx_id = tx.id
+                        tx_amount = tx.amount
+                        tx_symbol = tx.crypto.symbol
+                        post_commit_notes = f'Consolidation confirmed: {tx_amount} {tx_symbol}, total fees: {total_fees}'
+
+                        def _log_system_balance_after_commit():
+                            try:
+                                from django.db import connection  # ensures Django app registry is ready
+                                from .models import SystemWalletBalanceLog, Cryptocurrency
+                                from .tasks_consolidation import get_system_wallet_address
+                                from .blockchain.factory import get_blockchain_service
+                                from transactions.models import Transaction as TxModel
+
+                                currency = Cryptocurrency.objects.get(id=currency_id)
+                                tx_obj = TxModel.objects.get(id=tx_id)
+
+                                # Получаем сервис заново, чтобы не зависеть от контекста задачи/соединения
+                                svc = get_blockchain_service(currency.network or currency.symbol)
+                                system_wallet_address = get_system_wallet_address(currency)
+                                system_balance = svc.get_balance(system_wallet_address)
+
+                                SystemWalletBalanceLog.log_system_wallet_balance(
+                                    currency=currency,
+                                    system_address=system_wallet_address,
+                                    blockchain_balance=system_balance,
+                                    transaction_type='consolidation',
+                                    related_transaction=tx_obj,
+                                    notes=post_commit_notes,
+                                    sync_balance=True
+                                )
+                                logger.info(f"[CONSOLIDATION_CONFIRMED] Logged and synced system wallet balance for SOL: {system_balance}")
+                            except Exception as log_error:
+                                logger.error(f"[CONSOLIDATION_CONFIRMED] Failed to log/sync system wallet balance post-commit: {log_error}")
+
+                        transaction.on_commit(_log_system_balance_after_commit)
+                    
                     confirmed += 1
                     
                     # ПРИМЕЧАНИЕ: Новый адрес уже сгенерирован при отправке консолидации в process_pending_deposits
