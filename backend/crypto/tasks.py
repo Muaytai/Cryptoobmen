@@ -299,25 +299,38 @@ def check_blockchain_deposits():
                 continue
 
             try:
+                # Получаем/создаём кошелёк пользователя
+                user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
+                
+                # Определяем логику зачисления
+                if wallet.currency.requires_memo:
+                    # Валюты с MEMO - зачисляем сразу
+                    net_amount = amount
+                    gas_cost = Decimal('0')
+                    deposit_status = "completed"
+                    should_credit_now = True
+                    logger.info(f"[MEMO] Will credit immediately: {amount} {wallet.currency.symbol}")
+                else:
+                    # Валюты БЕЗ MEMO - НЕ зачисляем, ждём консолидации
+                    deposit_info = calculate_net_deposit_amount(
+                        currency=wallet.currency,
+                        deposit_amount=amount,
+                        user_address=user_wallet.deposit_address
+                    )
+                    net_amount = amount
+                    gas_cost = deposit_info['gas_cost']
+                    deposit_status = "pending"
+                    should_credit_now = False
+                    logger.info(f"[NO_MEMO] Pending consolidation: gross={amount}, gas={gas_cost} {wallet.currency.symbol}")
+                
                 with transaction.atomic():
-                    logger.info(f"Updating balance for user {user.id} and wallet {wallet.currency.symbol}")
-                    user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
+                    logger.info(f"Processing deposit for user {user.id} and wallet {wallet.currency.symbol}")
                     
-                    # Для валют с мемо газ не нужен, зачисляем полную сумму
-                    if wallet.currency.requires_memo:
-                        user_wallet.balance += amount
-                        logger.info(f"[MEMO] Full amount credited: {amount} {wallet.currency.symbol}")
-                    else:
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        deposit_info = calculate_net_deposit_amount(
-                            currency=wallet.currency,
-                            deposit_amount=amount,
-                            user_address=user_wallet.deposit_address
-                        )
-                        user_wallet.balance += deposit_info['net_amount']
-                        logger.info(f"[NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
-                    
-                    user_wallet.save()
+                    # Зачисляем только для валют с MEMO
+                    if should_credit_now:
+                        user_wallet.balance += net_amount
+                        user_wallet.save()
+                        logger.info(f"[MEMO] Balance credited: {net_amount} {wallet.currency.symbol}")
 
                     system_wallet, _ = UserWallet.objects.get_or_create(
                         user=None,
@@ -335,10 +348,11 @@ def check_blockchain_deposits():
                     Transaction.objects.create(
                         user=user,
                         crypto=wallet.currency,
-                        amount=amount,
+                        amount=net_amount,
+                        fee=gas_cost,
                         tx_hash=tx_hash,
                         type="deposit",
-                        status="completed",
+                        status=deposit_status,  # pending или completed
                         timestamp=timezone.now()
                     )
 
@@ -622,24 +636,36 @@ def check_blockchain_deposits():
                     logger.error(f"Invalid amount format: {amount_str}. Skipping. Error: {e}")
                     continue
 
+                # Получаем/создаём кошелёк пользователя
+                user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
+                
+                # Определяем логику зачисления
+                if wallet.currency.requires_memo:
+                    # XRP с MEMO - зачисляем сразу
+                    net_amount = amount
+                    gas_cost = Decimal('0')
+                    deposit_status = "completed"
+                    should_credit_now = True
+                    logger.info(f"[XRP] Will credit immediately: {amount} {wallet.currency.symbol}")
+                else:
+                    # XRP БЕЗ MEMO (теоретически) - ждём консолидации
+                    deposit_info = calculate_net_deposit_amount(
+                        currency=wallet.currency,
+                        deposit_amount=amount,
+                        user_address=user_wallet.deposit_address
+                    )
+                    net_amount = amount
+                    gas_cost = deposit_info['gas_cost']
+                    deposit_status = "pending"
+                    should_credit_now = False
+                    logger.info(f"[XRP_NO_MEMO] Pending consolidation: gross={amount}, gas={gas_cost} {wallet.currency.symbol}")
+                
                 with transaction.atomic():
-                    user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
-                    
-                    # Для XRP (с мемо) газ не нужен, зачисляем полную сумму
-                    if wallet.currency.requires_memo:
-                        user_wallet.balance += amount
-                        logger.info(f"[XRP] Full amount credited: {amount} {wallet.currency.symbol}")
-                    else:
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        deposit_info = calculate_net_deposit_amount(
-                            currency=wallet.currency,
-                            deposit_amount=amount,
-                            user_address=user_wallet.deposit_address
-                        )
-                        user_wallet.balance += deposit_info['net_amount']
-                        logger.info(f"[XRP_NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
-                    
-                    user_wallet.save()
+                    # Зачисляем только для валют с MEMO
+                    if should_credit_now:
+                        user_wallet.balance += net_amount
+                        user_wallet.save()
+                        logger.info(f"[XRP] Balance credited: {net_amount} {wallet.currency.symbol}")
                     # Обновляем системный кошелек
                     system_wallet, _ = UserWallet.objects.get_or_create(
                         user=None,
@@ -660,10 +686,11 @@ def check_blockchain_deposits():
                     Transaction.objects.create(
                         user=deposit_memo.user,
                         crypto=wallet.currency,
-                        amount=amount,
+                        amount=net_amount,
+                        fee=gas_cost,
                         tx_hash=tx_hash,
                         type="deposit",
-                        status="completed",
+                        status=deposit_status,  # pending или completed
                         timestamp=timezone.now()
                     )
                     deposit_memo.status = "used"
