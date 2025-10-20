@@ -475,42 +475,52 @@ def check_blockchain_deposits():
                     if Transaction.objects.filter(tx_hash=tx_hash).exists():
                         logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
                         continue
+                    
+                    # ВАЖНО: Расчет газа делаем ДО начала транзакции
+                    # Для валют БЕЗ мемо НЕ зачисляем сразу - ждём консолидации
+                    # Для валют С мемо зачисляем сразу (консолидация не требуется)
+                    if currency.requires_memo:
+                        # Валюты с MEMO - зачисляем сразу полную сумму
+                        net_amount = amount
+                        gas_cost = Decimal('0')
+                        deposit_status = "completed"
+                        should_credit_now = True
+                        logger.info(f"[BATCH] MEMO currency - will credit immediately: {amount} {currency.symbol}")
+                    else:
+                        # Валюты БЕЗ MEMO - НЕ зачисляем, ждём консолидации
+                        deposit_info = calculate_net_deposit_amount(
+                            currency=currency,
+                            deposit_amount=amount,
+                            user_address=user_wallet.deposit_address
+                        )
+                        net_amount = amount  # Сохраняем полную сумму депозита
+                        gas_cost = deposit_info['gas_cost']
+                        deposit_status = "pending"  # Ждём консолидации
+                        should_credit_now = False
+                        logger.info(f"[BATCH] NO-MEMO currency - pending consolidation: gross={amount}, estimated_gas={gas_cost} {currency.symbol}")
                         
                     with transaction.atomic():
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        if not currency.requires_memo:
-                            deposit_info = calculate_net_deposit_amount(
-                                currency=currency,
-                                deposit_amount=amount,
-                                user_address=user_wallet.deposit_address
-                            )
-                            net_amount = deposit_info['net_amount']
-                            gas_cost = deposit_info['gas_cost']
-                            logger.info(f"[BATCH] Gas calculation: gross={amount}, net={net_amount}, gas={gas_cost} {currency.symbol}")
-                        else:
-                            # Для валют с мемо зачисляем полную сумму
-                            net_amount = amount
-                            gas_cost = Decimal('0')
-                            logger.info(f"[BATCH] Full amount for memo currency: {amount} {currency.symbol}")
+                        # Зачисляем на баланс только для валют с MEMO
+                        if should_credit_now:
+                            user_wallet.balance += net_amount
+                            user_wallet.save()
+                            logger.info(f"[BATCH] Balance credited immediately: {net_amount} {currency.symbol}")
                         
-                        user_wallet.balance += net_amount
-                        user_wallet.save()
-                        
-                        # Детальное логирование перед сохранением
-                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={net_amount}, tx_hash={tx_hash}")
+                        # Создаём транзакцию
+                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={net_amount}, status={deposit_status}, tx_hash={tx_hash}")
                         
                         Transaction.objects.create(
                             user=user_wallet.user,
                             crypto=currency,
-                            amount=net_amount,  # Записываем чистую сумму
-                            fee=gas_cost,  # Записываем стоимость газа
+                            amount=net_amount,  # Полная сумма депозита
+                            fee=gas_cost,  # Предполагаемая стоимость газа
                             tx_hash=tx_hash,
                             type="deposit",
-                            status="completed",
+                            status=deposit_status,  # pending для валют без MEMO, completed для валют с MEMO
                             timestamp=timezone.now()
                         )
                         processed += 1
-                        logger.info(f"[BATCH] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
+                        logger.info(f"[BATCH] Deposit recorded with status '{deposit_status}': {user_wallet.user} {currency.symbol} {amount}")
 
                     # Отправляем WebSocket сигнал по адресу
                     try:

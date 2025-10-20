@@ -103,41 +103,48 @@ def check_consolidation_confirmations():
             
             if is_confirmed:
                 with transaction.atomic():
-                    # Обновляем статус транзакции
+                    # Обновляем статус транзакции консолидации
                     tx.status = "completed"
                     tx.save()
                     
-                    # КОНСОЛИДАЦИЯ НЕ СПИСЫВАЕТ средства с баланса пользователя!
-                    # Это внутренний перевод для безопасности, средства остаются у пользователя
-                    # Списываем только реальные комиссии (газ + платформенные)
-                    
-                    # Получаем кошелек пользователя для списания комиссий
+                    # Получаем кошелек пользователя
                     user_wallet = UserWallet.objects.get(
                         user=tx.user,
                         currency=tx.crypto,
                         is_system_wallet=False
                     )
                     
-                    # Рассчитываем реальные комиссии
-                    gas_fee = tx.fee if tx.fee else Decimal('0')  # Комиссия за газ (уже записана в транзакции)
-                    platform_fee = Decimal('0')  # TODO: Платформенная комиссия (будет реализована позже)
-                    total_fees = gas_fee + platform_fee
+                    # Находим все депозиты в статусе pending для этого пользователя и валюты
+                    pending_deposits = Transaction.objects.filter(
+                        user=tx.user,
+                        crypto=tx.crypto,
+                        type="deposit",
+                        status="pending"
+                    )
                     
-                    # Списываем только комиссии с баланса пользователя
-                    if total_fees > 0:
-                        user_wallet.balance -= total_fees
-                        user_wallet.available_balance = user_wallet.balance - user_wallet.locked_balance
-                        user_wallet.save()
-                        logger.info(f"Deducted fees from user {tx.user.id}: gas={gas_fee}, platform={platform_fee}, total={total_fees}")
+                    # Зачисляем средства на баланс из всех pending депозитов
+                    total_credited = Decimal('0')
+                    for deposit in pending_deposits:
+                        # Обновляем статус депозита
+                        deposit.status = "completed"
+                        deposit.save()
                         
-                        # Обновляем баланс пользователя с учетом зачисленного депозита минус газ
-                        # Депозит уже был зачислен ранее, теперь списываем только газ
-                        logger.info(f"User {tx.user.id} balance after consolidation: {user_wallet.balance} {tx.crypto.symbol} (deposit: {tx.amount}, gas deducted: {gas_fee})")
+                        # Зачисляем на баланс (минус gas который уже учтен в fee)
+                        net_amount = deposit.amount - deposit.fee
+                        user_wallet.balance += net_amount
+                        total_credited += net_amount
+                        
+                        logger.info(f"Credited deposit {deposit.tx_hash}: gross={deposit.amount}, gas={deposit.fee}, net={net_amount} {tx.crypto.symbol}")
                     
-                    logger.info(f"Consolidation confirmed: {tx.tx_hash} for {tx.amount} {tx.crypto.symbol} - funds secured, user balance preserved (fees: {total_fees})")
+                    if total_credited > 0:
+                        user_wallet.save()
+                        logger.info(f"✅ Consolidation completed for user {tx.user.id}: credited {total_credited} {tx.crypto.symbol} from {pending_deposits.count()} deposits")
+                    else:
+                        logger.warning(f"⚠️ Consolidation {tx.tx_hash} completed but no pending deposits found to credit")
+                    
                     confirmed += 1
                     
-                    # ПРИМЕЧАНИЕ: Новый адрес уже сгенерирован при отправке консолидации в process_pending_deposits
+                    # ПРИМЕЧАНИЕ: Новый адрес уже сгенерирован при отправке консолидации
                     # Здесь генерация адреса больше не нужна
                     
         except Exception as e:
