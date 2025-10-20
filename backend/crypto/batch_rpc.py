@@ -18,12 +18,13 @@ class BatchRPCProcessor:
         self.max_workers = max_workers
         self.batch_size = batch_size
     
-    def batch_get_balances(self, service, addresses: List[str]) -> Dict[str, Decimal]:
+    def batch_get_balances(self, service, addresses: List[str], contract_address: str = None) -> Dict[str, Decimal]:
         """
         Получает балансы для множества адресов параллельно
         
         :param service: Сервис блокчейна
         :param addresses: Список адресов
+        :param contract_address: Адрес контракта для TRC-20/ERC-20 токенов
         :return: Словарь {адрес: баланс}
         """
         balances = {}
@@ -39,7 +40,7 @@ class BatchRPCProcessor:
             with ThreadPoolExecutor(max_workers=min(self.max_workers, len(batch))) as executor:
                 # Запускаем параллельные запросы для батча
                 future_to_address = {
-                    executor.submit(self._safe_get_balance, service, addr): addr 
+                    executor.submit(self._safe_get_balance, service, addr, contract_address): addr 
                     for addr in batch
                 }
                 
@@ -102,10 +103,10 @@ class BatchRPCProcessor:
         logger.info(f"[BATCH] Completed transaction requests for {len(transactions)} addresses")
         return transactions
     
-    def _safe_get_balance(self, service, address: str) -> Decimal:
+    def _safe_get_balance(self, service, address: str, contract_address: str = None) -> Decimal:
         """Безопасное получение баланса с обработкой ошибок"""
         try:
-            return service.get_balance(address)
+            return service.get_balance(address, contract_address)
         except Exception as e:
             logger.warning(f"[BATCH] Failed to get balance for {address}: {e}")
             return Decimal('0')
@@ -133,7 +134,7 @@ class CachedBatchProcessor(BatchRPCProcessor):
         """Генерирует ключ кэша для баланса"""
         return f"{service_name}:{address}:{timestamp_window}"
     
-    def get_cached_balance(self, service, address: str) -> Decimal:
+    def get_cached_balance(self, service, address: str, contract_address: str = None) -> Decimal:
         """Получает баланс с кэшированием"""
         service_name = service.__class__.__name__
         current_time = int(time.time())
@@ -144,14 +145,14 @@ class CachedBatchProcessor(BatchRPCProcessor):
             return self._balance_cache[cache_key]
         
         try:
-            balance = service.get_balance(address)
+            balance = service.get_balance(address, contract_address)
             self._balance_cache[cache_key] = balance
             return balance
         except Exception as e:
             logger.error(f"[CACHED_BATCH] Error getting balance for {address}: {e}")
             return Decimal('0')
     
-    def batch_get_balances_cached(self, service, addresses: List[str]) -> Dict[str, Decimal]:
+    def batch_get_balances_cached(self, service, addresses: List[str], contract_address: str = None) -> Dict[str, Decimal]:
         """Получает балансы с использованием кэша"""
         balances = {}
         uncached_addresses = []
@@ -172,7 +173,7 @@ class CachedBatchProcessor(BatchRPCProcessor):
         
         # Получаем недостающие балансы
         if uncached_addresses:
-            new_balances = self.batch_get_balances(service, uncached_addresses)
+            new_balances = self.batch_get_balances(service, uncached_addresses, contract_address)
             
             # Сохраняем в кэш
             for addr, balance in new_balances.items():

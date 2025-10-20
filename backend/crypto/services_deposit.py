@@ -107,6 +107,33 @@ class DepositService:
                             notes=f'Generated for deposit request by user {user.id}'
                         )
                         
+                        # Создаем ожидающую транзакцию депозита
+                        from transactions.models import Transaction, Deposit
+                        from django.db import transaction as db_transaction
+                        
+                        with db_transaction.atomic():
+                            # Создаем транзакцию со статусом "ожидает подтверждения"
+                            transaction_obj = Transaction.objects.create(
+                                user=user,
+                                type='deposit',
+                                status='awaiting_confirmation',
+                                amount=0,  # Пока 0, будет обновлено при поступлении средств
+                                fee=0,
+                                crypto=currency,
+                                notes=f"Pending deposit to address {new_address}"
+                            )
+                            
+                            # Создаем объект депозита
+                            deposit_obj = Deposit.objects.create(
+                                user=user,
+                                transaction=transaction_obj,
+                                wallet=user_wallet,
+                                address=new_address,
+                                confirmed=False
+                            )
+                            
+                            logger.info(f"Created pending deposit transaction {transaction_obj.id} for address {new_address}")
+                        
                         logger.info(f"Successfully generated and saved new address for user {user.id}, currency {currency.symbol}.")
                     except Exception as e:
                         logger.error(f"Critical error generating address for {currency.symbol} (user {user.id}): {e}", exc_info=True)
