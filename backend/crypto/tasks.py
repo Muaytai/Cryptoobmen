@@ -1193,10 +1193,13 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
     Проверяет подтверждение транзакции вывода в блокчейне.
     """
     from transactions.models import Withdrawal
+    from celery.exceptions import Retry
 
     withdrawal = None
     try:
+        logger.info(f"Starting check_withdrawal_confirmation for withdrawal_id: {withdrawal_id}")
         withdrawal = Withdrawal.objects.select_related('transaction', 'wallet', 'user').get(id=withdrawal_id)
+        logger.info(f"Found withdrawal {withdrawal_id} with status: {withdrawal.transaction.status}")
         
         if withdrawal.transaction.status != 'awaiting_confirmation':
             logger.info(f"Withdrawal {withdrawal_id} is not awaiting confirmation. Status: {withdrawal.transaction.status}. Skipping check.")
@@ -1204,6 +1207,7 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
 
         network = withdrawal.transaction.crypto.network
         tx_hash = withdrawal.transaction.tx_hash
+        logger.info(f"Checking confirmation for withdrawal {withdrawal_id}, tx_hash: {tx_hash}, network: {network}")
 
         if not tx_hash:
             logger.error(f"Withdrawal {withdrawal_id} is awaiting confirmation but has no tx_hash. Setting to failed.")
@@ -1213,9 +1217,11 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
             return "error:missing_tx_hash"
 
         service = get_blockchain_service(network)
+        logger.info(f"Got blockchain service for {network}")
         
         try:
             is_confirmed = service.is_transaction_confirmed(tx_hash)
+            logger.info(f"Transaction {tx_hash} is_confirmed: {is_confirmed}")
         except Exception as e:
             logger.error(f"Error checking confirmation for withdrawal {withdrawal_id}, tx_hash: {tx_hash}, error: {str(e)}")
             
@@ -1240,15 +1246,26 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
                 withdrawal_amount=withdrawal.transaction.amount,
                 destination_address=withdrawal.destination_address
             )
+            logger.info(f"Calculated gas_cost: {gas_cost}")
             
             # Сумма для списания = отправленная сумма + комиссия + газ
-            amount_to_withdraw = withdrawal.transaction.amount + withdrawal.transaction.fee + gas_cost
-            
-            logger.info(f"Withdrawal confirmation: amount={withdrawal.transaction.amount}, platform_fee={withdrawal.transaction.fee}, gas={gas_cost}, total={amount_to_withdraw}")
+            # Убедимся, что все значения являются Decimal
+            from decimal import Decimal
+            try:
+                amount = Decimal(str(withdrawal.transaction.amount))
+                fee = Decimal(str(withdrawal.transaction.fee))
+                gas = Decimal(str(gas_cost)) if not isinstance(gas_cost, Decimal) else gas_cost
+                amount_to_withdraw = amount + fee + gas
+                logger.info(f"Withdrawal confirmation: amount={amount}, platform_fee={fee}, gas={gas}, total={amount_to_withdraw}")
+            except Exception as calc_error:
+                logger.error(f"Error calculating amount_to_withdraw: {calc_error}")
+                raise
             
             with transaction.atomic():
+                logger.info(f"Starting atomic transaction block for withdrawal {withdrawal_id}")
                 # Блокируем кошелек для безопасного списания
                 user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
+                logger.info(f"Got user wallet {user_wallet.id} with locked_balance: {user_wallet.locked_balance}")
                 
                 # Повторная проверка заблокированного баланса на всякий случай
                 # При подтверждении проверяем locked_balance, так как средства уже были зарезервированы при отправке
@@ -1264,40 +1281,46 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
                 # теперь нужно уменьшить заблокированный баланс
                 user_wallet.locked_balance -= amount_to_withdraw
                 user_wallet.save()
+                logger.info(f"Updated user wallet {user_wallet.id} locked_balance to: {user_wallet.locked_balance}")
                 
                 logger.info(f"Withdrawal {withdrawal_id} completed: {amount_to_withdraw} deducted (amount: {withdrawal.transaction.amount}, platform_fee: {withdrawal.transaction.fee}, gas: {gas_cost})")
 
                 # Обновляем транзакцию
+                logger.info(f"About to update transaction {withdrawal.transaction.id} status to 'completed'")
                 withdrawal.transaction.status = 'completed'
                 withdrawal.transaction.save()
+                logger.info(f"Transaction {withdrawal.transaction.id} status updated to 'completed'")
                 
                 # Обновляем сам вывод
                 withdrawal.confirmation_date = timezone.now()
                 withdrawal.save()
-                
-                # Логируем и синхронизируем баланс системного кошелька для SOL после подтверждения вывода
-                if withdrawal.transaction.crypto.symbol.upper() == 'SOL' or (withdrawal.transaction.crypto.network or '').lower() == 'solana':
-                    try:
-                        from .models import SystemWalletBalanceLog
-                        from .tasks_consolidation import get_system_wallet_address
-                        
-                        system_wallet_address = get_system_wallet_address(withdrawal.transaction.crypto)
-                        system_balance = service.get_balance(system_wallet_address)
-                        
-                        SystemWalletBalanceLog.log_system_wallet_balance(
-                            currency=withdrawal.transaction.crypto,
-                            system_address=system_wallet_address,
-                            blockchain_balance=system_balance,
-                            transaction_type='withdrawal',
-                            related_transaction=withdrawal.transaction,
-                            notes=f'Withdrawal confirmed: {withdrawal.transaction.amount} {withdrawal.transaction.crypto.symbol} to {withdrawal.destination_address}, total cost: {amount_to_withdraw}',
-                            sync_balance=True  # Синхронизируем баланс в БД
-                        )
-                        logger.info(f"[WITHDRAWAL_CONFIRMED] Logged and synced system wallet balance for SOL: {system_balance}")
-                    except Exception as log_error:
-                        logger.error(f"[WITHDRAWAL_CONFIRMED] Failed to log/sync system wallet balance: {log_error}")
+                logger.info(f"Withdrawal {withdrawal.id} confirmation_date updated")
 
             logger.info(f"Successfully finalized withdrawal {withdrawal.id}.")
+            
+            # Логируем и синхронизируем баланс системного кошелька для SOL после подтверждения вывода
+            # Выносим это за пределы основной транзакции, чтобы избежать конфликтов
+            if withdrawal.transaction.crypto.symbol.upper() == 'SOL' or (withdrawal.transaction.crypto.network or '').lower() == 'solana':
+                try:
+                    from .models import SystemWalletBalanceLog
+                    from .tasks_consolidation import get_system_wallet_address
+                    
+                    system_wallet_address = get_system_wallet_address(withdrawal.transaction.crypto)
+                    system_balance = service.get_balance(system_wallet_address)
+                    
+                    SystemWalletBalanceLog.log_system_wallet_balance(
+                        currency=withdrawal.transaction.crypto,
+                        system_address=system_wallet_address,
+                        blockchain_balance=system_balance,
+                        transaction_type='withdrawal',
+                        related_transaction=withdrawal.transaction,
+                        notes=f'Withdrawal confirmed: {withdrawal.transaction.amount} {withdrawal.transaction.crypto.symbol} to {withdrawal.destination_address}, total cost: {amount_to_withdraw}',
+                        sync_balance=True  # Синхронизируем баланс в БД
+                    )
+                    logger.info(f"[WITHDRAWAL_CONFIRMED] Logged and synced system wallet balance for SOL: {system_balance}")
+                except Exception as log_error:
+                    logger.error(f"[WITHDRAWAL_CONFIRMED] Failed to log/sync system wallet balance: {log_error}")
+
             return f"success:confirmed_and_completed"
         
         else:
@@ -1314,8 +1337,7 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
                 return f"error:max_retries_exceeded"
             
             # Делаем retry (это вызовет исключение Retry, которое нормально для Celery)
-            # Вызываем retry вне try-except блока
-            self.retry(countdown=retry_countdown, max_retries=self.max_retries)
+            raise self.retry(countdown=retry_countdown, max_retries=self.max_retries)
 
     except Withdrawal.DoesNotExist:
         logger.error(f"Withdrawal with id {withdrawal_id} not found for confirmation check.")
@@ -1338,7 +1360,7 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
         # Пытаемся retry для других ошибок
         retry_countdown = 60 * (self.request.retries + 1)
         logger.info(f"Retrying withdrawal confirmation {withdrawal_id} in {retry_countdown}s (attempt {self.request.retries + 1}/{self.max_retries})")
-        self.retry(countdown=retry_countdown, exc=e, max_retries=self.max_retries)
+        raise self.retry(countdown=retry_countdown, exc=e, max_retries=self.max_retries)
 
 
 @shared_task
@@ -1363,6 +1385,7 @@ def consolidate_funds():
         except ValueError as e:
             logger.warning(f"[CONSOLIDATE] Unsupported network {currency.network} for {currency.symbol}. Skipping.")
             continue
+
         except SystemWalletAddress.DoesNotExist as e:
             logger.error(f"[CONSOLIDATE] No system address for {currency.symbol}. Skipping.")
             continue
