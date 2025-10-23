@@ -60,27 +60,14 @@ class DepositService:
                 
                 blockchain_service = get_blockchain_service(currency.network or currency.symbol)
                 
-                # Проверяем, нужно ли генерировать новый адрес.
-                # Условия:
-                # 1. Адреса еще нет.
-                # 2. Адрес уже был использован (на него есть транзакции).
-                needs_new_address = False
-                if not user_wallet.deposit_address:
-                    needs_new_address = True
+                # УПРОЩЕННАЯ ЛОГИКА: Генерируем адрес только если его нет
+                # Без консолидации адреса можно переиспользовать
+                needs_new_address = not user_wallet.deposit_address
+                
+                if needs_new_address:
                     logger.info(f"User {user.id} needs new {currency.symbol} address because none exists.")
                 else:
-                    try:
-                        # Быстро проверяем в локальной БД - есть ли транзакции на этом адресе
-                        from transactions.models import Transaction
-                        
-                        # Адрес можно переиспользовать до тех пор, пока не произойдет консолидация
-                        # Новый адрес будет сгенерирован только после успешной консолидации
-                        logger.info(f"User {user.id} can reuse {currency.symbol} address {user_wallet.deposit_address} - address changes only after consolidation.")
-                            
-                    except Exception as e:
-                        logger.error(f"Failed to check local DB for deposits on address {user_wallet.deposit_address}: {e}", exc_info=True)
-                        # В случае ошибки не генерируем новый адрес, чтобы избежать проблем
-                        needs_new_address = False
+                    logger.info(f"User {user.id} can reuse {currency.symbol} address {user_wallet.deposit_address}")
 
                 if needs_new_address:
                     try:

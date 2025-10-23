@@ -1090,33 +1090,9 @@ def process_pending_deposits():
                                 )
                                 logger.info(f"[CONSOLIDATION] Transaction saved to DB: {tx_hash}")
                                 
-                                # Генерируем новый адрес для пользователя сразу после консолидации
-                                try:
-                                    new_address, private_key = blockchain_service.create_new_address(user_id=user_wallet.user.id)
-                                    if new_address:
-                                        old_address = user_wallet.deposit_address
-                                        user_wallet.deposit_address = new_address
-                                        user_wallet.encrypted_private_key = private_key
-                                        user_wallet.save()
-                                        
-                                        # Записываем сгенерированный кошелек в GeneratedWallet
-                                        from crypto.models import GeneratedWallet
-                                        GeneratedWallet.record_generated_wallet(
-                                            address=new_address,
-                                            private_key=private_key,
-                                            currency=currency,
-                                            network=currency.network,
-                                            user=user_wallet.user,
-                                            wallet_type='user',
-                                            created_by='process_pending_deposits_consolidation_parallel',
-                                            notes=f'Generated after parallel consolidation for user {user_wallet.user.id}, old address: {old_address}'
-                                        )
-                                        
-                                        logger.info(f"[CONSOLIDATION] Generated new address for user {user_wallet.user.id}: {old_address} -> {new_address}")
-                                    else:
-                                        logger.warning(f"[CONSOLIDATION] Failed to generate new address for user {user_wallet.user.id}")
-                                except Exception as addr_error:
-                                    logger.error(f"[CONSOLIDATION] Error generating new address for user {user_wallet.user.id}: {addr_error}")
+                                # ОТКЛЮЧЕНО: Генерация нового адреса после консолидации
+                                # Без консолидации адреса не нужно менять
+                                logger.info(f"[CONSOLIDATION] Address rotation disabled - keeping current address for user {user_wallet.user.id}")
                                 
                                 consolidated_count += 1
                         else:
@@ -1269,8 +1245,10 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
 def consolidate_funds():
     """
     Собирает средства с депозитных адресов пользователей на главный системный кошелек.
+    ВРЕМЕННО ОТКЛЮЧЕНО - система работает без консолидации.
     """
-    logger.info("[CONSOLIDATE] Starting funds consolidation task.")
+    logger.info("[CONSOLIDATE] Consolidation is DISABLED - system works without it.")
+    return "Consolidation disabled - not needed"
     
     # Обрабатываем только валюты без MEMO, т.к. только у них есть отдельные адреса
     currencies_to_consolidate = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
