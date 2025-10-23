@@ -196,8 +196,39 @@ def check_consolidation_confirmations():
                     
                     confirmed += 1
                     
-                    # ПРИМЕЧАНИЕ: Новый адрес уже сгенерирован при отправке консолидации
-                    # Здесь генерация адреса больше не нужна
+                    # Генерируем новый адрес для пользователя после успешной консолидации
+                    try:
+                        logger.info(f"\033[94m🔄 Generating new deposit address for user {tx.user.id} after consolidation\033[0m")
+                        
+                        # Получаем старый адрес
+                        old_address = user_wallet.deposit_address
+                        
+                        # Генерируем новый адрес
+                        blockchain_service = get_blockchain_service(tx.crypto.network or tx.crypto.symbol)
+                        new_address, private_key = blockchain_service.create_new_address()
+                        
+                        # Обновляем адрес в кошельке пользователя
+                        user_wallet.deposit_address = new_address
+                        user_wallet.encrypted_private_key = private_key
+                        user_wallet.save()
+                        
+                        # Записываем в GeneratedWallet
+                        from crypto.models import GeneratedWallet
+                        GeneratedWallet.record_generated_wallet(
+                            address=new_address,
+                            private_key=private_key,
+                            currency=tx.crypto,
+                            network=tx.crypto.network,
+                            user=tx.user,
+                            wallet_type='user',
+                            created_by='check_consolidation_confirmations',
+                            notes=f'Generated after consolidation for user {tx.user.id}, old address: {old_address}'
+                        )
+                        
+                        logger.info(f"\033[92m✅ Generated new address for user {tx.user.id}: {old_address} -> {new_address}\033[0m")
+                        
+                    except Exception as addr_error:
+                        logger.error(f"\033[91m❌ Error generating new address for user {tx.user.id}: {addr_error}\033[0m")
                     
         except Exception as e:
             logger.error(f"\033[91m❌ Error checking consolidation confirmation for {tx.tx_hash}: {e}\033[0m")
