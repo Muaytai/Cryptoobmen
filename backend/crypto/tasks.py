@@ -278,20 +278,26 @@ def check_blockchain_deposits():
                 continue
 
             # Проверяем на дубликат ДО основной логики
-            if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                logger.warning(f"Duplicate transaction found: tx_hash={tx_hash}. Re-sending signal just in case.")
-                # Отправляем сигнал повторно, на случай если фронтенд его пропустил
-                if deposit_memo:
-                    channel_layer = get_channel_layer()
-                    async_to_sync(channel_layer.group_send)(
-                        f"deposit_memo_{deposit_memo.memo}",
-                        {
-                            "type": "deposit_status_update",
-                            "data": {'memo': deposit_memo.memo, 'status': 'used', 'message': 'Deposit completed'}
-                        }
-                    )
-                continue
+            existing_tx = Transaction.objects.filter(tx_hash=tx_hash).first()
+            if existing_tx:
+                if existing_tx.status == 'completed':
+                    logger.info(f"Duplicate transaction found: tx_hash={tx_hash} already completed. Skipping.")
+                    # НЕ отправляем сигнал для уже завершенных транзакций
+                    continue
+                elif existing_tx.status == 'pending':
+                    logger.info(f"Found pending transaction: tx_hash={tx_hash}. Processing for consolidation...")
+                    # Депозит в статусе pending - обрабатываем для консолидации
+                    # Увеличиваем счетчик, чтобы запустить process_pending_deposits
+                    processed += 1
+                    # НЕ отправляем сигнал - он уже был отправлен при создании депозита
+                    continue
+                else:
+                    logger.warning(f"Duplicate transaction found: tx_hash={tx_hash} with status {existing_tx.status}. Skipping.")
+                    # НЕ отправляем сигнал для уже существующих транзакций
+                    continue
 
+            # Обрабатываем НОВЫЙ депозит (не найден в базе)
+            logger.info(f"Processing NEW deposit: {tx_hash}")
             try:
                 amount = Decimal(amount_str) / Decimal(10**wallet.currency.decimals)
             except (ValueError, TypeError):
@@ -362,6 +368,12 @@ def check_blockchain_deposits():
                     
                     processed += 1
                     logger.info(f"Successfully processed deposit for user {user.id}, tx_hash={tx_hash}")
+                    
+                    # Немедленная попытка консолидации для pending депозитов
+                    if deposit_status == "pending":
+                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash}")
+                        from .tasks_consolidation import consolidate_user_deposits
+                        consolidate_user_deposits.delay()
 
                 # После успешной транзакции отправляем сигнал
                 if deposit_memo:
@@ -426,28 +438,24 @@ def check_blockchain_deposits():
                     logger.info(f"[BATCH] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
                     existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).first()
                     if existing_tx:
-                        logger.warning(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Re-sending signal.")
-                        # Повторно отправляем сигнал, если транзакция уже существует
-                        try:
-                            channel_layer = get_channel_layer()
-                            async_to_sync(channel_layer.group_send)(
-                                f"deposit_address_{address}",
-                                {
-                                    "type": "deposit_status_update",
-                                    "data": {
-                                        "address": address,
-                                        "currency": currency.symbol,
-                                        "network": currency.network,
-                                        "status": "used",
-                                        "amount": str(existing_tx.amount),
-                                    }
-                                }
-                            )
-                            logger.info(f"[BATCH] Re-sent WebSocket signal for address {address}")
-                        except Exception as e:
-                            logger.error(f"[BATCH] Failed to re-send WebSocket signal for address {address}: {e}")
-                        continue
+                        if existing_tx.status == 'completed':
+                            logger.info(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id} already completed. Skipping.")
+                            # НЕ отправляем сигнал для уже завершенных транзакций
+                            continue
+                        elif existing_tx.status == 'pending':
+                            logger.info(f"[BATCH] Found pending tx {tx_hash} for user {user_wallet.user.id}. Processing for consolidation...")
+                            # Депозит в статусе pending - обрабатываем для консолидации
+                            # Увеличиваем счетчик, чтобы запустить process_pending_deposits
+                            processed += 1
+                            # НЕ отправляем сигнал - он уже был отправлен при создании депозита
+                            continue
+                        else:
+                            logger.warning(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id} with status {existing_tx.status}. Skipping.")
+                            # НЕ отправляем сигнал для уже существующих транзакций
+                            continue
                     
+                    # Обрабатываем НОВЫЙ депозит (не найден в базе)
+                    logger.info(f"[BATCH] Processing NEW deposit: {tx_hash} for user {user_wallet.user.id}")
                     try:
                         # Логируем входные данные для диагностики
                         logger.info(f"[BATCH] Processing amount conversion: currency={currency.symbol}, network={currency.network}, amount_str={amount_str}, decimals={currency.decimals}")
@@ -485,10 +493,7 @@ def check_blockchain_deposits():
                         logger.error(f"[BATCH] Invalid amount: {amount_str}, error: {e}")
                         continue
                         
-                    # Проверяем, что транзакция с таким hash еще не существует
-                    if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                        logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
-                        continue
+                    # Проверка на дубликаты уже выполнена выше в коде
                     
                     # ВАЖНО: Расчет газа делаем ДО начала транзакции
                     # Для валют БЕЗ мемо НЕ зачисляем сразу - ждём консолидации
@@ -535,6 +540,12 @@ def check_blockchain_deposits():
                         )
                         processed += 1
                         logger.info(f"[BATCH] Deposit recorded with status '{deposit_status}': {user_wallet.user} {currency.symbol} {amount}")
+                        
+                        # Немедленная попытка консолидации для pending депозитов
+                        if deposit_status == "pending":
+                            logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash}")
+                            from .tasks_consolidation import consolidate_user_deposits
+                            consolidate_user_deposits.delay()
 
                     # Отправляем WebSocket сигнал по адресу
                     try:
@@ -697,6 +708,12 @@ def check_blockchain_deposits():
                     deposit_memo.save()
                     processed += 1
                     logger.info(f"[XRP] Successfully processed deposit for tag='{memo}', tx_hash={tx_hash}")
+                    
+                    # Немедленная попытка консолидации для pending депозитов
+                    if deposit_status == "pending":
+                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending XRP deposit {tx_hash}")
+                        from .tasks_consolidation import consolidate_user_deposits
+                        consolidate_user_deposits.delay()
         except Exception as e:
             logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 

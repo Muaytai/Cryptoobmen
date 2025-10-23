@@ -5,11 +5,13 @@
 from __future__ import annotations
 
 import logging
+import time
 from decimal import Decimal
 from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.utils import timezone
 from django.db import transaction
+from functools import wraps
 
 from .models import UserWallet, Cryptocurrency
 from .blockchain.factory import get_blockchain_service
@@ -17,6 +19,46 @@ from transactions.models import Transaction
 
 logger = get_task_logger(__name__)
 logger.setLevel(logging.DEBUG)
+
+
+def retry_on_rpc_error(max_retries=3, delay=2, backoff=2):
+    """
+    Декоратор для повторных попыток при ошибках RPC
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    error_msg = str(e).lower()
+                    
+                    # Проверяем, является ли это RPC ошибкой
+                    is_rpc_error = any(keyword in error_msg for keyword in [
+                        '500 server error', 'internal server error', 'connection error',
+                        'timeout', 'network error', 'rpc error', 'http error'
+                    ])
+                    
+                    if is_rpc_error and attempt < max_retries:
+                        wait_time = delay * (backoff ** attempt)
+                        logger.warning(f"\033[93mRPC error on attempt {attempt + 1}/{max_retries + 1}: {e}\033[0m")
+                        logger.info(f"\033[94mRetrying in {wait_time} seconds...\033[0m")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # Если это не RPC ошибка или исчерпаны попытки
+                        break
+            
+            # Если все попытки исчерпаны
+            logger.error(f"\033[91mFailed after {max_retries + 1} attempts. Last error: {last_exception}\033[0m")
+            raise last_exception
+            
+        return wrapper
+    return decorator
 
 
 def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
@@ -84,7 +126,10 @@ def check_consolidation_confirmations():
     """
     Проверяет подтверждения транзакций консолидации в блокчейне.
     """
-    logger.info("Checking consolidation confirmations...")
+    start_time = timezone.now()
+    logger.info("\033[94m" + "="*60 + "\033[0m")
+    logger.info("\033[94m🔍 [CONFIRMATION] Starting consolidation confirmations check...\033[0m")
+    logger.info(f"\033[94m⏰ Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\033[0m")
     
     # Находим все ожидающие подтверждения консолидации
     pending_consolidations = Transaction.objects.filter(
@@ -92,14 +137,21 @@ def check_consolidation_confirmations():
         status="pending"
     )
     
+    logger.info(f"\033[94m📋 Found {pending_consolidations.count()} pending consolidation transactions\033[0m")
     confirmed = 0
     
     for tx in pending_consolidations:
         try:
+            logger.info(f"\033[94m🔍 Checking confirmation for tx: {tx.tx_hash[:16]}... ({tx.crypto.symbol})\033[0m")
             service = get_blockchain_service(tx.crypto.network or tx.crypto.symbol)
             
-            # Проверяем подтверждение транзакции
-            is_confirmed = service.is_transaction_confirmed(tx.tx_hash)
+            # Проверяем подтверждение транзакции с retry логикой
+            @retry_on_rpc_error(max_retries=2, delay=1, backoff=1.5)
+            def check_transaction_confirmation():
+                return service.is_transaction_confirmed(tx.tx_hash)
+            
+            is_confirmed = check_transaction_confirmation()
+            logger.info(f"\033[94m📊 Transaction {tx.tx_hash[:16]}... confirmed: {is_confirmed}\033[0m")
             
             if is_confirmed:
                 with transaction.atomic():
@@ -134,13 +186,13 @@ def check_consolidation_confirmations():
                         user_wallet.balance += net_amount
                         total_credited += net_amount
                         
-                        logger.info(f"Credited deposit {deposit.tx_hash}: gross={deposit.amount}, gas={deposit.fee}, net={net_amount} {tx.crypto.symbol}")
+                        logger.info(f"\033[94mCredited deposit {deposit.tx_hash}: gross={deposit.amount}, gas={deposit.fee}, net={net_amount} {tx.crypto.symbol}\033[0m")
                     
                     if total_credited > 0:
                         user_wallet.save()
-                        logger.info(f"✅ Consolidation completed for user {tx.user.id}: credited {total_credited} {tx.crypto.symbol} from {pending_deposits.count()} deposits")
+                        logger.info(f"\033[92m✅ Consolidation completed for user {tx.user.id}: credited {total_credited} {tx.crypto.symbol} from {pending_deposits.count()} deposits\033[0m")
                     else:
-                        logger.warning(f"⚠️ Consolidation {tx.tx_hash} completed but no pending deposits found to credit")
+                        logger.warning(f"\033[93m⚠️ Consolidation {tx.tx_hash} completed but no pending deposits found to credit\033[0m")
                     
                     confirmed += 1
                     
@@ -148,9 +200,153 @@ def check_consolidation_confirmations():
                     # Здесь генерация адреса больше не нужна
                     
         except Exception as e:
-            logger.error(f"Error checking consolidation confirmation for {tx.tx_hash}: {e}")
+            logger.error(f"\033[91m❌ Error checking consolidation confirmation for {tx.tx_hash}: {e}\033[0m")
             continue
     
-    logger.info(f"Consolidation confirmations checked. Confirmed: {confirmed}")
+    end_time = timezone.now()
+    duration = (end_time - start_time).total_seconds()
+    
+    logger.info(f"\033[94m" + "="*60 + "\033[0m")
+    logger.info(f"\033[94m🏁 [CONFIRMATION] Process completed\033[0m")
+    logger.info(f"\033[94m✅ Confirmed transactions: {confirmed}\033[0m")
+    logger.info(f"\033[94m⏱️ Duration: {duration:.2f} seconds\033[0m")
+    logger.info(f"\033[94m⏰ End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\033[0m")
+    logger.info(f"\033[94m" + "="*60 + "\033[0m")
+    
     return f"Checked consolidation confirmations: {confirmed} confirmed"
+
+
+@shared_task
+def consolidate_user_deposits():
+    """
+    Консолидация депозитов - перевод средств с пользовательских адресов на системный кошелек.
+    Работает только для валют без MEMO (POL, BTC, ETH).
+    """
+    processed = 0
+    start_time = timezone.now()
+    logger.info("\033[94m" + "="*60 + "\033[0m")
+    logger.info("\033[94m🚀 [CONSOLIDATION] Starting consolidation process...\033[0m")
+    logger.info(f"\033[94m⏰ Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\033[0m")
+    
+    # Получаем все активные валюты без MEMO
+    currencies_no_memo = Cryptocurrency.objects.filter(
+        is_active=True, 
+        requires_memo=False
+    )
+    
+    logger.info(f"\033[94m📊 Found {currencies_no_memo.count()} currencies without MEMO: {[c.symbol for c in currencies_no_memo]}\033[0m")
+    
+    for currency in currencies_no_memo:
+        logger.info(f"\033[94m" + "-"*50 + "\033[0m")
+        logger.info(f"\033[94m🔄 Processing consolidation for {currency.symbol} ({currency.network})\033[0m")
+        
+        try:
+            # Получаем системный кошелек
+            system_wallet = UserWallet.objects.get(
+                user=None,
+                currency=currency,
+                is_system_wallet=True,
+                is_active=True
+            )
+            
+            if not system_wallet.encrypted_private_key:
+                logger.warning(f"\033[93mSystem wallet for {currency.symbol} has no private key, skipping\033[0m")
+                continue
+                
+            # Получаем все пользовательские кошельки с балансом на блокчейне
+            user_wallets = UserWallet.objects.filter(
+                currency=currency,
+                is_system_wallet=False,
+                deposit_address__isnull=False,
+                encrypted_private_key__isnull=False  # Только кошельки с приватными ключами
+            ).exclude(deposit_address='')
+            
+            logger.info(f"\033[94m👥 Found {user_wallets.count()} user wallets for {currency.symbol}\033[0m")
+            
+            blockchain_service = get_blockchain_service(currency.network or currency.symbol)
+            logger.info(f"\033[94m🔗 Connected to {currency.network} blockchain service\033[0m")
+            
+            currency_processed = 0
+            for user_wallet in user_wallets:
+                try:
+                    logger.info(f"\033[94m👤 Processing user {user_wallet.user.id} wallet: {user_wallet.deposit_address[:10]}...\033[0m")
+                    
+                    # Проверяем баланс на блокчейне
+                    blockchain_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                    logger.info(f"\033[94m💰 Blockchain balance: {blockchain_balance} {currency.symbol}\033[0m")
+                    
+                    # Минимальная сумма для консолидации (чтобы покрыть комиссию)
+                    min_consolidation_amount = get_min_consolidation_amount(currency)
+                    logger.info(f"\033[94m📏 Minimum threshold: {min_consolidation_amount} {currency.symbol}\033[0m")
+                    
+                    if blockchain_balance < min_consolidation_amount:
+                        logger.info(f"\033[93m⚠️ Balance {blockchain_balance} {currency.symbol} too small for consolidation (min: {min_consolidation_amount})\033[0m")
+                        continue
+                    
+                    # Рассчитываем сумму к переводу (оставляем немного на комиссию)
+                    gas_reserve = get_gas_reserve(currency)
+                    amount_to_send = blockchain_balance - gas_reserve
+                    logger.info(f"\033[94m⛽ Gas reserve: {gas_reserve} {currency.symbol}\033[0m")
+                    logger.info(f"\033[94m💸 Amount to send: {amount_to_send} {currency.symbol}\033[0m")
+                    
+                    if amount_to_send <= 0:
+                        logger.warning(f"\033[93m⚠️ Amount to send {amount_to_send} {currency.symbol} is zero or negative after gas reserve\033[0m")
+                        continue
+                    
+                    logger.info(f"\033[94m🚀 Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet\033[0m")
+                    
+                    # Выполняем перевод с retry логикой
+                    @retry_on_rpc_error(max_retries=3, delay=2, backoff=2)
+                    def send_consolidation_transaction():
+                        return blockchain_service.send_transaction(
+                            private_key=user_wallet.encrypted_private_key,
+                            to_address=get_system_wallet_address(currency),
+                            amount=amount_to_send,
+                            memo=f"consolidation_{user_wallet.user_id}"
+                        )
+                    
+                    tx_hash = send_consolidation_transaction()
+                    logger.info(f"\033[92m✅ Transaction sent successfully: {tx_hash}\033[0m")
+                    
+                    # Записываем транзакцию консолидации
+                    with transaction.atomic():
+                        Transaction.objects.create(
+                            user=user_wallet.user,
+                            crypto=currency,
+                            amount=amount_to_send,
+                            tx_hash=tx_hash,
+                            type="consolidation",
+                            status="pending",
+                            timestamp=timezone.now()
+                        )
+                    
+                    processed += 1
+                    currency_processed += 1
+                    logger.info(f"\033[92m💾 Consolidation transaction saved to DB: {tx_hash}\033[0m")
+                    logger.info(f"\033[92m🎉 Successfully consolidated {amount_to_send} {currency.symbol} for user {user_wallet.user.id}\033[0m")
+                    
+                except Exception as e:
+                    logger.error(f"\033[91m❌ Error consolidating {currency.symbol} for user {user_wallet.user_id}: {e}\033[0m")
+                    continue
+            
+            logger.info(f"\033[94m📈 Currency {currency.symbol} summary: {currency_processed} transactions processed\033[0m")
+                    
+        except UserWallet.DoesNotExist:
+            logger.warning(f"\033[93m⚠️ System wallet for {currency.symbol} not found\033[0m")
+            continue
+        except Exception as e:
+            logger.error(f"\033[91m❌ Error processing currency {currency.symbol}: {e}\033[0m")
+            continue
+    
+    end_time = timezone.now()
+    duration = (end_time - start_time).total_seconds()
+    
+    logger.info(f"\033[94m" + "="*60 + "\033[0m")
+    logger.info(f"\033[94m🏁 [CONSOLIDATION] Process completed\033[0m")
+    logger.info(f"\033[94m📊 Total transactions processed: {processed}\033[0m")
+    logger.info(f"\033[94m⏱️ Duration: {duration:.2f} seconds\033[0m")
+    logger.info(f"\033[94m⏰ End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\033[0m")
+    logger.info(f"\033[94m" + "="*60 + "\033[0m")
+    
+    return f"Consolidation completed: {processed} transactions"
 
