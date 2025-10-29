@@ -127,7 +127,13 @@ def get_system_wallet_address(currency: Cryptocurrency) -> str:
 @shared_task
 def check_consolidation_confirmations():
     """
-    Проверяет подтверждения транзакций консолидации в блокчейне.
+    ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ФУНКЦИЯ: Проверяет подтверждения транзакций консолидации в блокчейне.
+    
+    ВАЖНО ДЛЯ АГЕНТОВ:
+    После подтверждения консолидации нужно зачислить пользователю tx.amount (сумму из транзакции консолидации),
+    а НЕ сумму депозита или deposit.amount - deposit.fee. 
+    
+    tx.amount содержит реальную сумму, которая была отправлена (максимально возможную).
     """
     start_time = timezone.now()
     logger.info("\033[94m" + "="*60 + "\033[0m")
@@ -169,6 +175,13 @@ def check_consolidation_confirmations():
                         is_system_wallet=False
                     )
                     
+                    # ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ЛОГИКА ЗАЧИСЛЕНИЯ ПОСЛЕ КОНСОЛИДАЦИИ:
+                    # Зачисляем пользователю РЕАЛЬНУЮ сумму, которая была консолидирована (tx.amount)
+                    # Это amount_to_send из consolidate_user_deposits - вся сумма с блокчейна минус газ
+                    # НЕ используем deposit.amount - deposit.fee, т.к. это неправильно для больших депозитов!
+                    consolidation_amount = tx.amount  # Реальная консолидированная сумма (максимально возможная)
+                    logger.info(f"\033[94m💰 Consolidation amount (will be credited to user): {consolidation_amount} {tx.crypto.symbol}\033[0m")
+                    
                     # Находим все депозиты в статусе pending для этого пользователя и валюты
                     pending_deposits = Transaction.objects.filter(
                         user=tx.user,
@@ -177,61 +190,77 @@ def check_consolidation_confirmations():
                         status="pending"
                     )
                     
-                    # Зачисляем средства на баланс из всех pending депозитов
-                    total_credited = Decimal('0')
+                    logger.info(f"\033[94m📋 Found {pending_deposits.count()} pending deposits for user {tx.user.id}\033[0m")
+                    
+                    # Зачисляем пользователю РЕАЛЬНУЮ консолидированную сумму
+                    # ⚠️ ВАЖНО: Зачисляем сумму из транзакции консолидации (tx.amount), а не сумму депозита!
+                    user_wallet.balance += consolidation_amount
+                    total_pending_deposits_value = sum(dep.amount for dep in pending_deposits)
+                    
+                    # Обновляем статусы всех pending депозитов на completed
                     for deposit in pending_deposits:
-                        # Обновляем статус депозита
                         deposit.status = "completed"
                         deposit.save()
-                        
-                        # Зачисляем на баланс (минус gas который уже учтен в fee)
-                        net_amount = deposit.amount - deposit.fee
-                        user_wallet.balance += net_amount
-                        total_credited += net_amount
-                        
-                        logger.info(f"\033[94mCredited deposit {deposit.tx_hash}: gross={deposit.amount}, gas={deposit.fee}, net={net_amount} {tx.crypto.symbol}\033[0m")
+                        logger.info(f"\033[94m✅ Marked deposit {deposit.tx_hash} as completed (was pending)\033[0m")
                     
-                    if total_credited > 0:
+                    if consolidation_amount > 0:
                         user_wallet.save()
-                        logger.info(f"\033[92m✅ Consolidation completed for user {tx.user.id}: credited {total_credited} {tx.crypto.symbol} from {pending_deposits.count()} deposits\033[0m")
+                        logger.info(f"\033[92m✅ Consolidation completed for user {tx.user.id}: credited {consolidation_amount} {tx.crypto.symbol}\033[0m")
+                        logger.info(f"\033[94m📊 Total pending deposits value was: {total_pending_deposits_value} {tx.crypto.symbol}\033[0m")
+                        logger.info(f"\033[94m💡 Note: User credited with consolidated amount ({consolidation_amount}), not deposit amount ({total_pending_deposits_value})\033[0m")
                     else:
-                        logger.warning(f"\033[93m⚠️ Consolidation {tx.tx_hash} completed but no pending deposits found to credit\033[0m")
+                        logger.warning(f"\033[93m⚠️ Consolidation {tx.tx_hash} completed but consolidation amount is zero\033[0m")
                     
                     confirmed += 1
                     
-                    # Генерируем новый адрес для пользователя после успешной консолидации
+                    # ⚠️ ВАЖНО: Генерируем новый адрес для пользователя после успешной консолидации
+                    # Это критично, т.к. старый адрес был опустошен и более не используется
+                    # История: 
+                    # - 2343a8ec (Dmitry Shishkov): добавлена генерация адреса после консолидации
+                    # - 91b3b270 (Makc): отключена с комментарием "работает без консолидации"
+                    # - Восстановлено т.к. консолидация снова активна
                     try:
                         logger.info(f"\033[94m🔄 Generating new deposit address for user {tx.user.id} after consolidation\033[0m")
                         
                         # Получаем старый адрес
                         old_address = user_wallet.deposit_address
                         
-                        # Генерируем новый адрес
-                        blockchain_service = get_blockchain_service(tx.crypto.network or tx.crypto.symbol)
-                        new_address, private_key = blockchain_service.create_new_address()
-                        
-                        # Обновляем адрес в кошельке пользователя
-                        user_wallet.deposit_address = new_address
-                        user_wallet.encrypted_private_key = private_key
-                        user_wallet.save()
-                        
-                        # Записываем в GeneratedWallet
-                        from crypto.models import GeneratedWallet
-                        GeneratedWallet.record_generated_wallet(
-                            address=new_address,
-                            private_key=private_key,
-                            currency=tx.crypto,
-                            network=tx.crypto.network,
-                            user=tx.user,
-                            wallet_type='user',
-                            created_by='check_consolidation_confirmations',
-                            notes=f'Generated after consolidation for user {tx.user.id}, old address: {old_address}'
-                        )
-                        
-                        logger.info(f"\033[92m✅ Generated new address for user {tx.user.id}: {old_address} -> {new_address}\033[0m")
+                        if not old_address:
+                            logger.warning(f"\033[93m⚠️ User {tx.user.id} has no deposit address to replace, skipping address generation\033[0m")
+                        else:
+                            # Генерируем новый адрес
+                            blockchain_service = get_blockchain_service(tx.crypto.network or tx.crypto.symbol)
+                            new_address, private_key = blockchain_service.create_new_address()
+                            
+                            if not new_address or not private_key:
+                                raise ValueError(f"Blockchain service returned empty address or key: address={new_address}, key={'***' if private_key else 'None'}")
+                            
+                            # Обновляем адрес в кошельке пользователя
+                            user_wallet.deposit_address = new_address
+                            user_wallet.encrypted_private_key = private_key
+                            user_wallet.save()
+                            
+                            # Записываем в GeneratedWallet
+                            from crypto.models import GeneratedWallet
+                            GeneratedWallet.record_generated_wallet(
+                                address=new_address,
+                                private_key=private_key,
+                                currency=tx.crypto,
+                                network=tx.crypto.network,
+                                user=tx.user,
+                                wallet_type='user',
+                                created_by='check_consolidation_confirmations',
+                                notes=f'Generated after consolidation for user {tx.user.id}, old address: {old_address}'
+                            )
+                            
+                            logger.info(f"\033[92m✅ Generated new address for user {tx.user.id}: {old_address[:10]}... -> {new_address[:10]}...\033[0m")
                         
                     except Exception as addr_error:
+                        import traceback
+                        error_trace = traceback.format_exc()
                         logger.error(f"\033[91m❌ Error generating new address for user {tx.user.id}: {addr_error}\033[0m")
+                        logger.error(f"\033[91m❌ Traceback: {error_trace}\033[0m")
+                        # НЕ прерываем выполнение - адрес можно сгенерировать позже через API
                     
         except Exception as e:
             logger.error(f"\033[91m❌ Error checking consolidation confirmation for {tx.tx_hash}: {e}\033[0m")
@@ -253,8 +282,18 @@ def check_consolidation_confirmations():
 @shared_task
 def consolidate_user_deposits():
     """
+    ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ЛОГИКА КОНСОЛИДАЦИИ:
+    
     Консолидация депозитов - перевод средств с пользовательских адресов на системный кошелек.
     Работает только для валют без MEMO (POL, BTC, ETH).
+    
+    ВАЖНО ДЛЯ АГЕНТОВ:
+    1. Баланс пользователя НЕ увеличивается при обнаружении депозита - он остается в статусе "pending"
+    2. Консолидация работает с РЕАЛЬНЫМ балансом блокчейна (get_balance), а НЕ с балансом в БД
+    3. Консолидируется МАКСИМАЛЬНО ВОЗМОЖНАЯ сумма: blockchain_balance - gas_reserve
+    4. Эта сумма (amount_to_send) записывается в транзакцию консолидации (tx.amount)
+    5. После подтверждения консолидации пользователю зачисляется tx.amount (РЕАЛЬНАЯ консолидированная сумма)
+    6. НИКОГДА не используйте deposit.amount - deposit.fee - это неправильно!
     """
     processed = 0
     start_time = timezone.now()
@@ -305,7 +344,10 @@ def consolidate_user_deposits():
                 try:
                     logger.info(f"\033[94m👤 Processing user {user_wallet.user.id} wallet: {user_wallet.deposit_address[:10]}...\033[0m")
                     
-                    # Проверяем баланс на блокчейне
+                    # ⚠️ КРИТИЧЕСКИ ВАЖНО: Кошелек одноразовый, нужно ОПУСТОШИТЬ его максимально!
+                    # Используем точный расчет максимальной суммы через get_max_sendable_amount или аналогичный метод
+                    # НЕ используем gas_reserve - это приводит к неполной консолидации!
+                    
                     blockchain_balance = blockchain_service.get_balance(user_wallet.deposit_address)
                     logger.info(f"\033[94m💰 Blockchain balance: {blockchain_balance} {currency.symbol}\033[0m")
                     
@@ -317,14 +359,49 @@ def consolidate_user_deposits():
                         logger.info(f"\033[93m⚠️ Balance {blockchain_balance} {currency.symbol} too small for consolidation (min: {min_consolidation_amount})\033[0m")
                         continue
                     
-                    # Рассчитываем сумму к переводу (оставляем немного на комиссию)
-                    gas_reserve = get_gas_reserve(currency)
-                    amount_to_send = blockchain_balance - gas_reserve
-                    logger.info(f"\033[94m⛽ Gas reserve: {gas_reserve} {currency.symbol}\033[0m")
-                    logger.info(f"\033[94m💸 Amount to send: {amount_to_send} {currency.symbol}\033[0m")
+                    # Рассчитываем МАКСИМАЛЬНУЮ сумму к переводу (всё что можно отправить)
+                    # ⚠️ ВАЖНО: Используем точный расчет через методы блокчейн-сервиса, НЕ gas_reserve!
+                    system_wallet_address = get_system_wallet_address(currency)
                     
-                    if amount_to_send <= 0:
-                        logger.warning(f"\033[93m⚠️ Amount to send {amount_to_send} {currency.symbol} is zero or negative after gas reserve\033[0m")
+                    # ⚠️ ВАЖНО: Используем точные методы расчета максимальной суммы для каждой валюты
+                    # Для Polygon используем get_max_sendable_amount
+                    if hasattr(blockchain_service, 'get_max_sendable_amount'):
+                        amount_to_send = blockchain_service.get_max_sendable_amount(
+                            user_wallet.deposit_address,
+                            system_wallet_address
+                        )
+                        logger.info(f"\033[94m💸 Max sendable amount (calculated via get_max_sendable_amount): {amount_to_send} {currency.symbol}\033[0m")
+                    # Для Ethereum используем estimate_gas_fee для точного расчета
+                    elif hasattr(blockchain_service, 'estimate_gas_fee'):
+                        gas_info = blockchain_service.estimate_gas_fee(
+                            to_address=system_wallet_address,
+                            amount=blockchain_balance,
+                            contract_address=getattr(currency, 'contract_address', None)
+                        )
+                        # estimate_gas_fee возвращает словарь с 'gas_fee_eth' или 'gas_fee_eth'
+                        gas_cost = gas_info.get('gas_fee_eth', Decimal('0'))
+                        amount_to_send = blockchain_balance - gas_cost
+                        logger.info(f"\033[94m⛽ Gas cost (from estimate_gas_fee): {gas_cost} {currency.symbol}\033[0m")
+                        logger.info(f"\033[94m💸 Amount to send (balance - gas): {amount_to_send} {currency.symbol}\033[0m")
+                    # Для Bitcoin можно отправить amount=0 для sweep всех средств
+                    elif currency.symbol == 'BTC':
+                        amount_to_send = Decimal('0')  # 0 означает "отправить всё" (sweep)
+                        logger.info(f"\033[94m💸 Bitcoin sweep mode: will send all funds\033[0m")
+                    else:
+                        # Fallback: для других валют оцениваем газ динамически через gas_calculation
+                        from .gas_calculation import calculate_estimated_gas_cost
+                        gas_cost = calculate_estimated_gas_cost(
+                            currency=currency,
+                            from_address=user_wallet.deposit_address,
+                            to_address=system_wallet_address,
+                            amount=blockchain_balance
+                        )
+                        amount_to_send = blockchain_balance - gas_cost
+                        logger.info(f"\033[94m⛽ Gas cost (estimated via gas_calculation): {gas_cost} {currency.symbol}\033[0m")
+                        logger.info(f"\033[94m💸 Amount to send (balance - gas): {amount_to_send} {currency.symbol}\033[0m")
+                    
+                    if amount_to_send <= 0 and currency.symbol != 'BTC':
+                        logger.warning(f"\033[93m⚠️ Amount to send {amount_to_send} {currency.symbol} is zero or negative\033[0m")
                         continue
                     
                     logger.info(f"\033[94m🚀 Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet\033[0m")
@@ -342,12 +419,16 @@ def consolidate_user_deposits():
                     tx_hash = send_consolidation_transaction()
                     logger.info(f"\033[92m✅ Transaction sent successfully: {tx_hash}\033[0m")
                     
-                    # Записываем транзакцию консолидации
+                    # ⚠️ КРИТИЧЕСКИ ВАЖНО: Записываем транзакцию консолидации
+                    # Для Bitcoin amount=0 означает sweep, поэтому сохраняем реальный баланс
+                    # Для других валют amount_to_send - это реальная сумма, которая будет зачислена пользователю
+                    consolidation_amount_to_save = amount_to_send if currency.symbol != 'BTC' else blockchain_balance
+                    
                     with transaction.atomic():
                         Transaction.objects.create(
                             user=user_wallet.user,
                             crypto=currency,
-                            amount=amount_to_send,
+                            amount=consolidation_amount_to_save,  # ⚠️ Это сумма, которая будет зачислена пользователю!
                             tx_hash=tx_hash,
                             type="consolidation",
                             status="pending",
@@ -357,7 +438,7 @@ def consolidate_user_deposits():
                     processed += 1
                     currency_processed += 1
                     logger.info(f"\033[92m💾 Consolidation transaction saved to DB: {tx_hash}\033[0m")
-                    logger.info(f"\033[92m🎉 Successfully consolidated {amount_to_send} {currency.symbol} for user {user_wallet.user.id}\033[0m")
+                    logger.info(f"\033[92m🎉 Successfully consolidated {consolidation_amount_to_save} {currency.symbol} for user {user_wallet.user.id} (wallet emptied)\033[0m")
                     
                 except Exception as e:
                     logger.error(f"\033[91m❌ Error consolidating {currency.symbol} for user {user_wallet.user_id}: {e}\033[0m")

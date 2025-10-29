@@ -549,13 +549,19 @@ def check_blockchain_deposits():
                         logger.info(f"[BATCH] NO-MEMO currency - pending consolidation: gross={amount}, estimated_gas={gas_cost} {currency.symbol}")
                         
                     with transaction.atomic():
-                        # Зачисляем на баланс только для валют с MEMO
+                        # ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ЛОГИКА ДЕПОЗИТОВ ДЛЯ ВАЛЮТ БЕЗ MEMO:
+                        # 1. НЕ зачисляем баланс сразу при обнаружении депозита
+                        # 2. Создаем транзакцию со статусом "pending"
+                        # 3. Консолидируем максимальную сумму с блокчейна
+                        # 4. После подтверждения консолидации зачисляем РЕАЛЬНУЮ консолидированную сумму
+                        # 
+                        # Для валют С MEMO зачисляем сразу (консолидация не требуется)
                         if should_credit_now:
                             user_wallet.balance += net_amount
                             user_wallet.save()
                             logger.info(f"[BATCH] Balance credited immediately: {net_amount} {currency.symbol}")
                         
-                        # Создаём транзакцию
+                        # Создаём транзакцию депозита
                         logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={net_amount}, status={deposit_status}, tx_hash={tx_hash}")
                         
                         # Ищем существующую ожидающую транзакцию депозита для этого адреса
@@ -567,37 +573,41 @@ def check_blockchain_deposits():
                         ).first()
                         
                         if existing_deposit:
-                            # Обновляем существующую транзакцию
+                            # Обновляем существующую транзакцию депозита
+                            # ⚠️ ВАЖНО: статус должен быть deposit_status (pending для валют без MEMO, completed для валют с MEMO)
                             transaction_obj = existing_deposit.transaction
-                            transaction_obj.amount = net_amount
-                            transaction_obj.fee = gas_cost
+                            transaction_obj.amount = net_amount  # Полная сумма депозита с блокчейна
+                            transaction_obj.fee = gas_cost  # Оценочная стоимость газа (будет уточнена при консолидации)
                             transaction_obj.tx_hash = tx_hash
-                            transaction_obj.status = "completed"
+                            transaction_obj.status = deposit_status  # Используем корректный статус
                             transaction_obj.save()
                             
                             # Обновляем депозит
-                            existing_deposit.confirmed = True
-                            existing_deposit.confirmation_date = timezone.now()
+                            existing_deposit.confirmed = (deposit_status == "completed")  # Только для MEMO валют
+                            if existing_deposit.confirmed:
+                                existing_deposit.confirmation_date = timezone.now()
                             existing_deposit.save()
                             
-                            logger.info(f"[BATCH] Updated existing deposit transaction {transaction_obj.id} for address {address}")
+                            logger.info(f"[BATCH] Updated existing deposit transaction {transaction_obj.id} for address {address} with status {deposit_status}")
                         else:
-                            # Создаем новую транзакцию (fallback для старых адресов)
+                            # Создаем новую транзакцию депозита
+                            # ⚠️ ВАЖНО: Для валют БЕЗ MEMO статус должен быть "pending", баланс НЕ трогаем!
                             Transaction.objects.create(
                                 user=user_wallet.user,
                                 crypto=currency,
-                                amount=net_amount,  # Записываем чистую сумму
-                                fee=gas_cost,  # Записываем стоимость газа
+                                amount=net_amount,  # Полная сумма депозита с блокчейна
+                                fee=gas_cost,  # Оценочная стоимость газа (будет уточнена при консолидации)
                                 tx_hash=tx_hash,
                                 type="deposit",
-                                status="completed",
+                                status=deposit_status,  # pending для валют без MEMO, completed для валют с MEMO
                                 timestamp=timezone.now()
                             )
-                            logger.info(f"[BATCH] Created new deposit transaction for address {address} (no pending transaction found)")
+                            logger.info(f"[BATCH] Created new deposit transaction for address {address} with status {deposit_status}")
                         processed += 1
-                        logger.info(f"[BATCH] Deposit recorded with status '{deposit_status}': {user_wallet.user} {currency.symbol} {amount}")
+                        logger.info(f"[BATCH] Deposit recorded with status '{deposit_status}': {user_wallet.user} {currency.symbol} {amount} (balance NOT credited for no-MEMO currencies)")
                         
                         # Немедленная попытка консолидации для pending депозитов
+                        # ⚠️ ВАЖНО: Консолидация работает с балансом блокчейна, а НЕ с балансом в БД!
                         if deposit_status == "pending":
                             logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash}")
                             from .tasks_consolidation import consolidate_user_deposits
