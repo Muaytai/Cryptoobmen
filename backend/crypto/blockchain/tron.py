@@ -62,9 +62,10 @@ class TronService(BaseBlockchainService):
 
         current_network = self.network.lower()
         if current_network in ['nile', 'trc20', 'tron']:
-            nile_provider_url = "https://nile.trongrid.io"
-            self.api_url = nile_provider_url
-            self.client = Tron(provider=HTTPProvider(api_key=self.api_key, endpoint_uri=nile_provider_url))
+            # Предпочитаем URL из настроек, иначе дефолтный
+            nile_api_url = getattr(settings, 'TRON_API_URL', 'https://api.nile.trongrid.io')
+            self.api_url = nile_api_url
+            self.client = Tron(provider=HTTPProvider(api_key=self.api_key, endpoint_uri=nile_api_url))
             self.network = 'nile'
         else:
             # Assume mainnet for anything else
@@ -109,8 +110,7 @@ class TronService(BaseBlockchainService):
             "only_to": "true",
             "limit": 100,
             "min_timestamp": min_timestamp,
-            "contract_address": contract_address,
-            "order_by": "block_timestamp,asc"
+            "contract_address": contract_address
         }
         
         try:

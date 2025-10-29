@@ -9,13 +9,14 @@ import {clsx} from "clsx";
 import Image from "next/image";
 
 import {useTheme} from 'next-themes';
+import {useAuthStore} from '@/store/useAuthStore';
 import ImageDependTheme from "@/components/imageDependTheme/imageDependTheme";
 
 const navItems = [
   {
     icon: "/images/profile/vector-5.svg",
     alt: "Profile",
-    title: "Главня",
+    title: "Главная",
     path: "/me",
   },
   {
@@ -27,8 +28,14 @@ const navItems = [
   {
     icon: "/images/profile/vector-4.svg",
     alt: "Details",
-    title: "Реквезиты",
+    title: "Реквизиты",
     path: "/details",
+  },
+  {
+    icon: "/images/profile/settings.svg",
+    alt: "Admin",
+    title: "Админ-панель",
+    path: "/admin",
   },
 ];
 
@@ -36,8 +43,10 @@ export const SideBar = (): JSX.Element => {
   const pathname = usePathname();
   const [isMobile, setIsMobile] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<number | null>(null);
 
   const {theme} = useTheme();
+  const user = useAuthStore(state => state.user);
 
   useEffect(() => {
     const handleResize = () => {
@@ -61,6 +70,17 @@ export const SideBar = (): JSX.Element => {
 
   const toggleMenu = () => {
     setIsOpen(!isOpen);
+  };
+
+  // Компонент тултипа
+  const Tooltip = ({ text, isVisible }: { text: string; isVisible: boolean }) => {
+    if (!isVisible) return null;
+    
+    return (
+      <div className={styles.tooltip}>
+        {text}
+      </div>
+    );
   };
 
   return (
@@ -128,7 +148,15 @@ export const SideBar = (): JSX.Element => {
             )} */}
 
             <div className={styles.navItems}>
-              {navItems.map((item, index) => {
+              {navItems
+                .filter(item => {
+                  // Скрываем пункт "Админ-панель" для пользователей без прав администратора сайта
+                  if (item.path === '/admin') {
+                    return !!user?.is_site_admin;
+                  }
+                  return true;
+                })
+                .map((item, index) => {
                 const isActive = pathname?.startsWith(item.path);
 
                 return (
@@ -139,6 +167,8 @@ export const SideBar = (): JSX.Element => {
                       }`}
                       whileHover={{scale: 1.05}}
                       whileTap={{scale: 0.95}}
+                      onMouseEnter={() => setHoveredItem(index)}
+                      onMouseLeave={() => setHoveredItem(null)}
                     >
                       {isActive && (
                         <motion.div
@@ -168,6 +198,13 @@ export const SideBar = (): JSX.Element => {
                         >
                           {item.title}
                         </motion.span>
+                      )}
+                      {/* Тултип для десктопной версии */}
+                      {isMobile === false && (
+                        <Tooltip 
+                          text={item.title} 
+                          isVisible={hoveredItem === index} 
+                        />
                       )}
                     </motion.div>
                   </Link>

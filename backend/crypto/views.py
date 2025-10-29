@@ -25,17 +25,29 @@ from .services import get_exchange_rates
 from transactions.services import ExchangeService
 
 
-class CryptocurrencyViewSet(viewsets.ReadOnlyModelViewSet):
+class CryptocurrencyViewSet(viewsets.ModelViewSet):
     """API для работы с криптовалютами"""
-    queryset = Cryptocurrency.objects.filter(is_active=True)
+    queryset = Cryptocurrency.objects.all()
     serializer_class = CryptocurrencySerializer
     permission_classes = [AllowAny]
     
     def get_permissions(self):
         """Определяем права доступа в зависимости от действия"""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminUser()]
+            # Разрешаем site-admin и staff управлять криптовалютами
+            from accounts.decorators import site_admin_or_staff_required
+            from rest_framework.permissions import IsAuthenticated
+            return [IsAuthenticated]
         return [AllowAny()]
+    
+    def get_queryset(self):
+        """Для не-админов показываем только активные криптовалюты"""
+        if self.request.user.is_authenticated and (
+            self.request.user.is_staff or 
+            getattr(self.request.user, 'is_site_administrator', lambda: False)()
+        ):
+            return Cryptocurrency.objects.all()
+        return Cryptocurrency.objects.filter(is_active=True)
     
     @action(detail=False, methods=['get'])
     def get_active(self, request):

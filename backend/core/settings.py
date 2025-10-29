@@ -180,11 +180,12 @@ BLOCKCYPHER_API_KEY = os.getenv('BLOCKCYPHER_API_KEY', '')
 # TRON Network configuration
 TRON_NETWORK = os.getenv('TRON_NETWORK', 'mainnet') # По умолчанию mainnet
 
+# URL TronGrid берём из переменной окружения, с умным дефолтом по сети
 if TRON_NETWORK == 'nile':
-    TRON_API_URL = 'https://nile.trongrid.io'
+    TRON_API_URL = os.getenv('TRON_API_URL', 'https://nile.trongrid.io')
     USDT_CONTRACT_ADDRESS = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'
 else: # mainnet
-    TRON_API_URL = 'https://api.trongrid.io'
+    TRON_API_URL = os.getenv('TRON_API_URL', 'https://api.trongrid.io')
     USDT_CONTRACT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 
 USDT_TRC20_CONTRACT_ADDRESS = os.getenv("USDT_TRC20_CONTRACT_ADDRESS", "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj")
@@ -549,6 +550,7 @@ CELERY_TASK_ROUTES = {
     # Фоновое сканирование - низкий приоритет
     'crypto.tasks.check_blockchain_deposits': {'queue': 'low_priority'},
     'crypto.tasks.process_pending_withdrawals': {'queue': 'low_priority'},
+    'crypto.tasks.sync_balances_with_blockchain': {'queue': 'low_priority'},
 }
 
 # Настройка приоритетов очередей
@@ -560,17 +562,27 @@ CELERY_TASK_DEFAULT_PRIORITY = 5
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Обрабатывать по одной задаче за раз
 CELERY_TASK_ACKS_LATE = True  # Подтверждать выполнение только после завершения
 
+# Настройки логирования Celery
+CELERY_WORKER_LOG_FORMAT = '🔵 [%(asctime)s: %(levelname)s/%(processName)s] %(message)s'
+CELERY_WORKER_TASK_LOG_FORMAT = '🟢 [%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s'
+CELERY_TASK_LOG_FORMAT = '🟡 [%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s'
+
+# Включаем подробное логирование
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+CELERY_WORKER_LOG_COLOR = True
+
+# Настройки для отображения логов в консоли
+CELERY_WORKER_CONCURRENCY = 1  # Для лучшего отображения логов
+CELERY_WORKER_DISABLE_RATE_LIMITS = True
+
 # Предотвращение дублирующихся задач
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
-CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 
-# Настройки логирования Celery
-CELERY_WORKER_LOG_FORMAT = '[%(asctime)s: %(levelname)s/%(processName)s] %(message)s'
-CELERY_WORKER_TASK_LOG_FORMAT = '[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s'
-CELERY_TASK_LOG_FORMAT = '[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s'
-
-# Включаем цветное логирование для Celery
-CELERY_WORKER_LOG_COLOR = True
+# Настройки логирования для терминала
+CELERY_WORKER_LOG_LEVEL = 'INFO'
+CELERY_TASK_LOG_LEVEL = 'INFO'
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
 
 # Периодические задачи
 from celery.schedules import crontab
@@ -584,11 +596,17 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'crypto.tasks.process_pending_withdrawals',
         'schedule': 60.0,
     },
-    # УБРАНО: 'process-pending-deposits-every-minute' - запускается из check_blockchain_deposits
-    # УБРАНО: 'consolidate-user-deposits-every-5-minutes' - запускается из process_pending_deposits
+    'consolidate-funds-every-5-minutes': {
+        'task': 'crypto.tasks.consolidate_funds',
+        'schedule': 300.0,  # 5 минут
+    },
     'check-consolidation-confirmations-every-minute': {
         'task': 'crypto.tasks_consolidation.check_consolidation_confirmations',
         'schedule': 60.0,
+    },
+    'sync-balances-every-5-minutes': {
+        'task': 'crypto.tasks.sync_balances_with_blockchain',
+        'schedule': 300.0,  # 5 минут
     },
 }
 

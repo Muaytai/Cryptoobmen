@@ -68,6 +68,7 @@ def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
         'BTC': Decimal('0.0001'),
         'ETH': Decimal('0.01'),
         'TRX': Decimal('10'),
+        'USDT': Decimal('10'),     # Добавлено для USDT TRC-20
     }
     return minimums.get(currency.symbol, Decimal('0.001'))
 
@@ -77,7 +78,9 @@ def get_gas_reserve(currency: Cryptocurrency) -> Decimal:
         'POL': Decimal('0.01'),    # Снижено после введения динамического расчёта
         'BTC': Decimal('0.00005'), 
         'ETH': Decimal('0.005'),
-        'TRX': Decimal('5'),
+        'TRX': Decimal('1'),
+        # USDT (TRC20) - газ платится в TRX, не в USDT!
+        'USDT': Decimal('0'),  # Для USDT газ не нужен
     }
     return reserves.get(currency.symbol, Decimal('0.001'))
 

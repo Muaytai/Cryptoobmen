@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
+from django.contrib import messages
 from .models import User, UserProfile, UserDocument
 
 
@@ -12,14 +13,14 @@ class UserProfileInline(admin.StackedInline):
 
 class CustomUserAdmin(UserAdmin):
     inlines = (UserProfileInline,)
-    list_display = ('email', 'username', 'first_name', 'last_name', 'is_verified', 'kyc_verified', 'is_staff')
-    list_filter = ('is_verified', 'kyc_verified', 'is_staff', 'is_superuser')
+    list_display = ('email', 'username', 'first_name', 'last_name', 'is_verified', 'kyc_verified', 'is_staff', 'is_site_admin')
+    list_filter = ('is_verified', 'kyc_verified', 'is_staff', 'is_superuser', 'is_site_admin')
     search_fields = ('email', 'username', 'first_name', 'last_name', 'phone_number')
     fieldsets = (
         (None, {'fields': ('email', 'username', 'password')}),
         (_('Personal info'), {'fields': ('first_name', 'last_name', 'phone_number', 'avatar', 'telegram_id')}),
         (_('KYC info'), {'fields': ('kyc_verified', 'full_name', 'date_of_birth', 'address')}),
-        (_('Permissions'), {'fields': ('is_active', 'is_verified', 'is_staff', 'is_superuser', 
+        (_('Permissions'), {'fields': ('is_active', 'is_verified', 'is_staff', 'is_superuser', 'is_site_admin',
                                       'groups', 'user_permissions')}),
         (_('Security'), {'fields': ()}),
         (_('Notifications'), {'fields': ('notify_via_email', 'notify_via_telegram')}),
@@ -32,6 +33,28 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
     ordering = ('email',)
+    
+    def make_site_admin(self, request, queryset):
+        """Назначить выбранных пользователей администраторами сайта"""
+        updated = queryset.update(is_site_admin=True)
+        self.message_user(
+            request,
+            f'{updated} пользователей назначены администраторами сайта.',
+            messages.SUCCESS
+        )
+    make_site_admin.short_description = "Назначить администраторами сайта"
+    
+    def remove_site_admin(self, request, queryset):
+        """Снять права администратора сайта у выбранных пользователей"""
+        updated = queryset.update(is_site_admin=False)
+        self.message_user(
+            request,
+            f'Права администратора сайта сняты у {updated} пользователей.',
+            messages.SUCCESS
+        )
+    remove_site_admin.short_description = "Снять права администратора сайта"
+    
+    actions = ['make_site_admin', 'remove_site_admin']
 
 
 class UserDocumentAdmin(admin.ModelAdmin):

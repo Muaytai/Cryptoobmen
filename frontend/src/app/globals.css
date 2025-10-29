@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* КРИТИЧЕСКИЙ CSS ДЛЯ FIREFOX - ДОЛЖЕН БЫТЬ ПЕРВЫМ */
+html {
+  height: 100% !important;
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable both-edges !important;
+  --header-h: 64px;
+}
+
+body {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+* {
+  box-sizing: border-box !important;
+}
+
+/* КОНЕЦ КРИТИЧЕСКОГО CSS */
+
 /* Базовые стили Tailwind будут импортированы в другом месте */
 
 @layer base {
@@ -225,14 +249,122 @@ input:focus, textarea:focus, select:focus {
   box-sizing: border-box;
 }
 
-html,
-body {
-  max-width: 100vw;
-  min-height: 100vh;
-  overflow-x: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  transition: background-color 0.3s ease, color 0.3s ease;
-}
+ html {
+   /* Критично для Firefox - предотвращение layout shift */
+   height: 100% !important;
+   overflow-y: scroll !important;
+   scrollbar-gutter: stable both-edges !important;
+   /* Резерв под высоту шапки */
+   --header-h: 64px;
+   /* Принудительная стабилизация */
+   contain: layout style !important;
+   will-change: auto !important;
+ }
+
+ body {
+   max-width: 100vw !important;
+   min-height: 100vh !important;
+   height: 100vh !important;
+   overflow-x: hidden !important;
+   overflow-y: auto !important;
+   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+   transition: background-color 0.3s ease, color 0.3s ease !important;
+   /* Предотвращение скачков при загрузке */
+   contain: layout style !important;
+   will-change: auto !important;
+   /* Стабилизация для Firefox */
+   margin: 0 !important;
+   padding: 0 !important;
+   position: relative !important;
+   /* Дополнительная стабилизация */
+   box-sizing: border-box !important;
+ }
+
+ /* Предотвращение скачков логотипа и других элементов */
+ * {
+   box-sizing: border-box;
+ }
+
+ /* Стабильность для fixed элементов */
+ [data-fixed] {
+   contain: layout style paint;
+ }
+
+ /* Предотвращение скачков при загрузке - критично для Firefox */
+ .prevent-layout-shift {
+   contain: layout style paint;
+   will-change: auto;
+ }
+
+ /* Стабилизация для всех изображений */
+ img {
+   contain: layout style;
+   will-change: auto;
+ }
+
+ /* Стабилизация для контейнеров */
+ .stable-container {
+   contain: layout style;
+   will-change: auto;
+   min-height: 0;
+ }
+
+ /* Предотвращение скачков при гидратации */
+ [data-hydrated] {
+   contain: layout style;
+ }
+
+ /* Критично для Firefox - предотвращение скачков при загрузке */
+ @media screen {
+   html {
+     /* Принудительная стабилизация для Firefox */
+     overflow-y: scroll !important;
+     scrollbar-gutter: stable both-edges !important;
+     height: 100% !important;
+     contain: layout style !important;
+   }
+   
+   body {
+     /* Предотвращение скачков при загрузке контента */
+     min-height: 100vh !important;
+     height: 100vh !important;
+     overflow-y: auto !important;
+     contain: layout style !important;
+     will-change: auto !important;
+   }
+   
+   /* Предотвращение скачков при загрузке всех элементов */
+   * {
+     box-sizing: border-box !important;
+     contain: layout style !important;
+   }
+   
+   /* Стабилизация для всех контейнеров */
+   div, main, section, article, header, footer {
+     contain: layout style !important;
+     will-change: auto !important;
+   }
+ }
+
+ /* Предотвращение скачков при загрузке шрифтов */
+ @font-face {
+   font-family: 'Inter';
+   font-display: block;
+   src: local('Inter');
+ }
+
+ /* Стабилизация для всех изображений Next.js */
+ img[src*="/images/"] {
+   contain: layout style;
+   will-change: auto;
+   min-height: 0;
+ }
+
+ /* Предотвращение скачков при загрузке логотипа */
+ img[alt*="logo"], img[alt*="Logo"] {
+   contain: layout style paint;
+   will-change: auto;
+ }
 
 /* Явно задаем фон и цвет для светлой темы */
 html.light, html.light body, html.light main {
@@ -252,6 +384,7 @@ html.dark, html.dark body, html.dark main {
 *, *::before, *::after {
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
+
 
 a {
   color: inherit;
@@ -334,4 +467,9 @@ button {
 
 .hydration-container {
     animation: fade-in 0.3s ease-in;
+}
+
+html, body {
+  overflow-y: scroll;
+  scrollbar-gutter: stable both-edges;
 }
