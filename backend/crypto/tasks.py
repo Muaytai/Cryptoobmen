@@ -1508,33 +1508,5 @@ def sync_balances_with_blockchain():
         except Exception as e:
             logger.error(f"[BALANCE_SYNC] Error syncing system wallet {wallet.id} ({wallet.currency.symbol}): {e}")
             error_count += 1
-    
-    # Синхронизируем пользовательские кошельки (только с депозитными адресами)
-    user_wallets = UserWallet.objects.filter(
-        is_system_wallet=False,
-        currency__is_active=True,
-        deposit_address__isnull=False
-    ).exclude(deposit_address='')
-    
-    logger.info(f"[BALANCE_SYNC] Found {user_wallets.count()} user wallets to sync")
-    
-    for wallet in user_wallets:
-        try:
-            service = get_blockchain_service(wallet.currency.network or wallet.currency.symbol)
-            real_balance = service.get_balance(wallet.deposit_address)
-            
-            if wallet.balance != real_balance:
-                old_balance = wallet.balance
-                wallet.balance = real_balance
-                wallet.save()
-                logger.info(f"[BALANCE_SYNC] User wallet {wallet.id} (User {wallet.user.id}, {wallet.currency.symbol}): {old_balance} → {real_balance}")
-                synced_count += 1
-            else:
-                logger.debug(f"[BALANCE_SYNC] User wallet {wallet.id} (User {wallet.user.id}, {wallet.currency.symbol}) already in sync: {real_balance}")
-                
-        except Exception as e:
-            logger.error(f"[BALANCE_SYNC] Error syncing user wallet {wallet.id} (User {wallet.user.id}, {wallet.currency.symbol}): {e}")
-            error_count += 1
-    
-    logger.info(f"[BALANCE_SYNC] Balance synchronization completed. Synced: {synced_count}, Errors: {error_count}")
-    return f"Synced {synced_count} wallets, {error_count} errors"
+   
+   
