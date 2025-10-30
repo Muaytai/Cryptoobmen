@@ -106,7 +106,20 @@ class BatchRPCProcessor:
     def _safe_get_balance(self, service, address: str, contract_address: str = None) -> Decimal:
         """Безопасное получение баланса с обработкой ошибок"""
         try:
-            return service.get_balance(address, contract_address)
+            import inspect
+            # Проверяем сигнатуру метода get_balance
+            sig = inspect.signature(service.get_balance)
+            params = list(sig.parameters.keys())
+            
+            # Если метод принимает contract_address (например, EthereumService), передаем его
+            if 'contract_address' in params:
+                if contract_address:
+                    return service.get_balance(address, contract_address)
+                else:
+                    return service.get_balance(address)
+            else:
+                # Метод принимает только address (например, PolygonService, BitcoinService)
+                return service.get_balance(address)
         except Exception as e:
             logger.warning(f"[BATCH] Failed to get balance for {address}: {e}")
             return Decimal('0')
@@ -145,7 +158,21 @@ class CachedBatchProcessor(BatchRPCProcessor):
             return self._balance_cache[cache_key]
         
         try:
-            balance = service.get_balance(address, contract_address)
+            import inspect
+            # Проверяем сигнатуру метода get_balance
+            sig = inspect.signature(service.get_balance)
+            params = list(sig.parameters.keys())
+            
+            # Если метод принимает contract_address (например, EthereumService), передаем его
+            if 'contract_address' in params:
+                if contract_address:
+                    balance = service.get_balance(address, contract_address)
+                else:
+                    balance = service.get_balance(address)
+            else:
+                # Метод принимает только address (например, PolygonService, BitcoinService)
+                balance = service.get_balance(address)
+            
             self._balance_cache[cache_key] = balance
             return balance
         except Exception as e:

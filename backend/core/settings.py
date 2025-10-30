@@ -356,11 +356,20 @@ LOGGING = {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
             'style': '{',
         },
+        'colored': {
+            '()': 'core.colored_formatter.ColoredFormatter',
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'formatter': 'colored',
+        },
+        'colored_console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'colored',
         },
         'file': {
             'class': 'logging.FileHandler',
@@ -374,22 +383,27 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers': ['console'] if DEBUG else ['console', 'file'],
+            'handlers': ['console'],
             'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
             'propagate': True,
         },
         'accounts': {
-            'handlers': ['console'] if DEBUG else ['console', 'file'],
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': True,
         },
         'crypto': {
-            'handlers': ['console'] if DEBUG else ['console', 'file'],
+            'handlers': ['colored_console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'crypto.tasks_consolidation': {
+            'handlers': ['colored_console'],
             'level': 'INFO',
             'propagate': True,
         },
         'transactions': {
-            'handlers': ['console'] if DEBUG else ['console', 'file'],
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': True,
         },
@@ -640,7 +654,7 @@ POLYGON_NETWORK = os.getenv('POLYGON_NETWORK', 'testnet')  # mainnet, amoy (test
 
 # Выбираем правильный RPC URL в зависимости от сети
 if POLYGON_NETWORK == 'mainnet':
-    POLYGON_RPC_URL = os.getenv('POLYGON_RPC_URL', 'https://polygon-rpc.com')
+    POLYGON_RPC_URL = os.getenv('POLYGON_RPC_URL', 'https://polygon-amoy-public.nodies.app')
     POLYGON_BACKUP_RPC_URL = os.getenv('POLYGON_BACKUP_RPC_URL', 'https://rpc-mainnet.maticvigil.com')
 else:  # testnet/amoy
     POLYGON_RPC_URL = os.getenv('POLYGON_TESTNET_RPC_URL', 'https://rpc-amoy.polygon.technology')

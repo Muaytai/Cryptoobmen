@@ -284,20 +284,26 @@ def check_blockchain_deposits():
                 continue
 
             # Проверяем на дубликат ДО основной логики
-            if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                logger.warning(f"Duplicate transaction found: tx_hash={tx_hash}. Re-sending signal just in case.")
-                # Отправляем сигнал повторно, на случай если фронтенд его пропустил
-                if deposit_memo:
-                    channel_layer = get_channel_layer()
-                    async_to_sync(channel_layer.group_send)(
-                        f"deposit_memo_{deposit_memo.memo}",
-                        {
-                            "type": "deposit_status_update",
-                            "data": {'memo': deposit_memo.memo, 'status': 'used', 'message': 'Deposit completed'}
-                        }
-                    )
-                continue
+            existing_tx = Transaction.objects.filter(tx_hash=tx_hash).first()
+            if existing_tx:
+                if existing_tx.status == 'completed':
+                    logger.info(f"Duplicate transaction found: tx_hash={tx_hash} already completed. Skipping.")
+                    # НЕ отправляем сигнал для уже завершенных транзакций
+                    continue
+                elif existing_tx.status == 'pending':
+                    logger.info(f"Found pending transaction: tx_hash={tx_hash}. Processing for consolidation...")
+                    # Депозит в статусе pending - обрабатываем для консолидации
+                    # Увеличиваем счетчик, чтобы запустить process_pending_deposits
+                    processed += 1
+                    # НЕ отправляем сигнал - он уже был отправлен при создании депозита
+                    continue
+                else:
+                    logger.warning(f"Duplicate transaction found: tx_hash={tx_hash} with status {existing_tx.status}. Skipping.")
+                    # НЕ отправляем сигнал для уже существующих транзакций
+                    continue
 
+            # Обрабатываем НОВЫЙ депозит (не найден в базе)
+            logger.info(f"Processing NEW deposit: {tx_hash}")
             try:
                 amount = Decimal(amount_str) / Decimal(10**wallet.currency.decimals)
             except (ValueError, TypeError):
@@ -305,25 +311,38 @@ def check_blockchain_deposits():
                 continue
 
             try:
+                # Получаем/создаём кошелёк пользователя
+                user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
+                
+                # Определяем логику зачисления
+                if wallet.currency.requires_memo:
+                    # Валюты с MEMO - зачисляем сразу
+                    net_amount = amount
+                    gas_cost = Decimal('0')
+                    deposit_status = "completed"
+                    should_credit_now = True
+                    logger.info(f"[MEMO] Will credit immediately: {amount} {wallet.currency.symbol}")
+                else:
+                    # Валюты БЕЗ MEMO - НЕ зачисляем, ждём консолидации
+                    deposit_info = calculate_net_deposit_amount(
+                        currency=wallet.currency,
+                        deposit_amount=amount,
+                        user_address=user_wallet.deposit_address
+                    )
+                    net_amount = amount
+                    gas_cost = deposit_info['gas_cost']
+                    deposit_status = "pending"
+                    should_credit_now = False
+                    logger.info(f"[NO_MEMO] Pending consolidation: gross={amount}, gas={gas_cost} {wallet.currency.symbol}")
+                
                 with transaction.atomic():
-                    logger.info(f"Updating balance for user {user.id} and wallet {wallet.currency.symbol}")
-                    user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
+                    logger.info(f"Processing deposit for user {user.id} and wallet {wallet.currency.symbol}")
                     
-                    # Для валют с мемо газ не нужен, зачисляем полную сумму
-                    if wallet.currency.requires_memo:
-                        user_wallet.balance += amount
-                        logger.info(f"[MEMO] Full amount credited: {amount} {wallet.currency.symbol}")
-                    else:
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        deposit_info = calculate_net_deposit_amount(
-                            currency=wallet.currency,
-                            deposit_amount=amount,
-                            user_address=user_wallet.deposit_address
-                        )
-                        user_wallet.balance += deposit_info['net_amount']
-                        logger.info(f"[NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
-                    
-                    user_wallet.save()
+                    # Зачисляем только для валют с MEMO
+                    if should_credit_now:
+                        user_wallet.balance += net_amount
+                        user_wallet.save()
+                        logger.info(f"[MEMO] Balance credited: {net_amount} {wallet.currency.symbol}")
 
                     system_wallet, _ = UserWallet.objects.get_or_create(
                         user=None,
@@ -379,6 +398,12 @@ def check_blockchain_deposits():
                     
                     processed += 1
                     logger.info(f"Successfully processed deposit for user {user.id}, tx_hash={tx_hash}")
+                    
+                    # Немедленная попытка консолидации для pending депозитов
+                    if deposit_status == "pending":
+                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash}")
+                        from .tasks_consolidation import consolidate_user_deposits
+                        consolidate_user_deposits.delay()
 
                 # После успешной транзакции отправляем сигнал
                 if deposit_memo:
@@ -443,28 +468,24 @@ def check_blockchain_deposits():
                     logger.info(f"[BATCH] Processing: {currency.symbol} {address} tx={tx_hash} amount={amount_str}")
                     existing_tx = Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).first()
                     if existing_tx:
-                        logger.warning(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id}. Re-sending signal.")
-                        # Повторно отправляем сигнал, если транзакция уже существует
-                        try:
-                            channel_layer = get_channel_layer()
-                            async_to_sync(channel_layer.group_send)(
-                                f"deposit_address_{address}",
-                                {
-                                    "type": "deposit_status_update",
-                                    "data": {
-                                        "address": address,
-                                        "currency": currency.symbol,
-                                        "network": currency.network,
-                                        "status": "used",
-                                        "amount": str(existing_tx.amount),
-                                    }
-                                }
-                            )
-                            logger.info(f"[BATCH] Re-sent WebSocket signal for address {address}")
-                        except Exception as e:
-                            logger.error(f"[BATCH] Failed to re-send WebSocket signal for address {address}: {e}")
-                        continue
+                        if existing_tx.status == 'completed':
+                            logger.info(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id} already completed. Skipping.")
+                            # НЕ отправляем сигнал для уже завершенных транзакций
+                            continue
+                        elif existing_tx.status == 'pending':
+                            logger.info(f"[BATCH] Found pending tx {tx_hash} for user {user_wallet.user.id}. Processing for consolidation...")
+                            # Депозит в статусе pending - обрабатываем для консолидации
+                            # Увеличиваем счетчик, чтобы запустить process_pending_deposits
+                            processed += 1
+                            # НЕ отправляем сигнал - он уже был отправлен при создании депозита
+                            continue
+                        else:
+                            logger.warning(f"[BATCH] Duplicate tx {tx_hash} for user {user_wallet.user.id} with status {existing_tx.status}. Skipping.")
+                            # НЕ отправляем сигнал для уже существующих транзакций
+                            continue
                     
+                    # Обрабатываем НОВЫЙ депозит (не найден в базе)
+                    logger.info(f"[BATCH] Processing NEW deposit: {tx_hash} for user {user_wallet.user.id}")
                     try:
                         # Логируем входные данные для диагностики
                         logger.info(f"[BATCH] Processing amount conversion: currency={currency.symbol}, network={currency.network}, amount_str={amount_str}, decimals={currency.decimals}")
@@ -502,33 +523,46 @@ def check_blockchain_deposits():
                         logger.error(f"[BATCH] Invalid amount: {amount_str}, error: {e}")
                         continue
                         
-                    # Проверяем, что транзакция с таким hash еще не существует
-                    if Transaction.objects.filter(tx_hash=tx_hash).exists():
-                        logger.warning(f"[BATCH] Transaction {tx_hash} already exists, skipping duplicate")
-                        continue
+                    # Проверка на дубликаты уже выполнена выше в коде
+                    
+                    # ВАЖНО: Расчет газа делаем ДО начала транзакции
+                    # Для валют БЕЗ мемо НЕ зачисляем сразу - ждём консолидации
+                    # Для валют С мемо зачисляем сразу (консолидация не требуется)
+                    if currency.requires_memo:
+                        # Валюты с MEMO - зачисляем сразу полную сумму
+                        net_amount = amount
+                        gas_cost = Decimal('0')
+                        deposit_status = "completed"
+                        should_credit_now = True
+                        logger.info(f"[BATCH] MEMO currency - will credit immediately: {amount} {currency.symbol}")
+                    else:
+                        # Валюты БЕЗ MEMO - НЕ зачисляем, ждём консолидации
+                        deposit_info = calculate_net_deposit_amount(
+                            currency=currency,
+                            deposit_amount=amount,
+                            user_address=user_wallet.deposit_address
+                        )
+                        net_amount = amount  # Сохраняем полную сумму депозита
+                        gas_cost = deposit_info['gas_cost']
+                        deposit_status = "pending"  # Ждём консолидации
+                        should_credit_now = False
+                        logger.info(f"[BATCH] NO-MEMO currency - pending consolidation: gross={amount}, estimated_gas={gas_cost} {currency.symbol}")
                         
                     with transaction.atomic():
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        if not currency.requires_memo:
-                            deposit_info = calculate_net_deposit_amount(
-                                currency=currency,
-                                deposit_amount=amount,
-                                user_address=user_wallet.deposit_address
-                            )
-                            net_amount = deposit_info['net_amount']
-                            gas_cost = deposit_info['gas_cost']
-                            logger.info(f"[BATCH] Gas calculation: gross={amount}, net={net_amount}, gas={gas_cost} {currency.symbol}")
-                        else:
-                            # Для валют с мемо зачисляем полную сумму
-                            net_amount = amount
-                            gas_cost = Decimal('0')
-                            logger.info(f"[BATCH] Full amount for memo currency: {amount} {currency.symbol}")
+                        # ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ЛОГИКА ДЕПОЗИТОВ ДЛЯ ВАЛЮТ БЕЗ MEMO:
+                        # 1. НЕ зачисляем баланс сразу при обнаружении депозита
+                        # 2. Создаем транзакцию со статусом "pending"
+                        # 3. Консолидируем максимальную сумму с блокчейна
+                        # 4. После подтверждения консолидации зачисляем РЕАЛЬНУЮ консолидированную сумму
+                        # 
+                        # Для валют С MEMO зачисляем сразу (консолидация не требуется)
+                        if should_credit_now:
+                            user_wallet.balance += net_amount
+                            user_wallet.save()
+                            logger.info(f"[BATCH] Balance credited immediately: {net_amount} {currency.symbol}")
                         
-                        user_wallet.balance += net_amount
-                        user_wallet.save()
-                        
-                        # Детальное логирование перед сохранением
-                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={net_amount}, tx_hash={tx_hash}")
+                        # Создаём транзакцию депозита
+                        logger.info(f"[BATCH] Saving transaction: user={user_wallet.user.id}, currency={currency.symbol}, amount={net_amount}, status={deposit_status}, tx_hash={tx_hash}")
                         
                         # Ищем существующую ожидающую транзакцию депозита для этого адреса
                         from transactions.models import Deposit
@@ -539,35 +573,45 @@ def check_blockchain_deposits():
                         ).first()
                         
                         if existing_deposit:
-                            # Обновляем существующую транзакцию
+                            # Обновляем существующую транзакцию депозита
+                            # ⚠️ ВАЖНО: статус должен быть deposit_status (pending для валют без MEMO, completed для валют с MEMO)
                             transaction_obj = existing_deposit.transaction
-                            transaction_obj.amount = net_amount
-                            transaction_obj.fee = gas_cost
+                            transaction_obj.amount = net_amount  # Полная сумма депозита с блокчейна
+                            transaction_obj.fee = gas_cost  # Оценочная стоимость газа (будет уточнена при консолидации)
                             transaction_obj.tx_hash = tx_hash
-                            transaction_obj.status = "completed"
+                            transaction_obj.status = deposit_status  # Используем корректный статус
                             transaction_obj.save()
                             
                             # Обновляем депозит
-                            existing_deposit.confirmed = True
-                            existing_deposit.confirmation_date = timezone.now()
+                            existing_deposit.confirmed = (deposit_status == "completed")  # Только для MEMO валют
+                            if existing_deposit.confirmed:
+                                existing_deposit.confirmation_date = timezone.now()
                             existing_deposit.save()
                             
-                            logger.info(f"[BATCH] Updated existing deposit transaction {transaction_obj.id} for address {address}")
+                            logger.info(f"[BATCH] Updated existing deposit transaction {transaction_obj.id} for address {address} with status {deposit_status}")
                         else:
-                            # Создаем новую транзакцию (fallback для старых адресов)
+                            # Создаем новую транзакцию депозита
+                            # ⚠️ ВАЖНО: Для валют БЕЗ MEMO статус должен быть "pending", баланс НЕ трогаем!
                             Transaction.objects.create(
                                 user=user_wallet.user,
                                 crypto=currency,
-                                amount=net_amount,  # Записываем чистую сумму
-                                fee=gas_cost,  # Записываем стоимость газа
+                                amount=net_amount,  # Полная сумма депозита с блокчейна
+                                fee=gas_cost,  # Оценочная стоимость газа (будет уточнена при консолидации)
                                 tx_hash=tx_hash,
                                 type="deposit",
-                                status="completed",
+                                status=deposit_status,  # pending для валют без MEMO, completed для валют с MEMO
                                 timestamp=timezone.now()
                             )
-                            logger.info(f"[BATCH] Created new deposit transaction for address {address} (no pending transaction found)")
+                            logger.info(f"[BATCH] Created new deposit transaction for address {address} with status {deposit_status}")
                         processed += 1
-                        logger.info(f"[BATCH] Deposit credited: {user_wallet.user} {currency.symbol} {amount}")
+                        logger.info(f"[BATCH] Deposit recorded with status '{deposit_status}': {user_wallet.user} {currency.symbol} {amount} (balance NOT credited for no-MEMO currencies)")
+                        
+                        # Немедленная попытка консолидации для pending депозитов
+                        # ⚠️ ВАЖНО: Консолидация работает с балансом блокчейна, а НЕ с балансом в БД!
+                        if deposit_status == "pending":
+                            logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash}")
+                            from .tasks_consolidation import consolidate_user_deposits
+                            consolidate_user_deposits.delay()
 
                     # Отправляем WebSocket сигнал по адресу
                     try:
@@ -669,24 +713,36 @@ def check_blockchain_deposits():
                     logger.error(f"Invalid amount format: {amount_str}. Skipping. Error: {e}")
                     continue
 
+                # Получаем/создаём кошелёк пользователя
+                user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
+                
+                # Определяем логику зачисления
+                if wallet.currency.requires_memo:
+                    # XRP с MEMO - зачисляем сразу
+                    net_amount = amount
+                    gas_cost = Decimal('0')
+                    deposit_status = "completed"
+                    should_credit_now = True
+                    logger.info(f"[XRP] Will credit immediately: {amount} {wallet.currency.symbol}")
+                else:
+                    # XRP БЕЗ MEMO (теоретически) - ждём консолидации
+                    deposit_info = calculate_net_deposit_amount(
+                        currency=wallet.currency,
+                        deposit_amount=amount,
+                        user_address=user_wallet.deposit_address
+                    )
+                    net_amount = amount
+                    gas_cost = deposit_info['gas_cost']
+                    deposit_status = "pending"
+                    should_credit_now = False
+                    logger.info(f"[XRP_NO_MEMO] Pending consolidation: gross={amount}, gas={gas_cost} {wallet.currency.symbol}")
+                
                 with transaction.atomic():
-                    user_wallet, _ = UserWallet.objects.get_or_create(user=deposit_memo.user, currency=wallet.currency)
-                    
-                    # Для XRP (с мемо) газ не нужен, зачисляем полную сумму
-                    if wallet.currency.requires_memo:
-                        user_wallet.balance += amount
-                        logger.info(f"[XRP] Full amount credited: {amount} {wallet.currency.symbol}")
-                    else:
-                        # Для валют без мемо рассчитываем чистую сумму с учетом газа
-                        deposit_info = calculate_net_deposit_amount(
-                            currency=wallet.currency,
-                            deposit_amount=amount,
-                            user_address=user_wallet.deposit_address
-                        )
-                        user_wallet.balance += deposit_info['net_amount']
-                        logger.info(f"[XRP_NO_MEMO] Net amount credited: {deposit_info['net_amount']} {wallet.currency.symbol} (gas: {deposit_info['gas_cost']}, gross: {amount})")
-                    
-                    user_wallet.save()
+                    # Зачисляем только для валют с MEMO
+                    if should_credit_now:
+                        user_wallet.balance += net_amount
+                        user_wallet.save()
+                        logger.info(f"[XRP] Balance credited: {net_amount} {wallet.currency.symbol}")
                     # Обновляем системный кошелек
                     system_wallet, _ = UserWallet.objects.get_or_create(
                         user=None,
@@ -707,16 +763,23 @@ def check_blockchain_deposits():
                     Transaction.objects.create(
                         user=deposit_memo.user,
                         crypto=wallet.currency,
-                        amount=amount,
+                        amount=net_amount,
+                        fee=gas_cost,
                         tx_hash=tx_hash,
                         type="deposit",
-                        status="completed",
+                        status=deposit_status,  # pending или completed
                         timestamp=timezone.now()
                     )
                     deposit_memo.status = "used"
                     deposit_memo.save()
                     processed += 1
                     logger.info(f"[XRP] Successfully processed deposit for tag='{memo}', tx_hash={tx_hash}")
+                    
+                    # Немедленная попытка консолидации для pending депозитов
+                    if deposit_status == "pending":
+                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending XRP deposit {tx_hash}")
+                        from .tasks_consolidation import consolidate_user_deposits
+                        consolidate_user_deposits.delay()
         except Exception as e:
             logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 
