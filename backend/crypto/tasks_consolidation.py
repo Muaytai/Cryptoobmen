@@ -67,8 +67,8 @@ def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
         'POL': Decimal('0.01'),    # Снижено - теперь используем динамический расчёт газа
         'BTC': Decimal('0.0001'),
         'ETH': Decimal('0.01'),
-        'TRX': Decimal('10'),
-        'USDT': Decimal('10'),     # Добавлено для USDT TRC-20
+        'TRX': Decimal('0.01'),    # Исправлено: точка вместо запятой
+        'USDT': Decimal('0.01'),   # Исправлено: точка вместо запятой (для USDT TRC-20)
     }
     return minimums.get(currency.symbol, Decimal('0.001'))
 
@@ -134,7 +134,14 @@ def check_consolidation_confirmations():
     а НЕ сумму депозита или deposit.amount - deposit.fee. 
     
     tx.amount содержит реальную сумму, которая была отправлена (максимально возможную).
+    
+    ИСПРАВЛЕНИЕ ЗАВИСШИХ ТРАНЗАКЦИЙ:
+    - Проверяет возраст транзакций
+    - Для старых транзакций (>24 часов) проверяет существование в блокчейне
+    - Помечает несуществующие транзакции (>48 часов) как failed
     """
+    from datetime import timedelta
+    
     start_time = timezone.now()
     logger.info("\033[94m" + "="*60 + "\033[0m")
     logger.info("\033[94m🔍 [CONFIRMATION] Starting consolidation confirmations check...\033[0m")
@@ -148,11 +155,86 @@ def check_consolidation_confirmations():
     
     logger.info(f"\033[94m📋 Found {pending_consolidations.count()} pending consolidation transactions\033[0m")
     confirmed = 0
+    failed_count = 0
+    
+    # Временные пороги для обработки зависших транзакций
+    OLD_TRANSACTION_THRESHOLD = timedelta(hours=24)  # После 24 часов - проверяем существование
+    VERY_OLD_TRANSACTION_THRESHOLD = timedelta(hours=48)  # После 48 часов - помечаем как failed если не существует
     
     for tx in pending_consolidations:
         try:
-            logger.info(f"\033[94m🔍 Checking confirmation for tx: {tx.tx_hash[:16]}... ({tx.crypto.symbol})\033[0m")
+            tx_age = timezone.now() - tx.timestamp
+            logger.info(f"\033[94m🔍 Checking confirmation for tx: {tx.tx_hash[:16]}... ({tx.crypto.symbol}), age: {tx_age}\033[0m")
+            
+            # Проверяем, нет ли tx_hash (критическая ошибка)
+            if not tx.tx_hash:
+                logger.error(f"\033[91m❌ Transaction {tx.id} has no tx_hash! Marking as failed.\033[0m")
+                with transaction.atomic():
+                    tx.status = "failed"
+                    tx.notes = f"Transaction has no tx_hash. Original timestamp: {tx.timestamp}"
+                    tx.save()
+                failed_count += 1
+                continue
+            
             service = get_blockchain_service(tx.crypto.network or tx.crypto.symbol)
+            
+            # Для старых транзакций проверяем существование в блокчейне
+            if tx_age > OLD_TRANSACTION_THRESHOLD:
+                logger.warning(f"\033[93m⚠️ Transaction {tx.tx_hash[:16]}... is old ({tx_age}). Checking if it exists in blockchain...\033[0m")
+                
+                # Пытаемся проверить существование транзакции
+                try:
+                    @retry_on_rpc_error(max_retries=2, delay=1, backoff=1.5)
+                    def check_transaction_exists():
+                        # Для Polygon/Ethereum используем get_transaction для проверки существования
+                        if hasattr(service, 'w3') and hasattr(service.w3, 'eth'):
+                            try:
+                                from web3.exceptions import TransactionNotFound
+                                try:
+                                    tx_data = service.w3.eth.get_transaction(tx.tx_hash)
+                                    # Если get_transaction вернул данные - транзакция существует
+                                    return tx_data is not None
+                                except TransactionNotFound:
+                                    # Транзакция точно не существует
+                                    return False
+                                except Exception as e:
+                                    # Другие ошибки - возможно временная проблема
+                                    logger.warning(f"\033[93m⚠️ Error checking transaction existence: {e}\033[0m")
+                                    return None  # Неизвестно
+                            except ImportError:
+                                # web3.exceptions может быть недоступен в некоторых версиях
+                                try:
+                                    tx_data = service.w3.eth.get_transaction(tx.tx_hash)
+                                    return tx_data is not None
+                                except Exception:
+                                    # Если get_transaction выбрасывает исключение - вероятно транзакция не существует
+                                    return False
+                        # Для других блокчейнов (Tron, XRP и т.д.) 
+                        # проверяем через получение данных транзакции
+                        elif hasattr(service, '_get_transaction_by_id'):
+                            try:
+                                tx_data = service._get_transaction_by_id(tx.tx_hash)
+                                return tx_data is not None and bool(tx_data)
+                            except Exception:
+                                return False
+                        # Для блокчейнов без специальных методов - считаем неизвестным
+                        return None
+                    
+                    exists = check_transaction_exists()
+                    
+                    # Если транзакция очень старая и точно не существует - помечаем как failed
+                    if tx_age > VERY_OLD_TRANSACTION_THRESHOLD and exists is False:
+                        logger.error(f"\033[91m❌ Transaction {tx.tx_hash[:16]}... is very old ({tx_age}) and does not exist in blockchain. Marking as failed.\033[0m")
+                        with transaction.atomic():
+                            tx.status = "failed"
+                            tx.notes = f"Transaction not found in blockchain after {tx_age}. Original timestamp: {tx.timestamp}"
+                            tx.save()
+                        failed_count += 1
+                        continue
+                    elif exists is False:
+                        logger.warning(f"\033[93m⚠️ Old transaction {tx.tx_hash[:16]}... may not exist. Will check confirmation anyway.\033[0m")
+                except Exception as check_error:
+                    logger.warning(f"\033[93m⚠️ Could not check transaction existence: {check_error}. Continuing with confirmation check...\033[0m")
             
             # Проверяем подтверждение транзакции с retry логикой
             @retry_on_rpc_error(max_retries=2, delay=1, backoff=1.5)
@@ -263,7 +345,25 @@ def check_consolidation_confirmations():
                         # НЕ прерываем выполнение - адрес можно сгенерировать позже через API
                     
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
             logger.error(f"\033[91m❌ Error checking consolidation confirmation for {tx.tx_hash}: {e}\033[0m")
+            logger.error(f"\033[91m❌ Traceback: {error_trace}\033[0m")
+            
+            # Для очень старых транзакций (>48 часов) при ошибке проверки помечаем как failed
+            # чтобы избежать бесконечного зависания
+            try:
+                tx_age = timezone.now() - tx.timestamp
+                if tx_age > VERY_OLD_TRANSACTION_THRESHOLD:
+                    logger.warning(f"\033[93m⚠️ Very old transaction {tx.tx_hash[:16]}... ({tx_age}) failed to check. Marking as failed.\033[0m")
+                    with transaction.atomic():
+                        tx.status = "failed"
+                        tx.notes = f"Failed to check confirmation after {tx_age}. Error: {str(e)}. Original timestamp: {tx.timestamp}"
+                        tx.save()
+                    failed_count += 1
+            except Exception as mark_error:
+                logger.error(f"\033[91m❌ Failed to mark transaction as failed: {mark_error}\033[0m")
+            
             continue
     
     end_time = timezone.now()
@@ -272,11 +372,13 @@ def check_consolidation_confirmations():
     logger.info(f"\033[94m" + "="*60 + "\033[0m")
     logger.info(f"\033[94m🏁 [CONFIRMATION] Process completed\033[0m")
     logger.info(f"\033[94m✅ Confirmed transactions: {confirmed}\033[0m")
+    if failed_count > 0:
+        logger.warning(f"\033[93m⚠️ Failed transactions: {failed_count}\033[0m")
     logger.info(f"\033[94m⏱️ Duration: {duration:.2f} seconds\033[0m")
     logger.info(f"\033[94m⏰ End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\033[0m")
     logger.info(f"\033[94m" + "="*60 + "\033[0m")
     
-    return f"Checked consolidation confirmations: {confirmed} confirmed"
+    return f"Checked consolidation confirmations: {confirmed} confirmed, {failed_count} marked as failed"
 
 
 @shared_task
@@ -295,6 +397,8 @@ def consolidate_user_deposits():
     5. После подтверждения консолидации пользователю зачисляется tx.amount (РЕАЛЬНАЯ консолидированная сумма)
     6. НИКОГДА не используйте deposit.amount - deposit.fee - это неправильно!
     """
+    from .models import Cryptocurrency, UserWallet, SystemWalletAddress
+    
     processed = 0
     start_time = timezone.now()
     logger.info("\033[94m" + "="*60 + "\033[0m")
@@ -348,7 +452,13 @@ def consolidate_user_deposits():
                     # Используем точный расчет максимальной суммы через get_max_sendable_amount или аналогичный метод
                     # НЕ используем gas_reserve - это приводит к неполной консолидации!
                     
-                    blockchain_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                    # Для TRC-20 токенов передаем contract_address при получении баланса
+                    contract_address = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
+                    # TronService.get_balance поддерживает contract_address как параметр
+                    if contract_address:
+                        blockchain_balance = blockchain_service.get_balance(user_wallet.deposit_address, contract_address=contract_address)
+                    else:
+                        blockchain_balance = blockchain_service.get_balance(user_wallet.deposit_address)
                     logger.info(f"\033[94m💰 Blockchain balance: {blockchain_balance} {currency.symbol}\033[0m")
                     
                     # Минимальная сумма для консолидации (чтобы покрыть комиссию)
@@ -387,14 +497,18 @@ def consolidate_user_deposits():
                     elif currency.symbol == 'BTC':
                         amount_to_send = Decimal('0')  # 0 означает "отправить всё" (sweep)
                         logger.info(f"\033[94m💸 Bitcoin sweep mode: will send all funds\033[0m")
+                    elif currency.network and currency.network.upper() == 'TRC20' and currency.symbol != 'TRX':
+                        # Для TRC-20 токенов (кроме TRX) газ платится в TRX, а не в токене
+                        # Поэтому отправляем весь баланс токена
+                        amount_to_send = blockchain_balance
+                        logger.info(f"\033[94m💸 TRC-20 token: sending full balance {amount_to_send} {currency.symbol} (gas paid in TRX)\033[0m")
                     else:
                         # Fallback: для других валют оцениваем газ динамически через gas_calculation
                         from .gas_calculation import calculate_estimated_gas_cost
                         gas_cost = calculate_estimated_gas_cost(
                             currency=currency,
-                            from_address=user_wallet.deposit_address,
-                            to_address=system_wallet_address,
-                            amount=blockchain_balance
+                            deposit_amount=blockchain_balance,
+                            user_address=user_wallet.deposit_address
                         )
                         amount_to_send = blockchain_balance - gas_cost
                         logger.info(f"\033[94m⛽ Gas cost (estimated via gas_calculation): {gas_cost} {currency.symbol}\033[0m")
@@ -406,14 +520,91 @@ def consolidate_user_deposits():
                     
                     logger.info(f"\033[94m🚀 Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet\033[0m")
                     
+                    # Для TRC-20 токенов (кроме TRX) проверяем наличие TRX для оплаты газа/bandwidth
+                    if currency.network and currency.network.upper() == 'TRC20' and currency.symbol != 'TRX':
+                        # Получаем баланс TRX на адресе пользователя
+                        trx_balance = blockchain_service.get_balance(user_wallet.deposit_address)  # Без contract_address для TRX
+                        
+                        # Минимум TRX для оплаты bandwidth (обычно 1-2 TRX достаточно)
+                        min_trx_for_bandwidth = Decimal('2')
+                        
+                        if trx_balance < min_trx_for_bandwidth:
+                            logger.warning(f"\033[93m⚠️ Insufficient TRX ({trx_balance}) for bandwidth on address {user_wallet.deposit_address[:10]}...\033[0m")
+                            logger.info(f"\033[94m💡 Need to send TRX for bandwidth payment...\033[0m")
+                            
+                            try:
+                                # Получаем системный TRX кошелек
+                                trx_currency = Cryptocurrency.objects.get(symbol='TRX', network='TRC20')
+                                
+                                # Проверяем наличие системного TRX кошелька
+                                try:
+                                    system_trx_wallet = SystemWalletAddress.objects.get(currency=trx_currency)
+                                    system_trx_address = system_trx_wallet.address
+                                    system_trx_private_key = system_trx_wallet.private_key if hasattr(system_trx_wallet, 'private_key') else None
+                                    
+                                    if not system_trx_private_key:
+                                        # Fallback - ищем в UserWallet
+                                        system_trx_wallet_user = UserWallet.objects.get(
+                                            user=None,
+                                            currency=trx_currency,
+                                            is_system_wallet=True,
+                                            is_active=True
+                                        )
+                                        system_trx_private_key = system_trx_wallet_user.encrypted_private_key
+                                        system_trx_address = system_trx_wallet_user.deposit_address
+                                    
+                                    trx_amount_to_send = min_trx_for_bandwidth - trx_balance
+                                    logger.info(f"\033[94m📤 Sending {trx_amount_to_send} TRX to {user_wallet.deposit_address[:10]}... for bandwidth\033[0m")
+                                    
+                                    # Отправляем TRX с системного кошелька на пользовательский для оплаты bandwidth
+                                    @retry_on_rpc_error(max_retries=2, delay=1, backoff=1.5)
+                                    def send_trx_for_bandwidth():
+                                        return blockchain_service.send_transaction(
+                                            private_key=system_trx_private_key,
+                                            to_address=user_wallet.deposit_address,
+                                            amount=trx_amount_to_send,
+                                            memo=""
+                                        )
+                                    
+                                    gas_tx_hash = send_trx_for_bandwidth()
+                                    logger.info(f"\033[92m✅ TRX sent for bandwidth: {gas_tx_hash}\033[0m")
+                                    
+                                    # Ждем подтверждения TRX транзакции перед отправкой токена
+                                    import time
+                                    logger.info(f"\033[94m⏳ Waiting 10 seconds for TRX transaction confirmation...\033[0m")
+                                    time.sleep(10)
+                                    
+                                except (SystemWalletAddress.DoesNotExist, UserWallet.DoesNotExist) as e:
+                                    logger.error(f"\033[91m❌ System TRX wallet not found: {e}\033[0m")
+                                    logger.warning(f"\033[93m⚠️ Skipping consolidation - cannot send TRX for bandwidth\033[0m")
+                                    continue
+                                    
+                            except Exception as trx_error:
+                                logger.error(f"\033[91m❌ Error sending TRX for bandwidth: {trx_error}\033[0m")
+                                logger.warning(f"\033[93m⚠️ Skipping consolidation - bandwidth payment failed\033[0m")
+                                continue
+                    
                     # Выполняем перевод с retry логикой
+                    # Для TRC-20 токенов передаем contract_address
+                    contract_address_for_send = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
+                    
+                    system_wallet_address = get_system_wallet_address(currency)
+                    
+                    # Валидация адреса системного кошелька для Bitcoin
+                    if currency.symbol == 'BTC':
+                        if '_' in system_wallet_address or not system_wallet_address.startswith(('1', '3', 'bc1', 'tb1')):
+                            logger.error(f"\033[91m❌ Invalid Bitcoin system wallet address: {system_wallet_address}\033[0m")
+                            logger.warning(f"\033[93m⚠️ Skipping consolidation - invalid system wallet address\033[0m")
+                            continue
+                    
                     @retry_on_rpc_error(max_retries=3, delay=2, backoff=2)
                     def send_consolidation_transaction():
                         return blockchain_service.send_transaction(
                             private_key=user_wallet.encrypted_private_key,
-                            to_address=get_system_wallet_address(currency),
+                            to_address=system_wallet_address,
                             amount=amount_to_send,
-                            memo=f"consolidation_{user_wallet.user_id}"
+                            memo=f"consolidation_{user_wallet.user_id}",
+                            contract_address=contract_address_for_send
                         )
                     
                     tx_hash = send_consolidation_transaction()

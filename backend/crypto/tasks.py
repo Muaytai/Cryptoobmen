@@ -1000,8 +1000,21 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal, D
     (currency, user_wallet, blockchain_service, system_wallet_address, min_threshold) = args
     
     try:
+        # Определяем адрес контракта для токенов (TRC20/ERC20); для нативных монет оставляем None
+        contract_address = None
+        try:
+            # Для сетей токенов используем contract_address валюты
+            if getattr(currency, 'contract_address', None):
+                contract_address = currency.contract_address
+        except Exception:
+            contract_address = None
+
         # Проверяем реальный баланс в блокчейне с кэшированием через батч-процессор
-        blockchain_balance = cached_batch_processor.get_cached_balance(blockchain_service, user_wallet.deposit_address)
+        blockchain_balance = cached_batch_processor.get_cached_balance(
+            blockchain_service,
+            user_wallet.deposit_address,
+            contract_address,
+        )
         
         if blockchain_balance < min_threshold:
             logger.debug(f"[CONSOLIDATION] Address {user_wallet.deposit_address} has {blockchain_balance} {currency.symbol}, less than minimum {min_threshold}")
@@ -1067,8 +1080,13 @@ def process_pending_deposits():
     from transactions.models import Transaction
     from crypto.models import Cryptocurrency, UserWallet
     
-    # Получаем валюты, которые НЕ требуют мемо (они нуждаются в консолидации)
-    no_memo_currencies = Cryptocurrency.objects.filter(requires_memo=False, is_active=True)
+    # Консолидируем только USDT (TRC20)
+    no_memo_currencies = Cryptocurrency.objects.filter(
+        requires_memo=False,
+        is_active=True,
+        symbol='USDT',
+        network='TRC20',
+    )
     consolidated_count = 0
     
     for currency in no_memo_currencies:
@@ -1081,7 +1099,9 @@ def process_pending_deposits():
             # Проверяем доступность сервиса
             try:
                 system_wallet_address = get_system_wallet_address(currency)
-                test_balance = cached_batch_processor.get_cached_balance(blockchain_service, system_wallet_address)
+                # Для TRC-20 токенов передаем contract_address при проверке баланса
+                contract_address = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
+                test_balance = cached_batch_processor.get_cached_balance(blockchain_service, system_wallet_address, contract_address=contract_address)
                 logger.debug(f"Service for {currency.symbol} is available. System balance: {test_balance}")
             except Exception as e:
                 logger.error(f"Service not available for {currency.symbol}: {e}. Skipping.")
@@ -1308,13 +1328,15 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
 def consolidate_funds():
     """
     Собирает средства с депозитных адресов пользователей на главный системный кошелек.
-    ВРЕМЕННО ОТКЛЮЧЕНО - система работает без консолидации.
     """
-    logger.info("[CONSOLIDATE] Consolidation is DISABLED - system works without it.")
-    return "Consolidation disabled - not needed"
     
     # Обрабатываем только валюты без MEMO, т.к. только у них есть отдельные адреса
-    currencies_to_consolidate = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
+    currencies_to_consolidate = Cryptocurrency.objects.filter(
+        is_active=True,
+        requires_memo=False,
+        symbol='USDT',
+        network='TRC20',
+    )
     
     for currency in currencies_to_consolidate:
         logger.info(f"[CONSOLIDATE] Processing currency: {currency.symbol}")
@@ -1323,7 +1345,12 @@ def consolidate_funds():
             service = get_blockchain_service(currency.network or currency.symbol)
             system_wallet_address = SystemWalletAddress.objects.get(currency=currency).address
             # Проверяем доступность сервиса через простой запрос баланса
-            test_balance = service.get_balance(system_wallet_address)
+            # Для TRC-20 токенов передаем contract_address
+            contract_address = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
+            if contract_address:
+                test_balance = service.get_balance(system_wallet_address, contract_address=contract_address)
+            else:
+                test_balance = service.get_balance(system_wallet_address)
             logger.debug(f"[CONSOLIDATE] Successfully connected to {currency.symbol} ({currency.network}), system balance: {test_balance}")
         except ValueError as e:
             logger.warning(f"[CONSOLIDATE] Unsupported network {currency.network} for {currency.symbol}. Skipping.")
@@ -1398,7 +1425,7 @@ def consolidate_funds():
                     trx_balance = service.get_balance(u_wallet.deposit_address)  # Без contract_address для TRX
                     
                     # Если TRX недостаточно для оплаты газа, отправляем TRX с системного кошелька
-                    min_trx_for_gas = Decimal('10')  # Минимум TRX для оплаты газа
+                    min_trx_for_gas = Decimal('2')  # Минимум TRX для оплаты газа
                     if trx_balance < min_trx_for_gas:
                         logger.info(f"[CONSOLIDATE] Insufficient TRX ({trx_balance}) for gas on address {u_wallet.deposit_address}. Need to send TRX first.")
                         
@@ -1433,10 +1460,12 @@ def consolidate_funds():
                             continue
 
                 # Отправляем средства на системный кошелек
+                # Передаём contract_address для токенов (иначе отправится нативная монета)
                 tx_hash = service.send_transaction(
                     private_key=private_key,
                     to_address=system_wallet_address,
                     amount=amount_to_send,
+                    contract_address=contract_address,
                 )
                 
                 logger.info(f"[CONSOLIDATE] Consolidation transaction sent for user {u_wallet.user.id}. Tx hash: {tx_hash}")
