@@ -400,10 +400,11 @@ def check_blockchain_deposits():
                     logger.info(f"Successfully processed deposit for user {user.id}, tx_hash={tx_hash}")
                     
                     # Немедленная попытка консолидации для pending депозитов
+                    # Используем countdown=3 чтобы дать время транзакции БД коммититься (предотвращаем race condition)
                     if deposit_status == "pending":
-                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash}")
+                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash} (with 3s delay to avoid race condition)")
                         from .tasks_consolidation import consolidate_user_deposits
-                        consolidate_user_deposits.delay()
+                        consolidate_user_deposits.apply_async(countdown=3)
 
                 # После успешной транзакции отправляем сигнал
                 if deposit_memo:
@@ -608,10 +609,11 @@ def check_blockchain_deposits():
                         
                         # Немедленная попытка консолидации для pending депозитов
                         # ⚠️ ВАЖНО: Консолидация работает с балансом блокчейна, а НЕ с балансом в БД!
+                        # Используем countdown=3 чтобы дать время транзакции БД коммититься (предотвращаем race condition)
                         if deposit_status == "pending":
-                            logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash}")
+                            logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash} (with 3s delay to avoid race condition)")
                             from .tasks_consolidation import consolidate_user_deposits
-                            consolidate_user_deposits.delay()
+                            consolidate_user_deposits.apply_async(countdown=3)
 
                     # Отправляем WebSocket сигнал по адресу
                     try:
@@ -776,10 +778,11 @@ def check_blockchain_deposits():
                     logger.info(f"[XRP] Successfully processed deposit for tag='{memo}', tx_hash={tx_hash}")
                     
                     # Немедленная попытка консолидации для pending депозитов
+                    # Используем countdown=3 чтобы дать время транзакции БД коммититься (предотвращаем race condition)
                     if deposit_status == "pending":
-                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending XRP deposit {tx_hash}")
+                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending XRP deposit {tx_hash} (with 3s delay to avoid race condition)")
                         from .tasks_consolidation import consolidate_user_deposits
-                        consolidate_user_deposits.delay()
+                        consolidate_user_deposits.apply_async(countdown=3)
         except Exception as e:
             logger.error(f"[XRP] Error processing wallet {wallet.address}: {e}", exc_info=True)
 

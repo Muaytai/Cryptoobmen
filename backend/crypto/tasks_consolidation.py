@@ -348,7 +348,12 @@ def consolidate_user_deposits():
                     # Используем точный расчет максимальной суммы через get_max_sendable_amount или аналогичный метод
                     # НЕ используем gas_reserve - это приводит к неполной консолидации!
                     
-                    blockchain_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                    # Для TRC-20 токенов передаем contract_address при получении баланса
+                    contract_address = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
+                    if contract_address:
+                        blockchain_balance = blockchain_service.get_balance(user_wallet.deposit_address, contract_address=contract_address)
+                    else:
+                        blockchain_balance = blockchain_service.get_balance(user_wallet.deposit_address)
                     logger.info(f"\033[94m💰 Blockchain balance: {blockchain_balance} {currency.symbol}\033[0m")
                     
                     # Минимальная сумма для консолидации (чтобы покрыть комиссию)
@@ -358,6 +363,104 @@ def consolidate_user_deposits():
                     if blockchain_balance < min_consolidation_amount:
                         logger.info(f"\033[93m⚠️ Balance {blockchain_balance} {currency.symbol} too small for consolidation (min: {min_consolidation_amount})\033[0m")
                         continue
+                    
+                    # ⚠️ ИЗЯЩНОЕ РЕШЕНИЕ RACE CONDITION:
+                    # Проверяем наличие pending депозитов. Если их нет, но есть баланс - проверяем транзакции в блокчейне.
+                    # Это позволяет:
+                    # 1. Предотвратить консолидацию до записи депозита (race condition)
+                    # 2. Но все равно консолидировать пропущенные сканированием депозиты
+                    pending_deposits = Transaction.objects.filter(
+                        user=user_wallet.user,
+                        crypto=currency,
+                        type="deposit",
+                        status="pending"
+                    )
+                    
+                    if pending_deposits.count() == 0:
+                        # Нет pending депозитов - проверяем, есть ли свежие транзакции в блокчейне
+                        # Это может быть пропущенный сканированием депозит
+                        logger.info(f"\033[94m🔍 No pending deposits for user {user_wallet.user.id}, checking blockchain for recent transactions...\033[0m")
+                        
+                        try:
+                            from datetime import timedelta
+                            # Проверяем транзакции за последние 10 минут
+                            recent_window = int((timezone.now() - timedelta(minutes=10)).timestamp() * 1000)
+                            
+                            # Получаем транзакции из блокчейна (используем тот же contract_address что выше)
+                            if contract_address:
+                                recent_txs = blockchain_service.get_transactions(
+                                    address=user_wallet.deposit_address,
+                                    min_timestamp=recent_window,
+                                    contract_address=contract_address
+                                )
+                            else:
+                                recent_txs = blockchain_service.get_transactions(
+                                    address=user_wallet.deposit_address,
+                                    min_timestamp=recent_window
+                                )
+                            
+                            # Проверяем, есть ли транзакции, которых нет в БД
+                            if recent_txs:
+                                logger.info(f"\033[94m📥 Found {len(recent_txs)} recent blockchain transactions, checking if they're in DB...\033[0m")
+                                
+                                found_missed = False
+                                for tx_data in recent_txs:
+                                    tx_hash_from_blockchain = tx_data.get('transaction_id')
+                                    
+                                    # Проверяем, есть ли эта транзакция в БД
+                                    existing_tx = Transaction.objects.filter(
+                                        tx_hash=tx_hash_from_blockchain,
+                                        user=user_wallet.user,
+                                        crypto=currency
+                                    ).first()
+                                    
+                                    if not existing_tx:
+                                        logger.warning(f"\033[93m⚠️ Found missed deposit transaction {tx_hash_from_blockchain} on blockchain! This should be processed by deposit scanner.\033[0m")
+                                        found_missed = True
+                                        break
+                                
+                                if not found_missed:
+                                    # Все транзакции найдены в БД, но нет pending - возможно они уже обработаны
+                                    # Это может быть race condition или транзакции уже были консолидированы
+                                    logger.info(f"\033[94m✅ All recent transactions are in DB. Checking if this is a race condition...\033[0m")
+                                    
+                                    # Проверяем, есть ли совсем свежие депозиты (менее 30 секунд назад)
+                                    very_recent = Transaction.objects.filter(
+                                        user=user_wallet.user,
+                                        crypto=currency,
+                                        type="deposit",
+                                        timestamp__gte=timezone.now() - timedelta(seconds=30)
+                                    ).exists()
+                                    
+                                    if very_recent:
+                                        logger.info(f"\033[94m⏳ Very recent deposit found (<30s), waiting 2 seconds to avoid race condition...\033[0m")
+                                        time.sleep(2)
+                                        
+                                        # Проверяем еще раз после небольшой задержки
+                                        pending_after_delay = Transaction.objects.filter(
+                                            user=user_wallet.user,
+                                            crypto=currency,
+                                            type="deposit",
+                                            status="pending"
+                                        ).exists()
+                                        
+                                        if not pending_after_delay:
+                                            logger.info(f"\033[93m⏭️  Still no pending deposits after delay, skipping to avoid race condition\033[0m")
+                                            continue
+                                    else:
+                                        # Нет совсем свежих депозитов, но есть баланс - это может быть пропущенный депозит
+                                        # Консолидируем, чтобы средства не оставались на адресе
+                                        logger.info(f"\033[94m💡 No very recent deposits, but balance exists. Consolidating to prevent stuck funds.\033[0m")
+                            else:
+                                # Нет свежих транзакций в блокчейне - это старый баланс, возможно от предыдущей консолидации
+                                logger.info(f"\033[93m⏭️  No recent blockchain transactions and no pending deposits. Skipping consolidation.\033[0m")
+                                continue
+                                
+                        except Exception as check_error:
+                            # При ошибке проверки транзакций продолжаем консолидацию
+                            logger.warning(f"\033[93m⚠️ Error checking blockchain transactions: {check_error}. Proceeding with consolidation.\033[0m")
+                    else:
+                        logger.info(f"\033[94m✅ Found {pending_deposits.count()} pending deposits, proceeding with consolidation\033[0m")
                     
                     # Рассчитываем МАКСИМАЛЬНУЮ сумму к переводу (всё что можно отправить)
                     # ⚠️ ВАЖНО: Используем точный расчет через методы блокчейн-сервиса, НЕ gas_reserve!
@@ -396,13 +499,17 @@ def consolidate_user_deposits():
                     logger.info(f"\033[94m🚀 Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet\033[0m")
                     
                     # Выполняем перевод с retry логикой
+                    # Для TRC-20 токенов передаем contract_address
+                    contract_address_for_send = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
+                    
                     @retry_on_rpc_error(max_retries=3, delay=2, backoff=2)
                     def send_consolidation_transaction():
                         return blockchain_service.send_transaction(
                             private_key=user_wallet.encrypted_private_key,
-                            to_address=get_system_wallet_address(currency),
+                            to_address=system_wallet_address,
                             amount=amount_to_send,
-                            memo=f"consolidation_{user_wallet.user_id}"
+                            memo=f"consolidation_{user_wallet.user_id}",
+                            contract_address=contract_address_for_send
                         )
                     
                     tx_hash = send_consolidation_transaction()
