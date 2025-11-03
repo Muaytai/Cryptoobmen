@@ -7,7 +7,7 @@ from .models import (
     Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, 
     SystemWalletAddress, UserDepositMemo,
     BlockchainState, CommissionWallet, CommissionTransaction,
-    GeneratedWallet
+    GeneratedWallet, SystemWalletBalanceLog
 )
 import csv
 from django.http import HttpResponse
@@ -255,3 +255,119 @@ class GeneratedWalletAdmin(admin.ModelAdmin):
             f"Соответствуют: {verified}. Не соответствуют: {mismatched}."
         )
     verify_key_address_match.short_description = "Проверить соответствие ключ-адрес"
+
+
+@admin.register(SystemWalletBalanceLog)
+class SystemWalletBalanceLogAdmin(admin.ModelAdmin):
+    """Админ-интерфейс для просмотра истории баланса системного кошелька"""
+    
+    list_display = (
+        'currency_symbol', 'system_address_short', 'blockchain_balance', 
+        'database_balance', 'balance_difference', 'transaction_type', 
+        'created_at', 'related_transaction_link'
+    )
+    list_filter = (
+        'currency__symbol', 'transaction_type', 'created_at',
+        ('currency__network', admin.EmptyFieldListFilter)
+    )
+    search_fields = ('currency__symbol', 'system_address', 'notes')
+    readonly_fields = (
+        'currency', 'system_address', 'blockchain_balance', 'database_balance',
+        'transaction_type', 'related_transaction', 'notes', 'created_at'
+    )
+    date_hierarchy = 'created_at'
+    ordering = ['-created_at']
+    
+    def currency_symbol(self, obj):
+        """Отображает символ валюты с сетью"""
+        if obj.currency.network:
+            return f"{obj.currency.symbol} ({obj.currency.network})"
+        return obj.currency.symbol
+    currency_symbol.short_description = "Валюта"
+    currency_symbol.admin_order_field = 'currency__symbol'
+    
+    def system_address_short(self, obj):
+        """Сокращенный адрес системного кошелька"""
+        if len(obj.system_address) > 20:
+            return f"{obj.system_address[:10]}...{obj.system_address[-10:]}"
+        return obj.system_address
+    system_address_short.short_description = "Системный адрес"
+    
+    def balance_difference(self, obj):
+        """Показывает разность между балансами в блокчейне и БД"""
+        if obj.database_balance is None:
+            return "N/A"
+        
+        diff = obj.blockchain_balance - obj.database_balance
+        if diff == 0:
+            color = "green"
+            symbol = "✓"
+        elif diff > 0:
+            color = "orange"
+            symbol = "+"
+        else:
+            color = "red"
+            symbol = "-"
+            
+        return format_html(
+            '<span style="color: {};">{} {}</span>',
+            color,
+            symbol,
+            abs(diff)
+        )
+    balance_difference.short_description = "Разность"
+    
+    def related_transaction_link(self, obj):
+        """Ссылка на связанную транзакцию"""
+        if obj.related_transaction:
+            url = reverse('admin:transactions_transaction_change', args=[obj.related_transaction.id])
+            return format_html('<a href="{}" target="_blank">{}</a>', url, obj.related_transaction.tx_hash[:16] + "...")
+        return "-"
+    related_transaction_link.short_description = "Связанная транзакция"
+    
+    def has_add_permission(self, request):
+        """Запрещаем создание записей через админку"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Запрещаем редактирование записей"""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Разрешаем удаление только суперпользователям"""
+        return request.user.is_superuser
+    
+    actions = ['export_balance_log']
+    
+    def export_balance_log(self, request, queryset):
+        """Экспорт логов баланса в CSV"""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="system_wallet_balance_log.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'Дата', 'Валюта', 'Сеть', 'Системный адрес', 
+            'Баланс в блокчейне', 'Баланс в БД', 'Разность',
+            'Тип транзакции', 'Связанная транзакция', 'Примечания'
+        ])
+        
+        for log in queryset:
+            diff = "N/A"
+            if log.database_balance is not None:
+                diff = float(log.blockchain_balance - log.database_balance)
+            
+            writer.writerow([
+                log.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                log.currency.symbol,
+                log.currency.network or '',
+                log.system_address,
+                float(log.blockchain_balance),
+                float(log.database_balance) if log.database_balance else 'N/A',
+                diff,
+                log.get_transaction_type_display(),
+                log.related_transaction.tx_hash if log.related_transaction else '',
+                log.notes
+            ])
+        
+        return response
+    export_balance_log.short_description = "Экспортировать выбранные логи в CSV"
