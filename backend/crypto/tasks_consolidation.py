@@ -364,25 +364,14 @@ def consolidate_user_deposits():
                     system_wallet_address = get_system_wallet_address(currency)
                     
                     # ⚠️ ВАЖНО: Используем точные методы расчета максимальной суммы для каждой валюты
-                    # Для Polygon используем get_max_sendable_amount
+                    # Для Polygon и Ethereum (нативная валюта) используем get_max_sendable_amount
+                    # Это гарантирует точный расчет с учетом того, что газ вычитается из баланса
                     if hasattr(blockchain_service, 'get_max_sendable_amount'):
                         amount_to_send = blockchain_service.get_max_sendable_amount(
                             user_wallet.deposit_address,
                             system_wallet_address
                         )
                         logger.info(f"\033[94m💸 Max sendable amount (calculated via get_max_sendable_amount): {amount_to_send} {currency.symbol}\033[0m")
-                    # Для Ethereum используем estimate_gas_fee для точного расчета
-                    elif hasattr(blockchain_service, 'estimate_gas_fee'):
-                        gas_info = blockchain_service.estimate_gas_fee(
-                            to_address=system_wallet_address,
-                            amount=blockchain_balance,
-                            contract_address=getattr(currency, 'contract_address', None)
-                        )
-                        # estimate_gas_fee возвращает словарь с 'gas_fee_eth' или 'gas_fee_eth'
-                        gas_cost = gas_info.get('gas_fee_eth', Decimal('0'))
-                        amount_to_send = blockchain_balance - gas_cost
-                        logger.info(f"\033[94m⛽ Gas cost (from estimate_gas_fee): {gas_cost} {currency.symbol}\033[0m")
-                        logger.info(f"\033[94m💸 Amount to send (balance - gas): {amount_to_send} {currency.symbol}\033[0m")
                     # Для Bitcoin можно отправить amount=0 для sweep всех средств
                     elif currency.symbol == 'BTC':
                         amount_to_send = Decimal('0')  # 0 означает "отправить всё" (sweep)
