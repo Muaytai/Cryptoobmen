@@ -720,31 +720,96 @@ def consolidate_funds():
                         actual_balance = service.get_balance(u_wallet.deposit_address, contract_address=contract_address)
                     else:
                         actual_balance = service.get_balance(u_wallet.deposit_address)
-                    min_threshold = get_min_consolidation_amount(currency)
-                    if actual_balance < min_threshold:
+                except TypeError:
+                    # Fallback для сервисов, которые не поддерживают contract_address
+                    actual_balance = service.get_balance(u_wallet.deposit_address)
+                
+                # Используем настроенный минимальный порог
+                min_threshold = get_min_consolidation_amount(currency) 
+                
+                if actual_balance < min_threshold:
+                    logger.info(f"[CONSOLIDATE] Skipping user {u_wallet.user.id} wallet for {currency.symbol}: balance {actual_balance} is below threshold {min_threshold}.")
+                    continue
+
+                logger.info(f"[CONSOLIDATE] Consolidating {actual_balance} {currency.symbol} from user {u_wallet.user.id} address {u_wallet.deposit_address}")
+
+                # Используем приватный ключ текущего депозитного адреса пользователя
+                private_key = getattr(u_wallet, "encrypted_private_key", None)
+                if not private_key:
+                    logger.warning(f"[CONSOLIDATE] Skip user {u_wallet.user.id} for {currency.symbol}: missing private key for address {u_wallet.deposit_address}")
+                    continue
+
+                # Рассчитываем максимальную отправляемую сумму (баланс - газ)
+                if hasattr(service, 'get_max_sendable_amount'):
+                    # Для POL используем умный расчёт газа
+                    max_sendable = service.get_max_sendable_amount(u_wallet.deposit_address, system_wallet_address)
+                    if max_sendable <= 0:
+                        logger.warning(f"[CONSOLIDATE] Cannot consolidate for user {u_wallet.user.id}: insufficient balance after gas deduction")
                         continue
-                    private_key = u_wallet.encrypted_private_key
-                    if not private_key:
+                    amount_to_send = max_sendable
+                    logger.info(f"[CONSOLIDATE] Smart gas calculation: sending {amount_to_send} {currency.symbol} (from balance {actual_balance})")
+                else:
+                    # Fallback для других валют - вычитаем фиксированный резерв
+                    gas_reserve = get_gas_reserve(currency)
+                    amount_to_send = actual_balance - gas_reserve
+                    if amount_to_send <= 0:
+                        logger.warning(f"[CONSOLIDATE] Cannot consolidate for user {u_wallet.user.id}: insufficient balance after gas reserve")
                         continue
-                    if hasattr(service, 'get_max_sendable_amount'):
-                        amount_to_send = service.get_max_sendable_amount(u_wallet.deposit_address, system_wallet_address)
-                        if amount_to_send <= 0:
+                    logger.info(f"[CONSOLIDATE] Fixed gas reserve: sending {amount_to_send} {currency.symbol} (gas reserve: {gas_reserve})")
+
+                # Для TRC-20 токенов проверяем наличие TRX для оплаты газа
+                if currency.network and currency.network.upper() == 'TRC20':
+                    # Получаем баланс TRX на адресе
+                    trx_balance = service.get_balance(u_wallet.deposit_address)  # Без contract_address для TRX
+                    
+                    # Если TRX недостаточно для оплаты газа, отправляем TRX с системного кошелька
+                    min_trx_for_gas = Decimal('3')  # Минимум TRX для оплаты газа
+                    if trx_balance < min_trx_for_gas:
+                        logger.info(f"[CONSOLIDATE] Insufficient TRX ({trx_balance}) for gas on address {u_wallet.deposit_address}. Need to send TRX first.")
+                        
+                        # Получаем системный TRX кошелек
+                        try:
+                            trx_currency = Cryptocurrency.objects.get(symbol='TRX', network='TRC20')
+                            system_trx_wallet = SystemWalletAddress.objects.get(currency=trx_currency)
+                            
+                            # Отправляем TRX для оплаты газа
+                            trx_service = get_blockchain_service('TRC20')
+                            trx_amount = min_trx_for_gas - trx_balance
+                            
+                            logger.info(f"[CONSOLIDATE] Sending {trx_amount} TRX to {u_wallet.deposit_address} for gas payment")
+                            
+                            # Используем приватный ключ системного TRX кошелька
+                            system_trx_private_key = SystemWalletAddress.objects.get(currency=trx_currency).private_key
+                            
+                            gas_tx_hash = trx_service.send_transaction(
+                                private_key=system_trx_private_key,
+                                to_address=u_wallet.deposit_address,
+                                amount=trx_amount,
+                            )
+                            
+                            logger.info(f"[CONSOLIDATE] TRX gas payment sent: {gas_tx_hash}")
+                            
+                            # Ждем подтверждения TRX транзакции
+                            import time
+                            time.sleep(10)  # Ждем 10 секунд для подтверждения
+                            
+                        except Exception as gas_error:
+                            logger.error(f"[CONSOLIDATE] Failed to send TRX for gas payment: {gas_error}")
                             continue
-                        gas_cost = actual_balance - amount_to_send
-                    else:
-                        gas_reserve = get_gas_reserve(currency)
-                        amount_to_send = actual_balance - gas_reserve
-                        gas_cost = gas_reserve
-                        if amount_to_send <= 0:
-                            continue
-                    tx_kwargs = {
-                        'private_key': private_key,
-                        'to_address': system_wallet_address,
-                        'amount': amount_to_send
-                    }
-                    if contract_address:
-                        tx_kwargs['contract_address'] = contract_address
-                    tx_hash = service.send_transaction(**tx_kwargs)
+
+                # Отправляем средства на системный кошелек
+                # Передаём contract_address для токенов (иначе отправится нативная монета)
+                tx_hash = service.send_transaction(
+                    private_key=private_key,
+                    to_address=system_wallet_address,
+                    amount=amount_to_send,
+                    contract_address=contract_address,
+                )
+                
+                logger.info(f"[CONSOLIDATE] Consolidation transaction sent for user {u_wallet.user.id}. Tx hash: {tx_hash}")
+
+                # Сохраняем транзакцию консолидации в БД
+                try:
                     from transactions.models import Transaction
                     if not Transaction.objects.filter(tx_hash=tx_hash).exists():
                         Transaction.objects.create(
