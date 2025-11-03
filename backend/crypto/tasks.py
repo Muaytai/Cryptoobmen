@@ -1425,7 +1425,7 @@ def consolidate_funds():
                     trx_balance = service.get_balance(u_wallet.deposit_address)  # Без contract_address для TRX
                     
                     # Если TRX недостаточно для оплаты газа, отправляем TRX с системного кошелька
-                    min_trx_for_gas = Decimal('2')  # Минимум TRX для оплаты газа
+                    min_trx_for_gas = Decimal('3')  # Минимум TRX для оплаты газа
                     if trx_balance < min_trx_for_gas:
                         logger.info(f"[CONSOLIDATE] Insufficient TRX ({trx_balance}) for gas on address {u_wallet.deposit_address}. Need to send TRX first.")
                         
