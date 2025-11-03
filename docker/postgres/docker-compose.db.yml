@@ -17,30 +17,10 @@ services:
     networks:
       - cryptoobmen_network
 
-  redis:
-    image: redis:7-alpine
-    container_name: cryptoobmen-redis
-    restart: always
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - redis_data:/data
-    networks:
-      - cryptoobmen_network
-
-
 networks:
   cryptoobmen_network:
-    name: cryptoobmen_network
-    driver: bridge
+    external: true
 
 volumes:
   postgres_data:
     name: cryptoobmen_postgres_data  # Именованный том для сохранения данных
-  redis_data:
-    name: cryptoobmen_redis_data

@@ -65,8 +65,16 @@ class BitcoinService(BaseBlockchainService):
                     logger.warning(f"No unspents to sweep from {key.address}")
                     return None
                 
-                # Отправляем все, комиссия будет вычтена автоматически
-                tx_hash = key.send([], unspents=unspents, to=[(to_address, key.balance_as('satoshi'), 'satoshi')])
+                # Для sweep отправляем все средства на указанный адрес
+                # Используем правильный синтаксис для библиотеки bit
+                try:
+                    # Пробуем метод send с массивом выходов
+                    outputs = [(to_address, key.balance_as('satoshi'), 'satoshi')]
+                    tx_hash = key.send(outputs, unspents=unspents)
+                except TypeError:
+                    # Если не работает с unspents, используем простой метод
+                    outputs = [(to_address, key.balance_as('satoshi'), 'satoshi')]
+                    tx_hash = key.send(outputs)
             else:
                 amount_satoshi = int(amount * Decimal('100000000'))
                 tx_hash = key.send([(to_address, amount_satoshi, 'satoshi')])

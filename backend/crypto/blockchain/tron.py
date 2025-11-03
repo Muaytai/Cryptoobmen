@@ -60,17 +60,46 @@ class TronService(BaseBlockchainService):
         self.api_key = settings.TRONGRID_API_KEY
         self.bip44_coin = Bip44Coins.TRON
 
+        # Определяем сеть: если передано явно 'nile' или 'mainnet', используем это
+        # Если передано 'trc20' или 'tron', используем настройку из settings
         current_network = self.network.lower()
-        if current_network in ['nile', 'trc20', 'tron']:
-            nile_provider_url = "https://nile.trongrid.io"
-            self.api_url = nile_provider_url
-            self.client = Tron(provider=HTTPProvider(api_key=self.api_key, endpoint_uri=nile_provider_url))
+        tron_network_from_settings = getattr(settings, 'TRON_NETWORK', 'nile').lower()
+        
+        if current_network == 'nile':
+            # Явно указана тестовая сеть Nile
+            nile_api_url = getattr(settings, 'TRON_API_URL', 'https://nile.trongrid.io')
+            self.api_url = nile_api_url
+            self.client = Tron(provider=HTTPProvider(api_key=self.api_key, endpoint_uri=nile_api_url))
             self.network = 'nile'
-        else:
-            # Assume mainnet for anything else
+        elif current_network == 'mainnet':
+            # Явно указана mainnet
             self.api_url = settings.TRON_API_URL
             self.client = Tron(network='mainnet')
             self.network = 'mainnet'
+        elif current_network in ['trc20', 'tron']:
+            # Используем сеть из настроек
+            if tron_network_from_settings == 'nile':
+                nile_api_url = getattr(settings, 'TRON_API_URL', 'https://nile.trongrid.io')
+                self.api_url = nile_api_url
+                self.client = Tron(provider=HTTPProvider(api_key=self.api_key, endpoint_uri=nile_api_url))
+                self.network = 'nile'
+            else:
+                # mainnet
+                self.api_url = settings.TRON_API_URL
+                self.client = Tron(network='mainnet')
+                self.network = 'mainnet'
+        else:
+            # По умолчанию используем сеть из настроек
+            if tron_network_from_settings == 'nile':
+                nile_api_url = getattr(settings, 'TRON_API_URL', 'https://nile.trongrid.io')
+                self.api_url = nile_api_url
+                self.client = Tron(provider=HTTPProvider(api_key=self.api_key, endpoint_uri=nile_api_url))
+                self.network = 'nile'
+            else:
+                # mainnet
+                self.api_url = settings.TRON_API_URL
+                self.client = Tron(network='mainnet')
+                self.network = 'mainnet'
 
     def _headers(self) -> Dict[str, str]:
         headers = {"Accept": "application/json"}
@@ -109,8 +138,7 @@ class TronService(BaseBlockchainService):
             "only_to": "true",
             "limit": 100,
             "min_timestamp": min_timestamp,
-            "contract_address": contract_address,
-            "order_by": "block_timestamp,asc"
+            "contract_address": contract_address
         }
         
         try:

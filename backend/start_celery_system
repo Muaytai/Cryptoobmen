@@ -1,7 +1,7 @@
 #!/bin/bash
 # Полный запуск Celery системы (Workers + Beat)
 
-cd /home/chaizer/projects/Cryptoobmen/backend
+cd /mnt/c/Users/Makc/Проекты/Cryptoobmen/backend
 
 echo "🚀 Запуск полной Celery системы..."
 echo ""
@@ -17,19 +17,22 @@ echo "   Ожидание завершено"
 echo ""
 echo "🔧 Запуск Workers..."
 
+# Гарантируем существование лог-файлов
+touch /tmp/celery_high.log /tmp/celery_medium.log /tmp/celery_low.log /tmp/celery_beat.log
+
 # Запускаем workers с активированным виртуальным окружением
 echo "   🚀 Запуск High priority worker..."
-nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q high_priority -n high_priority_worker --concurrency=2" > /tmp/celery_high.log 2>&1 &
+nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q high_priority -n high_priority_worker --concurrency=2 --logfile=/tmp/celery_high.log" >/dev/null 2>&1 &
 HIGH_PID=$!
 echo "   ⚡ High priority worker: PID $HIGH_PID"
 
 echo "   🚀 Запуск Medium priority worker..."
-nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q medium_priority -n medium_priority_worker --concurrency=2" > /tmp/celery_medium.log 2>&1 &
+nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q medium_priority -n medium_priority_worker --concurrency=2 --logfile=/tmp/celery_medium.log" >/dev/null 2>&1 &
 MEDIUM_PID=$!
 echo "   🔄 Medium priority worker: PID $MEDIUM_PID"
 
 echo "   🚀 Запуск Low priority worker..."
-nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q low_priority -n low_priority_worker --concurrency=2" > /tmp/celery_low.log 2>&1 &
+nohup bash -c "source venv/bin/activate && celery -A core worker -l info -Q low_priority -n low_priority_worker --concurrency=2 --logfile=/tmp/celery_low.log" >/dev/null 2>&1 &
 LOW_PID=$!
 echo "   📊 Low priority worker: PID $LOW_PID"
 
@@ -38,7 +41,7 @@ sleep 3
 echo ""
 echo "⏰ Запуск Beat scheduler..."
 echo "   🚀 Запуск Beat scheduler..."
-nohup bash -c "source venv/bin/activate && celery -A core beat --loglevel=info" > /tmp/celery_beat.log 2>&1 &
+nohup bash -c "source venv/bin/activate && celery -A core beat --loglevel=info --logfile=/tmp/celery_beat.log" >/dev/null 2>&1 &
 BEAT_PID=$!
 echo "   🕒 Beat scheduler: PID $BEAT_PID"
 
@@ -60,18 +63,30 @@ echo "   Только workers: pkill -f 'celery.*worker'"
 echo "   Только beat: pkill -f 'celery.*beat'"
 echo "   Статус: ps aux | grep celery"
 echo "   Мониторинг: bash -c 'source venv/bin/activate && celery -A core inspect active'"
+echo "   Логи отображаются автоматически при запуске"
+
+# Показываем логи в текущем терминале
+echo ""
+echo "📜 Подписка на логи (Ctrl+C для выхода)..."
+
+# Готовим потоки с префиксами для наглядности
+{
+  tail -n 0 -F /tmp/celery_high.log   | sed -u 's/^/[HIGH] \t/' &
+  T1=$!
+  tail -n 0 -F /tmp/celery_medium.log | sed -u 's/^/[MED ] \t/' &
+  T2=$!
+  tail -n 0 -F /tmp/celery_low.log    | sed -u 's/^/[LOW ] \t/' &
+  T3=$!
+  tail -n 0 -F /tmp/celery_beat.log   | sed -u 's/^/[BEAT] \t/' &
+  T4=$!
+
+  # Корректное завершение по Ctrl+C
+  trap 'kill $T1 $T2 $T3 $T4 2>/dev/null; echo "\n🛑 Подписка на логи остановлена"; exit 0' INT TERM
+  wait
+}
 
 echo ""
 echo "🟢 Система готова к работе!"
 
 # Если запущен не в фоне, ждем сигнала завершения
-if [ "$1" != "--daemon" ]; then
-    echo ""
-    echo "💡 Нажмите Ctrl+C для остановки системы"
-    
-    # Обработчик сигналов
-    trap 'echo ""; echo "🛑 Остановка системы..."; pkill -f "celery.*worker" 2>/dev/null; pkill -f "celery.*beat" 2>/dev/null; sleep 2; echo "✅ Система остановлена"; exit 0' SIGINT SIGTERM
-    
-    # Ждем сигнала
-    wait
-fi
+# Этот блок больше не нужен, так как логи показываются сразу выше

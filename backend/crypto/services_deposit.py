@@ -60,27 +60,14 @@ class DepositService:
                 
                 blockchain_service = get_blockchain_service(currency.network or currency.symbol)
                 
-                # Проверяем, нужно ли генерировать новый адрес.
-                # Условия:
-                # 1. Адреса еще нет.
-                # 2. Адрес уже был использован (на него есть транзакции).
-                needs_new_address = False
-                if not user_wallet.deposit_address:
-                    needs_new_address = True
+                # УПРОЩЕННАЯ ЛОГИКА: Генерируем адрес только если его нет
+                # Без консолидации адреса можно переиспользовать
+                needs_new_address = not user_wallet.deposit_address
+                
+                if needs_new_address:
                     logger.info(f"User {user.id} needs new {currency.symbol} address because none exists.")
                 else:
-                    try:
-                        # Быстро проверяем в локальной БД - есть ли транзакции на этом адресе
-                        from transactions.models import Transaction
-                        
-                        # Адрес можно переиспользовать до тех пор, пока не произойдет консолидация
-                        # Новый адрес будет сгенерирован только после успешной консолидации
-                        logger.info(f"User {user.id} can reuse {currency.symbol} address {user_wallet.deposit_address} - address changes only after consolidation.")
-                            
-                    except Exception as e:
-                        logger.error(f"Failed to check local DB for deposits on address {user_wallet.deposit_address}: {e}", exc_info=True)
-                        # В случае ошибки не генерируем новый адрес, чтобы избежать проблем
-                        needs_new_address = False
+                    logger.info(f"User {user.id} can reuse {currency.symbol} address {user_wallet.deposit_address}")
 
                 if needs_new_address:
                     try:
@@ -106,6 +93,33 @@ class DepositService:
                             created_by='DepositService.get_deposit_info',
                             notes=f'Generated for deposit request by user {user.id}'
                         )
+                        
+                        # Создаем ожидающую транзакцию депозита
+                        from transactions.models import Transaction, Deposit
+                        from django.db import transaction as db_transaction
+                        
+                        with db_transaction.atomic():
+                            # Создаем транзакцию со статусом "ожидает подтверждения"
+                            transaction_obj = Transaction.objects.create(
+                                user=user,
+                                type='deposit',
+                                status='awaiting_confirmation',
+                                amount=0,  # Пока 0, будет обновлено при поступлении средств
+                                fee=0,
+                                crypto=currency,
+                                notes=f"Pending deposit to address {new_address}"
+                            )
+                            
+                            # Создаем объект депозита
+                            deposit_obj = Deposit.objects.create(
+                                user=user,
+                                transaction=transaction_obj,
+                                wallet=user_wallet,
+                                address=new_address,
+                                confirmed=False
+                            )
+                            
+                            logger.info(f"Created pending deposit transaction {transaction_obj.id} for address {new_address}")
                         
                         logger.info(f"Successfully generated and saved new address for user {user.id}, currency {currency.symbol}.")
                     except Exception as e:

@@ -1,12 +1,12 @@
 'use client';
 
 import Image from 'next/image';
-import { SocialButtons } from '@/components/ui/SocialButtons';
 import chessImage from '../../public/images/chess.png';
 import { useEffect, useState, CSSProperties, Suspense } from 'react';
 import { useTheme } from '@/lib/ThemeProvider';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
+import { AnimatedHeroText } from '@/components/ui/AnimatedHeroText';
 
 // Простое модальное окно (вам нужно будет стилизовать его)
 const EmailConfirmedModal = ({ onClose }: { onClose: () => void }) => {
@@ -57,11 +57,150 @@ const HomePageContent = () => {
   const setShowEmailConfirmedModal = useAuthStore((state) => state.setShowEmailConfirmedModal);
   const checkAuthStatus = useAuthStore((state) => state.checkAuthStatus);
 
-  const [deviceType, setDeviceType] = useState('desktop');
-  const [styleLoaded, setStyleLoaded] = useState(false);
   const { theme } = useTheme();
-  const isDarkMode = theme === 'dark'; // Используем тему напрямую из ThemeProvider
-  const [styles, setStyles] = useState<Record<string, CSSProperties>>({});
+  const isDarkMode = theme === 'dark';
+
+  const buildStyles = (
+    device: 'mobile-small' | 'mobile' | 'tablet' | 'desktop',
+    isDark: boolean
+  ): Record<string, CSSProperties> => {
+    const isMobile = device === 'mobile' || device === 'mobile-small';
+    const isSmallMobile = device === 'mobile-small';
+    const isTablet = device === 'tablet';
+    const isFirefox = typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent);
+
+    return {
+      contentContainer: {
+        display: 'flex',
+        flexDirection: isMobile ? 'column' as const : 'row' as const,
+        justifyContent: 'flex-start',
+        alignItems: 'flex-start',
+        gap: isMobile ? 20 : 40,
+        marginBottom: isMobile ? 15 : 20,
+        minHeight: isMobile ? 400 : 500,
+        height: isMobile ? 400 : 500,
+        width: '100%',
+        position: 'relative' as const
+      } as CSSProperties,
+
+      textContainer: {
+        maxWidth: '100%',
+        zIndex: 2,
+        position: 'relative' as const,
+        textAlign: isMobile ? 'center' as const : 'left' as const,
+        marginBottom: isMobile ? '30px' : 0,
+        marginLeft: 0,
+        padding: isMobile ? '0 15px' : '0 20px',
+        width: '100%',
+        overflowWrap: 'break-word' as const,
+        wordWrap: 'break-word' as const,
+        minHeight: isMobile ? 200 : isTablet ? 240 : 300
+      } as CSSProperties,
+
+      imageContainer: {
+        position: 'relative' as const,
+        width: isMobile ? '100%' : isTablet ? 400 : 520,
+        height: isSmallMobile ? 250 : isMobile ? 300 : isTablet ? 400 : 520,
+        marginRight: isMobile ? 0 : isTablet ? 10 : 24,
+        marginLeft: isMobile ? 0 : isTablet ? -20 : -28,
+        marginTop: isMobile ? -20 : isTablet ? -10 : 30,
+        alignSelf: 'flex-end' as const,
+        minHeight: isSmallMobile ? 250 : isMobile ? 300 : isTablet ? 400 : 520,
+        minWidth: isMobile ? '100%' : isTablet ? 400 : 520
+      } as CSSProperties,
+
+      image: {
+        objectFit: 'contain' as const,
+        borderRadius: 24,
+        transform: isMobile
+          ? 'scale(1.1) translateX(-10px) translateY(10px)'
+          : isTablet
+            ? 'scale(1.18) translateX(-40px) translateY(20px)'
+            : 'scale(1.35) translateX(-60px) translateY(20px)'
+      } as CSSProperties,
+
+      spacer: {
+        flex: 0,
+        // Отодвигаем иконки сразу за пределы первого экрана, но без исчезновения
+        height: 'clamp(480px, 82vh, 1200px)'
+      } as CSSProperties,
+
+      cryptoIconsContainer: {
+        display: 'flex',
+        justifyContent: 'center',
+        padding: '0 15px',
+        marginTop: 0,
+        marginBottom: isFirefox ? 200 : 140,
+        overflow: 'hidden',
+        minHeight: 70,
+        height: 70,
+        width: '100%',
+        position: 'relative' as const,
+        contain: 'layout paint size' as any
+      } as CSSProperties,
+
+      cryptoIcons: {
+        objectFit: 'contain' as const,
+        maxWidth: '100%',
+        height: 'auto'
+      } as CSSProperties,
+
+      // Дополнительный нижний отступ перед футером (адаптивный)
+      bottomSpacer: {
+        width: '100%',
+        minHeight: isFirefox
+          ? (isSmallMobile ? 100 : isMobile ? 140 : isTablet ? 180 : 240)
+          : (isSmallMobile ? 40 : isMobile ? 80 : isTablet ? 120 : 160)
+      } as CSSProperties,
+
+      socialButtonsContainer: {
+        position: 'fixed' as const,
+        right: isMobile ? -5 : isTablet ? -8 : -10,
+        top: isMobile ? 250 : isTablet ? 230 : 220,
+        transform: 'none' as const,
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: 15,
+        zIndex: 100,
+        width: 48,
+        height: 111
+      } as CSSProperties,
+
+      socialButton: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        background: isDark ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        backdropFilter: 'blur(5px)' as const,
+        WebkitBackdropFilter: 'blur(5px)' as const
+      } as CSSProperties,
+
+      socialButtonImage: { width: 24, height: 24 } as CSSProperties
+    };
+  };
+
+  const [deviceType, setDeviceType] = useState<'mobile-small' | 'mobile' | 'tablet' | 'desktop'>(() => {
+    if (typeof window === 'undefined') return 'desktop';
+    const w = window.innerWidth;
+    if (w < 480) return 'mobile-small';
+    if (w < 768) return 'mobile';
+    if (w < 1024) return 'tablet';
+    return 'desktop';
+  });
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [styles, setStyles] = useState<Record<string, CSSProperties>>(() => {
+    const w = typeof window === 'undefined' ? 1200 : window.innerWidth;
+    const initialDevice = w < 480 ? 'mobile-small' : w < 768 ? 'mobile' : w < 1024 ? 'tablet' : 'desktop';
+    return buildStyles(initialDevice, isDarkMode);
+  });
+
+  // Динамическое выравнивание соц-иконок под кнопку "Войти" (устойчиво к любой высоте шапки)
+  // Убрано вычисление socialPos, так как в некоторых средах происходила инициализация до объявления
 
   useEffect(() => {
     checkAuthStatus();
@@ -72,19 +211,52 @@ const HomePageContent = () => {
     }
   }, [searchParams, setShowEmailConfirmedModal, checkAuthStatus]);
 
+  // Устанавливаем флаг гидратации для предотвращения скачков
+  useEffect(() => {
+    setIsHydrated(true);
+    
+    // Простой CSS для предотвращения скачков в Firefox
+    const preventJumpCSS = `
+      html { 
+        overflow-y: scroll !important; 
+        scrollbar-gutter: stable both-edges !important; 
+        height: 100% !important;
+      }
+      body { 
+        height: 100vh !important; 
+        min-height: 100vh !important; 
+        overflow-y: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+    `;
+    
+    // Инъекция CSS
+    const style = document.createElement('style');
+    style.textContent = preventJumpCSS;
+    style.setAttribute('data-prevent-jump', 'true');
+    document.head.appendChild(style);
+    
+    return () => {
+      const existingStyle = document.querySelector('style[data-prevent-jump="true"]');
+      if (existingStyle) {
+        existingStyle.remove();
+      }
+    };
+  }, []);
+
   // Определяем тип устройства с более точной градацией
   useEffect(() => {
     const checkDevice = () => {
       const width = window.innerWidth;
-      if (width < 480) {
-        setDeviceType('mobile-small');
-      } else if (width < 768) {
-        setDeviceType('mobile');
-      } else if (width < 1024) {
-        setDeviceType('tablet');
-      } else {
-        setDeviceType('desktop');
-      }
+      let nextDevice: 'mobile-small' | 'mobile' | 'tablet' | 'desktop';
+      if (width < 480) nextDevice = 'mobile-small';
+      else if (width < 768) nextDevice = 'mobile';
+      else if (width < 1024) nextDevice = 'tablet';
+      else nextDevice = 'desktop';
+
+      setDeviceType(nextDevice);
+      setStyles(buildStyles(nextDevice, isDarkMode));
     };
     
     // Проверяем при загрузке
@@ -97,324 +269,50 @@ const HomePageContent = () => {
     return () => window.removeEventListener('resize', checkDevice);
   }, []);
 
-  // Добавляем стили для мобильной адаптации и темной/светлой темы
-  useEffect(() => {
-    // Создаем стиль только один раз
-    if (!styleLoaded && typeof document !== 'undefined') {
-      const style = document.createElement('style');
-      style.innerHTML = `
-        @media (max-width: 480px) {
-          h1 {
-            font-size: 24px !important;
-            word-break: break-word !important;
-            white-space: normal !important;
-            max-width: 100% !important;
-          }
-          h1 span {
-            font-size: 24px !important;
-            white-space: normal !important;
-            word-break: break-word !important;
-            display: inline !important;
-          }
-        }
-        @media (min-width: 481px) and (max-width: 767px) {
-          h1 {
-            font-size: 28px !important;
-            word-break: break-word !important;
-            white-space: normal !important;
-          }
-          h1 span {
-            font-size: 28px !important;
-            white-space: normal !important;
-            word-break: break-word !important;
-            display: inline !important;
-          }
-        }
-        
-        /* Стили для темной темы */
-        html.dark main, html.dark .main {
-          background-color: #0A0A0A;
-          color: #FFFFFF;
-        }
-        
-        /* Стили для светлой темы */
-        html.light main, html.light .main {
-          background-color: #FFFFFF;
-          color: #111827;
-        }
-      `;
-      document.head.appendChild(style);
-      setStyleLoaded(true);
-    }
-  }, [styleLoaded]);
+  // Раньше здесь добавлялись динамические стили через <style>, что могло вызывать CLS.
+  // Убрано, чтобы избежать перерасчета макета после первого рендера.
 
-  // Функция для определения стилей, запускаем только на клиенте
-  useEffect(() => {
-    const getResponsiveStyles = () => {
-      const isMobile = deviceType === 'mobile' || deviceType === 'mobile-small';
-      const isSmallMobile = deviceType === 'mobile-small';
-      const isTablet = deviceType === 'tablet';
-      
-      return {
-        // Контейнер с основным контентом
-        contentContainer: {
-          display: 'flex',
-          flexDirection: isMobile ? 'column' as const : 'row' as const,
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 0,
-          marginBottom: isMobile ? 15 : 20
-        } as CSSProperties,
-        
-        // Левая колонка с текстом
-        textContainer: {
-          maxWidth: isMobile ? '100%' : isTablet ? '55%' : 600,
-          zIndex: 2,
-          position: 'relative' as const,
-          textAlign: isMobile ? 'center' as const : 'left' as const,
-          marginBottom: isMobile ? '30px' : 0,
-          padding: isMobile ? '0 15px' : 0,
-          width: isMobile ? '100%' : 'auto',
-          overflowWrap: 'break-word' as const,
-          wordWrap: 'break-word' as const
-        } as CSSProperties,
-        
-        // Заголовок
-        heading: {
-          fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
-          fontWeight: 700,
-          color: isDarkMode ? '#ffffff' : '#333333',
-          marginBottom: isMobile ? 16 : 24,
-          lineHeight: isMobile ? 1.3 : 1.2,
-          maxWidth: '100%',
-          wordBreak: isMobile ? 'break-word' as const : 'normal' as const,
-          overflow: 'hidden'
-        } as CSSProperties,
-        
-        // Span в заголовке для nowrap
-        headingSpan: {
-          whiteSpace: 'normal' as const,
-          display: 'inline' as const,
-          fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
-          wordBreak: 'break-word' as const,
-        } as CSSProperties,
-        
-        // Span с выделенным цветом в заголовке
-        headingColoredSpan: {
-          color: '#8b21fe',
-          whiteSpace: 'normal' as const,
-          display: 'inline' as const,
-          fontSize: isSmallMobile ? 24 : isMobile ? 28 : isTablet ? 40 : 60,
-          wordBreak: 'break-word' as const,
-          hyphens: 'auto' as const
-        } as CSSProperties,
-        
-        // Подзаголовок
-        subtitle: {
-          color: isDarkMode ? '#bdbdbd' : '#666666',
-          fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 20 : 24,
-          marginBottom: isMobile ? 30 : 48
-        } as CSSProperties,
-        
-        // Контейнер для кнопок
-        buttonContainer: {
-          display: 'flex',
-          flexDirection: isMobile ? 'column' as const : 'row' as const,
-          alignItems: isMobile ? 'center' as const : 'flex-start' as const,
-          gap: isMobile ? 12 : 20,
-          width: isMobile ? '100%' : 'auto'
-        } as CSSProperties,
-        
-        // Кнопка основного действия
-        primaryButton: {
-          background: '#a259ff',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 12,
-          padding: isSmallMobile ? '10px 20px' : isMobile ? '12px 24px' : '16px 36px',
-          fontWeight: 500,
-          fontSize: isSmallMobile ? 14 : isMobile ? 16 : 18,
-          cursor: 'pointer',
-          transition: 'background 0.2s',
-          width: isMobile ? '100%' : 'auto',
-          marginBottom: isMobile ? '12px' : 0
-        } as CSSProperties,
-        
-        // Кнопка дополнительного действия
-        secondaryButton: {
-          border: '1px solid #a259ff',
-          color: isDarkMode ? '#fff' : '#7C3AED',
-          borderRadius: 12,
-          padding: isSmallMobile ? '10px 20px' : isMobile ? '12px 24px' : '16px 36px',
-          fontWeight: 500,
-          fontSize: isSmallMobile ? 14 : isMobile ? 16 : 18,
-          background: 'none',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          width: isMobile ? '100%' : 'auto'
-        } as CSSProperties,
-        
-        // Контейнер для изображения
-        imageContainer: {
-          position: 'relative' as const,
-          width: isMobile ? '100%' : isTablet ? 400 : 520,
-          height: isSmallMobile ? 250 : isMobile ? 300 : isTablet ? 400 : 520,
-          marginRight: isMobile ? 0 : isTablet ? 0 : -25,
-          marginLeft: isMobile ? 0 : isTablet ? -50 : -150,
-          marginTop: isMobile ? -20 : isTablet ? -10 : 30,
-          alignSelf: 'flex-end' as const
-        } as CSSProperties,
-        
-        // Стили для изображения
-        image: {
-          objectFit: 'contain' as const,
-          borderRadius: 24,
-          transform: isMobile 
-            ? 'scale(1.1) translateX(-10px) translateY(10px)' 
-            : isTablet 
-              ? 'scale(1.2) translateX(-50px) translateY(20px)' 
-              : 'scale(1.4) translateX(-100px) translateY(20px)'
-        } as CSSProperties,
-        
-        // Пустой блок для отступа
-        spacer: {
-          flex: 1,
-          minHeight: isSmallMobile ? 20 : isMobile ? 40 : isTablet ? 80 : 120
-        } as CSSProperties,
-        
-        // Контейнер для крипто-иконок
-        cryptoIconsContainer: {
-          display: 'flex',
-          justifyContent: 'center',
-          padding: '0 15px',
-          marginBottom: 80,
-          overflow: 'hidden'
-        } as CSSProperties,
-        
-        // Стили для крипто-иконок
-        cryptoIcons: {
-          objectFit: 'contain' as const,
-          maxWidth: '100%',
-          height: 'auto'
-        } as CSSProperties,
 
-        // Стили для контейнера кнопок соцсетей
-        socialButtonsContainer: {
-          position: 'fixed' as const,
-          right: 20,
-          top: '50%',
-          transform: 'translateY(-50%)' as const,
-          display: 'flex',
-          flexDirection: 'column' as const,
-          gap: 15,
-          zIndex: 100
-        } as CSSProperties,
-
-        // Стили для кнопок соцсетей
-        socialButton: {
-          width: 48,
-          height: 48,
-          borderRadius: 12,
-          background: isDarkMode ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          backdropFilter: 'blur(5px)' as const,
-          WebkitBackdropFilter: 'blur(5px)' as const,
-        } as CSSProperties,
-
-        // Стили для изображений внутри кнопок
-        socialButtonImage: {
-          width: 24,
-          height: 24
-        } as CSSProperties
-      };
-    };
-
-    // Обновляем стили
-    setStyles(getResponsiveStyles());
-  }, [deviceType, isDarkMode]);
-
-  // Базовые стили для инициализации на сервере
-  const defaultStyles: Record<string, CSSProperties> = {
-    contentContainer: { display: 'flex' },
-    textContainer: { position: 'relative' as const },
-    heading: { fontSize: 40, fontWeight: 700 },
-    headingSpan: { display: 'inline' },
-    headingColoredSpan: { color: '#b48afd' },
-    subtitle: { fontSize: 24 },
-    buttonContainer: { display: 'flex' },
-    primaryButton: { background: '#a259ff', color: '#fff' },
-    secondaryButton: { border: '1px solid #a259ff' },
-    imageContainer: { position: 'relative' as const },
-    image: { objectFit: 'contain' as const },
-    spacer: { flex: 1 },
-    cryptoIconsContainer: { display: 'flex' },
-    cryptoIcons: { maxWidth: '100%' },
-    socialButtonsContainer: { position: 'fixed' as const },
-    socialButton: { width: 48, height: 48 },
-    socialButtonImage: { width: 24, height: 24 }
-  };
-
-  // Используем стили из состояния, если они есть, или базовые стили
-  const currentStyles = Object.keys(styles).length > 0 ? styles : defaultStyles;
+  // Используем единственный источник стилей
+  const currentStyles = styles;
   const isMobile = deviceType === 'mobile' || deviceType === 'mobile-small';
 
   return (
-    <div className={`relative h-full ${isDarkMode ? 'bg-[#111014]' : 'bg-white'}`}>
-      <main style={{
+    <div 
+      className={`relative h-full prevent-layout-shift ${isDarkMode ? 'bg-[#111014]' : 'bg-white'}`} 
+      style={{ 
+        contain: 'layout style', 
+        minHeight: '100vh', 
+        height: '100vh',
+        willChange: 'auto',
+        position: 'relative',
+        overflow: 'hidden'
+      }} 
+      data-hydrated={isHydrated}
+    >
+      <main className="stable-container" style={{
         height: '100%',
+        minHeight: '100vh', // Фиксированная минимальная высота
         maxWidth: 1400, 
         margin: '0 auto',
-        padding: '20px 5px 80px 5px',
+        padding: '20px 32px 80px 0px',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-start',
         backgroundColor: isDarkMode ? '#111014' : 'white',
-        color: isDarkMode ? 'white' : '#111827'
+        contain: 'layout style',
+        color: isDarkMode ? 'white' : '#111827',
+        position: 'relative', // Для позиционирования иконок соцсетей
+        willChange: 'auto'
       } as CSSProperties}>
         {showEmailConfirmedModal && <EmailConfirmedModal onClose={() => setShowEmailConfirmedModal(false)} />}
-        <div style={currentStyles.contentContainer}>
+        <div className="stable-container" style={currentStyles.contentContainer}>
           {/* Левая колонка */}
-          <div style={currentStyles.textContainer}>
-            <h1 style={currentStyles.heading}>
-              <span style={currentStyles.headingSpan}>Инвестируй и получай </span>
-              <span style={currentStyles.headingColoredSpan}>от 10% годовых в USDT</span>
-            </h1>
-            <div style={currentStyles.subtitle}>
-              Думай на шаг вперёд. Инвестируй с умом.<br />Твоя партия начинается здесь
-            </div>
-            <div style={currentStyles.buttonContainer}>
-              <button style={currentStyles.primaryButton} 
-                onMouseOver={e => {
-                  const target = e.currentTarget.style as any;
-                  target.background = '#8f3fff';
-                }} 
-                onMouseOut={e => {
-                  const target = e.currentTarget.style as any;
-                  target.background = '#a259ff';
-                }}
-              >
-                Попробовать бесплатно
-              </button>
-              <button style={currentStyles.secondaryButton} 
-                onMouseOver={e => {
-                  const target = e.currentTarget.style as any;
-                  target.background = typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? '#2a1a3a' : '#f5eeff';
-                }} 
-                onMouseOut={e => {
-                  const target = e.currentTarget.style as any;
-                  target.background = 'none';
-                }}
-              >
-                Узнать подробнее
-              </button>
-            </div>
+          <div className="stable-container" style={currentStyles.textContainer}>
+            <AnimatedHeroText deviceType={deviceType} />
           </div>
           {/* Правая колонка */}
-          <div style={currentStyles.imageContainer}>
+          <div className="stable-container" style={currentStyles.imageContainer}>
             <Image
               src={chessImage}
               alt="Chess Strategy"
@@ -425,25 +323,8 @@ const HomePageContent = () => {
           </div>
         </div>
         
-        {/* Пустой блок для создания пространства */}
-        <div style={currentStyles.spacer}></div>
-        
-        {/* Крипто-иконки снизу */}
-        <div style={currentStyles.cryptoIconsContainer}>
-          <Image
-            src="/images/crypt-ico.png"
-            alt="Cryptocurrency Icons"
-            width={850}
-            height={70}
-            style={currentStyles.cryptoIcons}
-          />
-        </div>
-        
-        {/* Соц. кнопки справа */}
-        {/* Скрыли стандартные кнопки: {!isMobile && <SocialButtons />} */}
-        
-        {/* Альтернативные кнопки соцсетей справа */}
-        <div style={currentStyles.socialButtonsContainer}>
+        {/* Соц. кнопки вынесены из контейнера изображения - теперь полностью независимы */}
+        <div style={currentStyles.socialButtonsContainer} data-fixed>
           <a 
             href="https://t.me/your_channel" 
             target="_blank" 
@@ -489,6 +370,24 @@ const HomePageContent = () => {
             />
           </a>
         </div>
+        
+        {/* Пустой блок для создания пространства */}
+        <div style={currentStyles.spacer}></div>
+        
+        {/* Крипто-иконки снизу */}
+        <div className="stable-container" style={currentStyles.cryptoIconsContainer}>
+          <Image
+            src="/images/crypt-ico.png"
+            alt="Cryptocurrency Icons"
+            width={850}
+            height={70}
+            style={currentStyles.cryptoIcons}
+          />
+        </div>
+        {/* Дополнительный отступ перед футером, чтобы иконки не накладывались */}
+        <div style={currentStyles.bottomSpacer} />
+        
+        {/* Соц. кнопки перенесены в контейнер изображения */}
       </main>
     </div>
   );

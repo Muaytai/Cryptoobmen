@@ -64,11 +64,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <ProfileProvider user={user} totalUsdBalance={totalUsdBalance}>
       <div className={styles.container}>
+        <SideBar />
         <div className={styles.wrapper}>
           <div className={styles.wrapperMain}>
             <HeaderProfile user={user} />
             {children}
-            <SideBar />
           </div>
         </div>
       </div>
