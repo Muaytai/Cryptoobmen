@@ -77,7 +77,7 @@ INSTALLED_APPS = [
     'django_celery_beat',
 ]
 
-SITE_ID = 1
+SITE_ID = 2
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
