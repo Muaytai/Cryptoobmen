@@ -1,4 +1,3 @@
-
 """
 Задачи консолидации средств - вспомогательные функции и проверка подтверждений
 """
@@ -560,4 +559,3 @@ def consolidate_user_deposits():
     logger.info(f"\033[94m" + "="*60 + "\033[0m")
     
     return f"Consolidation completed: {processed} transactions"
-

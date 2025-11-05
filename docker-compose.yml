@@ -26,8 +26,6 @@ services:
       - media_volume:/app/media
     env_file:
       - ./backend/.env.backend
-    depends_on:
-      - redis
     networks:
       - cryptoobmen_network
 
@@ -40,6 +38,12 @@ services:
     command: npm start
     environment:
       - NODE_OPTIONS=--max-old-space-size=4096
+    networks:
+      - cryptoobmen_network
+
+  redis:
+    image: redis:7-alpine
+    restart: always
     networks:
       - cryptoobmen_network
 
@@ -69,15 +73,9 @@ services:
     networks:
       - cryptoobmen_network
 
-  redis:
-    image: redis:7-alpine
-    restart: always
-    networks:
-      - cryptoobmen_network
-
 networks:
   cryptoobmen_network:
-    driver: bridge
+    external: true
 
 volumes:
   static_volume:
