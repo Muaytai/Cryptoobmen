@@ -193,7 +193,9 @@ def check_consolidation_confirmations():
                     
                     # Зачисляем пользователю РЕАЛЬНУЮ консолидированную сумму
                     # ⚠️ ВАЖНО: Зачисляем сумму из транзакции консолидации (tx.amount), а не сумму депозита!
+                    # ⚠️ КРИТИЧЕСКИ ВАЖНО: Увеличиваем и balance, и available_balance!
                     user_wallet.balance += consolidation_amount
+                    user_wallet.available_balance += consolidation_amount  # ⚠️ ВАЖНО: Увеличиваем available_balance тоже!
                     total_pending_deposits_value = sum(dep.amount for dep in pending_deposits)
                     
                     # Обновляем статусы всех pending депозитов на completed
@@ -203,8 +205,9 @@ def check_consolidation_confirmations():
                         logger.info(f"\033[94m✅ Marked deposit {deposit.tx_hash} as completed (was pending)\033[0m")
                     
                     if consolidation_amount > 0:
-                        user_wallet.save()
+                        user_wallet.save(update_fields=['balance', 'available_balance'])  # Явно указываем поля для сохранения
                         logger.info(f"\033[92m✅ Consolidation completed for user {tx.user.id}: credited {consolidation_amount} {tx.crypto.symbol}\033[0m")
+                        logger.info(f"\033[94m📊 Balance: {user_wallet.balance} {tx.crypto.symbol}, Available: {user_wallet.available_balance} {tx.crypto.symbol}\033[0m")
                         logger.info(f"\033[94m📊 Total pending deposits value was: {total_pending_deposits_value} {tx.crypto.symbol}\033[0m")
                         logger.info(f"\033[94m💡 Note: User credited with consolidated amount ({consolidation_amount}), not deposit amount ({total_pending_deposits_value})\033[0m")
                     else:
@@ -503,13 +506,30 @@ def consolidate_user_deposits():
                     
                     @retry_on_rpc_error(max_retries=3, delay=2, backoff=2)
                     def send_consolidation_transaction():
-                        return blockchain_service.send_transaction(
-                            private_key=user_wallet.encrypted_private_key,
-                            to_address=system_wallet_address,
-                            amount=amount_to_send,
-                            memo=f"consolidation_{user_wallet.user_id}",
-                            contract_address=contract_address_for_send
-                        )
+                        # ⚠️ ВАЖНО: contract_address передаем только для TRC-20 и ERC-20 токенов
+                        # Polygon (POL) не поддерживает contract_address в send_transaction
+                        # Проверяем, поддерживает ли сервис contract_address
+                        import inspect
+                        sig = inspect.signature(blockchain_service.send_transaction)
+                        params = list(sig.parameters.keys())
+                        
+                        if 'contract_address' in params and contract_address_for_send:
+                            # Сервис поддерживает contract_address (Tron, Ethereum для ERC-20)
+                            return blockchain_service.send_transaction(
+                                private_key=user_wallet.encrypted_private_key,
+                                to_address=system_wallet_address,
+                                amount=amount_to_send,
+                                memo=f"consolidation_{user_wallet.user_id}",
+                                contract_address=contract_address_for_send
+                            )
+                        else:
+                            # Для нативных валют (POL, ETH native, BTC) не передаем contract_address
+                            return blockchain_service.send_transaction(
+                                private_key=user_wallet.encrypted_private_key,
+                                to_address=system_wallet_address,
+                                amount=amount_to_send,
+                                memo=f"consolidation_{user_wallet.user_id}"
+                            )
                     
                     tx_hash = send_consolidation_transaction()
                     logger.info(f"\033[92m✅ Transaction sent successfully: {tx_hash}\033[0m")

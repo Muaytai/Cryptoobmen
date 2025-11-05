@@ -273,12 +273,9 @@ def check_blockchain_deposits():
                     processed += 1
                     logger.info(f"Successfully processed deposit for user {user.id}, tx_hash={tx_hash}")
                     
-                    # Немедленная попытка консолидации для pending депозитов
-                    # Используем countdown=3 чтобы дать время транзакции БД коммититься (предотвращаем race condition)
-                    if deposit_status == "pending":
-                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash} (with 3s delay to avoid race condition)")
-                        from .tasks_consolidation import consolidate_user_deposits
-                        consolidate_user_deposits.apply_async(countdown=3)
+                    # ⚠️ ВАЖНО: Для MEMO валют депозиты зачисляются сразу (status="completed")
+                    # Консолидация не требуется для MEMO валют, поэтому эта проверка не нужна здесь
+                    # Консолидация запускается только для валют БЕЗ MEMO (в batch обработке)
 
                 # После успешной транзакции отправляем сигнал
                 if deposit_memo:
@@ -510,6 +507,12 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
         with transaction.atomic():
             withdrawal.transaction.tx_hash = tx_hash
             withdrawal.transaction.status = 'awaiting_confirmation'
+            # ⚠️ ВАЖНО: Сохраняем первоначальную заблокированную сумму в notes для последующей разблокировки
+            # Формат: "locked_amount: {total_amount}" (для парсинга)
+            if withdrawal.transaction.notes:
+                withdrawal.transaction.notes += f"\nlocked_amount: {total_amount}"
+            else:
+                withdrawal.transaction.notes = f"locked_amount: {total_amount}"
             withdrawal.transaction.save()
             commission_wallet, _ = CommissionWallet.objects.get_or_create(currency=crypto)
             commission_wallet.balance += platform_fee
@@ -588,12 +591,27 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal, D
                 private_key_input = gw.private_key
             else:
                 return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
-        tx_hash = blockchain_service.send_transaction(
-            private_key=private_key_input,
-            to_address=system_wallet_address,
-            amount=amount_to_send,
-            contract_address=contract_address,
-        )
+        # ⚠️ ВАЖНО: contract_address передаем только для TRC-20 и ERC-20 токенов
+        # Polygon (POL) не поддерживает contract_address в send_transaction
+        import inspect
+        sig = inspect.signature(blockchain_service.send_transaction)
+        params = list(sig.parameters.keys())
+        
+        if 'contract_address' in params and contract_address:
+            # Сервис поддерживает contract_address (Tron, Ethereum для ERC-20)
+            tx_hash = blockchain_service.send_transaction(
+                private_key=private_key_input,
+                to_address=system_wallet_address,
+                amount=amount_to_send,
+                contract_address=contract_address,
+            )
+        else:
+            # Для нативных валют (POL, ETH native, BTC) не передаем contract_address
+            tx_hash = blockchain_service.send_transaction(
+                private_key=private_key_input,
+                to_address=system_wallet_address,
+                amount=amount_to_send,
+            )
         return (True, tx_hash, amount_to_send, gas_cost)
     except Exception as e:
         logger.error(f"[CONSOLIDATION] Error: {e}")
@@ -694,14 +712,50 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
                     logger.error(f"Insufficient locked funds for withdrawal {withdrawal.id} upon confirmation. Locked balance: {user_wallet.locked_balance}, required: {amount_to_withdraw}")
                     return "error:insufficient_locked_funds_on_confirmation"
 
-                # Списываем средства (включая газ)
-                # Средства уже были списаны с основного баланса,
-                # теперь нужно уменьшить заблокированный баланс
-                # ⚠️ ВАЖНО: Используем max() чтобы избежать отрицательного баланса из-за погрешностей округления
-                user_wallet.locked_balance = max(Decimal('0'), user_wallet.locked_balance - amount_to_withdraw)
+                # ⚠️ КРИТИЧЕСКИ ВАЖНО: Разблокируем средства
+                # При блокировке была заблокирована сумма total_amount = amount + fee + gas_cost_initial
+                # При подтверждении gas_cost может измениться, поэтому amount_to_withdraw может отличаться
+                # Но средства уже списаны с баланса при блокировке, поэтому нужно разблокировать ВСЮ заблокированную сумму
+                # для этого вывода, а не только amount_to_withdraw
+                
+                # Сохраняем текущий locked_balance до разблокировки для логирования
+                locked_before = user_wallet.locked_balance
+                
+                # Пытаемся получить первоначальную заблокированную сумму из notes транзакции
+                original_locked_amount = None
+                if withdrawal.transaction.notes:
+                    import re
+                    match = re.search(r'locked_amount:\s*([\d.]+)', withdrawal.transaction.notes)
+                    if match:
+                        try:
+                            original_locked_amount = Decimal(match.group(1))
+                            logger.info(f"Withdrawal {withdrawal_id}: Found original locked amount in notes: {original_locked_amount}")
+                        except (ValueError, Exception) as e:
+                            logger.warning(f"Withdrawal {withdrawal_id}: Failed to parse locked_amount from notes: {e}")
+                
+                # Определяем сумму для разблокировки
+                if original_locked_amount:
+                    # Используем первоначальную заблокированную сумму
+                    amount_to_unlock = original_locked_amount
+                    logger.info(f"Withdrawal {withdrawal_id}: Using original locked amount: {amount_to_unlock}")
+                else:
+                    # Fallback: используем amount_to_withdraw (может быть неточным из-за изменения gas_cost)
+                    amount_to_unlock = amount_to_withdraw
+                    logger.warning(f"Withdrawal {withdrawal_id}: Original locked amount not found, using amount_to_withdraw: {amount_to_unlock}")
+                
+                # Разблокируем средства
+                user_wallet.locked_balance = max(Decimal('0'), user_wallet.locked_balance - amount_to_unlock)
+                
+                # Если остался небольшой остаток (меньше дельты), разблокируем его тоже
+                # Это может быть из-за погрешностей округления или изменения gas_cost
+                if user_wallet.locked_balance > 0 and user_wallet.locked_balance < delta:
+                    logger.info(f"Withdrawal {withdrawal_id}: Unlocking remaining small locked balance: {user_wallet.locked_balance} (rounding error)")
+                    user_wallet.locked_balance = Decimal('0')
+                
                 user_wallet.save()
                 
-                logger.info(f"Withdrawal {withdrawal_id} completed: {amount_to_withdraw} deducted (amount: {withdrawal.transaction.amount}, platform_fee: {withdrawal.transaction.fee}, gas: {gas_cost})")
+                unlocked_amount = locked_before - user_wallet.locked_balance
+                logger.info(f"Withdrawal {withdrawal_id} completed: {amount_to_withdraw} deducted (amount: {withdrawal.transaction.amount}, platform_fee: {withdrawal.transaction.fee}, gas: {gas_cost}). Unlocked: {unlocked_amount} (was locked: {locked_before}, original: {original_locked_amount})")
 
                 # Обновляем транзакцию
                 # ⚠️ КРИТИЧЕСКИ ВАЖНО: Сохраняем транзакцию в той же атомарной транзакции,
@@ -780,6 +834,7 @@ def consolidate_funds():
                     continue
 
                 # Рассчитываем максимальную отправляемую сумму (баланс - газ)
+                gas_cost = Decimal('0')
                 if hasattr(service, 'get_max_sendable_amount'):
                     # Для POL используем умный расчёт газа
                     max_sendable = service.get_max_sendable_amount(u_wallet.deposit_address, system_wallet_address)
@@ -787,11 +842,13 @@ def consolidate_funds():
                         logger.warning(f"[CONSOLIDATE] Cannot consolidate for user {u_wallet.user.id}: insufficient balance after gas deduction")
                         continue
                     amount_to_send = max_sendable
-                    logger.info(f"[CONSOLIDATE] Smart gas calculation: sending {amount_to_send} {currency.symbol} (from balance {actual_balance})")
+                    gas_cost = actual_balance - max_sendable  # Рассчитываем стоимость газа
+                    logger.info(f"[CONSOLIDATE] Smart gas calculation: sending {amount_to_send} {currency.symbol} (from balance {actual_balance}, gas: {gas_cost})")
                 else:
                     # Fallback для других валют - вычитаем фиксированный резерв
                     gas_reserve = get_gas_reserve(currency)
                     amount_to_send = actual_balance - gas_reserve
+                    gas_cost = gas_reserve  # Используем резерв как оценку газа
                     if amount_to_send <= 0:
                         logger.warning(f"[CONSOLIDATE] Cannot consolidate for user {u_wallet.user.id}: insufficient balance after gas reserve")
                         continue
@@ -838,13 +895,27 @@ def consolidate_funds():
                             continue
 
                 # Отправляем средства на системный кошелек
-                # Передаём contract_address для токенов (иначе отправится нативная монета)
-                tx_hash = service.send_transaction(
-                    private_key=private_key,
-                    to_address=system_wallet_address,
-                    amount=amount_to_send,
-                    contract_address=contract_address,
-                )
+                # ⚠️ ВАЖНО: contract_address передаем только для TRC-20 и ERC-20 токенов
+                # Polygon (POL) не поддерживает contract_address в send_transaction
+                import inspect
+                sig = inspect.signature(service.send_transaction)
+                params = list(sig.parameters.keys())
+                
+                if 'contract_address' in params and contract_address:
+                    # Сервис поддерживает contract_address (Tron, Ethereum для ERC-20)
+                    tx_hash = service.send_transaction(
+                        private_key=private_key,
+                        to_address=system_wallet_address,
+                        amount=amount_to_send,
+                        contract_address=contract_address,
+                    )
+                else:
+                    # Для нативных валют (POL, ETH native, BTC) не передаем contract_address
+                    tx_hash = service.send_transaction(
+                        private_key=private_key,
+                        to_address=system_wallet_address,
+                        amount=amount_to_send,
+                    )
                 
                 logger.info(f"[CONSOLIDATE] Consolidation transaction sent for user {u_wallet.user.id}. Tx hash: {tx_hash}")
 
