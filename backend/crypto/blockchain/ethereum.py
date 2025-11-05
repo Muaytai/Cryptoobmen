@@ -288,16 +288,22 @@ class EthereumService(BaseBlockchainService):
         # Convert ETH to Wei
         value_wei = Web3.to_wei(amount, 'ether')
         
+        # Get chain_id for EIP-155 replay protection
+        chain_id = self.w3.eth.chain_id
+        
         transaction = {
             'to': to_address,
             'value': value_wei,
             'gas': self.gas_limit_eth,
             'gasPrice': gas_price,
             'nonce': nonce,
+            'chainId': chain_id,  # EIP-155: Required for replay protection
         }
         
         signed_txn = self.w3.eth.account.sign_transaction(transaction, account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        # Используем raw_transaction (snake_case) для совместимости с новыми версиями web3.py
+        raw_tx = signed_txn.raw_transaction if hasattr(signed_txn, 'raw_transaction') else signed_txn.rawTransaction
+        tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
         
         logger.info(f"Sent {amount} ETH from {account.address} to {to_address}, tx: {tx_hash.hex()}")
         return tx_hash.hex()
@@ -315,16 +321,22 @@ class EthereumService(BaseBlockchainService):
         nonce = self.w3.eth.get_transaction_count(account.address)
         gas_price = self._estimate_gas_price()
         
+        # Get chain_id for EIP-155 replay protection
+        chain_id = self.w3.eth.chain_id
+        
         # Build transaction
         transaction = contract.functions.transfer(to_address, token_amount).build_transaction({
             'from': account.address,
             'gas': self.gas_limit_erc20,
             'gasPrice': gas_price,
             'nonce': nonce,
+            'chainId': chain_id,  # EIP-155: Required for replay protection
         })
         
         signed_txn = self.w3.eth.account.sign_transaction(transaction, account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        # Используем raw_transaction (snake_case) для совместимости с новыми версиями web3.py
+        raw_tx = signed_txn.raw_transaction if hasattr(signed_txn, 'raw_transaction') else signed_txn.rawTransaction
+        tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
         
         logger.info(f"Sent {amount} tokens from {account.address} to {to_address}, tx: {tx_hash.hex()}")
         return tx_hash.hex()
@@ -395,12 +407,12 @@ class EthereumService(BaseBlockchainService):
             logger.error(f"Error getting transaction receipt for {tx_hash}: {e}")
             return None
 
-    def is_transaction_confirmed(self, tx_hash: str, required_confirmations: int = 12) -> bool:
+    def is_transaction_confirmed(self, tx_hash: str, required_confirmations: int = None) -> bool:
         """
         Check if transaction is confirmed with required number of confirmations.
         
         :param tx_hash: Transaction hash
-        :param required_confirmations: Number of required confirmations (default: 12 for security)
+        :param required_confirmations: Number of required confirmations (None = auto-detect based on network)
         :return: True if confirmed
         """
         try:
@@ -413,11 +425,20 @@ class EthereumService(BaseBlockchainService):
                 logger.warning(f"Transaction {tx_hash} failed (status=0)")
                 return False
             
+            # Автоматически определяем количество подтверждений в зависимости от сети
+            if required_confirmations is None:
+                # Для testnet (Sepolia, Goerli) достаточно 3 подтверждений
+                # Для mainnet требуется 12 подтверждений для безопасности
+                if self.network in ['sepolia', 'goerli']:
+                    required_confirmations = 3
+                else:
+                    required_confirmations = 12
+            
             current_block = self.w3.eth.block_number
             confirmations = current_block - receipt.blockNumber
             
             is_confirmed = confirmations >= required_confirmations
-            logger.debug(f"Transaction {tx_hash}: {confirmations} confirmations (required: {required_confirmations})")
+            logger.debug(f"Transaction {tx_hash}: {confirmations} confirmations (required: {required_confirmations} for {self.network})")
             
             return is_confirmed
             

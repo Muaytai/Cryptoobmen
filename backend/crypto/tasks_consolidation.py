@@ -66,7 +66,7 @@ def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
     minimums = {
         'POL': Decimal('0.01'),    # Снижено - теперь используем динамический расчёт газа
         'BTC': Decimal('0.0001'),
-        'ETH': Decimal('0.01'),
+        'ETH': Decimal('0.0001'),
         'TRX': Decimal('10'),
         'USDT': Decimal('10'),     # Добавлено для USDT TRC-20
     }
