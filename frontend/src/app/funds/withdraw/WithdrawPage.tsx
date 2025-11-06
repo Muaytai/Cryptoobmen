@@ -340,85 +340,20 @@ export const WithdrawPage: React.FC = () => {
     console.log('selectedWalletId:', selectedWalletId);
     console.log('destinationAddress:', destinationAddress);
     
-    if (!selectedWalletId || !destinationAddress) {
-      // Если нет выбранного кошелька или адреса, используем старую логику
-      console.log('Нет кошелька или адреса, используем старую логику');
-      const maxAmount = getMaxAvailableAmount();
-      setAmount(maxAmount);
+    if (!selectedWalletId) {
+      console.log('Нет выбранного кошелька');
+      setError('Выберите кошелек');
       return;
     }
-
-    setMaxAmountLoading(true);
-    setError(null);
-
-    try {
-      const wallet = wallets.find((w) => w.id === selectedWalletId);
-      if (!wallet) return;
-
-      const availableBalance = parseFloat(wallet.available_balance);
-      
-      // Используем бинарный поиск для нахождения максимальной суммы
-      let left = 0;
-      let right = availableBalance;
-      let maxWithdrawable = 0;
-      const precision = 0.00000001; // 8 знаков после запятой
-      
-      console.log('=== БИНАРНЫЙ ПОИСК МАКСИМАЛЬНОЙ СУММЫ ===');
-      console.log('Доступный баланс:', availableBalance);
-      
-      while (right - left > precision) {
-        const mid = (left + right) / 2;
-        const testAmount = mid.toFixed(8);
-        
-        try {
-          const response = await calculateWithdrawalCost(
-            selectedWalletId,
-            testAmount,
-            destinationAddress,
-            memo || undefined
-          );
-          
-          if (response && response.total_cost) {
-            const totalCost = parseFloat(response.total_cost);
-            const withdrawalAmount = parseFloat(response.withdrawal_amount);
-            
-            // Проверяем, что общая стоимость не превышает доступный баланс
-            if (totalCost <= availableBalance) {
-              maxWithdrawable = withdrawalAmount;
-              left = mid;
-            } else {
-              right = mid;
-            }
-          } else {
-            right = mid;
-          }
-        } catch (error) {
-          console.log('Ошибка при тестировании суммы:', testAmount, error);
-          right = mid;
-        }
-      }
-      
-      console.log('=== РЕЗУЛЬТАТ ПОИСКА ===');
-      console.log('Максимально возможная сумма для вывода:', maxWithdrawable);
-      
-      if (maxWithdrawable > 0) {
-        const maxAmount = maxWithdrawable.toFixed(8);
-        console.log('Устанавливаем сумму:', maxAmount);
-        setAmount(maxAmount);
-        setError(null);
-      } else {
-        console.log('Недостаточно средств для покрытия комиссий');
-        setAmount("0");
-        setError("Недостаточно средств для покрытия комиссий и газа");
-      }
-    } catch (error) {
-      console.error('Ошибка при расчете максимальной суммы:', error);
-      // Fallback на старую логику
-      const maxAmount = getMaxAvailableAmount();
-      setAmount(maxAmount);
-    } finally {
-      setMaxAmountLoading(false);
-    }
+    
+    // Для начала просто используем доступный баланс
+    console.log('Получаем максимальную доступную сумму');
+    const maxAmount = getMaxAvailableAmount();
+    console.log('Максимальная сумма:', maxAmount);
+    setAmount(maxAmount);
+    
+    // TODO: В будущем можно добавить точный расчет с учетом газа
+    // Для этого нужно будет использовать API endpoint для расчета максимальной суммы с учетом газа
   };
 
 

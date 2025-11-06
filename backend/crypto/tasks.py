@@ -314,6 +314,15 @@ def check_blockchain_deposits():
                 # Получаем/создаём кошелёк пользователя
                 user_wallet, _ = UserWallet.objects.get_or_create(user=user, currency=wallet.currency)
                 
+                # Проверяем, работаем ли мы в testnet режиме
+                is_testnet = (
+                    (wallet.currency.network == 'BEP20' and getattr(settings, 'BSC_NETWORK', 'mainnet') == 'testnet') or
+                    (wallet.currency.network == 'ERC20' and getattr(settings, 'ETHEREUM_NETWORK', 'mainnet') in ['goerli', 'sepolia']) or
+                    (wallet.currency.network == 'TRC20' and getattr(settings, 'TRON_NETWORK', 'mainnet') == 'nile') or
+                    (wallet.currency.network == 'BTC' and getattr(settings, 'BTC_NETWORK', 'mainnet') == 'testnet') or
+                    (wallet.currency.network == 'SOL' and getattr(settings, 'SOLANA_NETWORK', 'mainnet') == 'devnet')
+                )
+                
                 # Определяем логику зачисления
                 if wallet.currency.requires_memo:
                     # Валюты с MEMO - зачисляем сразу
@@ -322,8 +331,15 @@ def check_blockchain_deposits():
                     deposit_status = "completed"
                     should_credit_now = True
                     logger.info(f"[MEMO] Will credit immediately: {amount} {wallet.currency.symbol}")
+                elif is_testnet:
+                    # В TESTNET зачисляем сразу (без консолидации)
+                    net_amount = amount
+                    gas_cost = Decimal('0')
+                    deposit_status = "completed"
+                    should_credit_now = True
+                    logger.info(f"[TESTNET] Will credit immediately: {amount} {wallet.currency.symbol}")
                 else:
-                    # Валюты БЕЗ MEMO - НЕ зачисляем, ждём консолидации
+                    # Валюты БЕЗ MEMO в MAINNET - НЕ зачисляем, ждём консолидации
                     deposit_info = calculate_net_deposit_amount(
                         currency=wallet.currency,
                         deposit_amount=amount,
@@ -528,6 +544,17 @@ def check_blockchain_deposits():
                     # ВАЖНО: Расчет газа делаем ДО начала транзакции
                     # Для валют БЕЗ мемо НЕ зачисляем сразу - ждём консолидации
                     # Для валют С мемо зачисляем сразу (консолидация не требуется)
+                    # В TESTNET зачисляем сразу для удобства тестирования
+                    
+                    # Проверяем, работаем ли мы в testnet режиме
+                    is_testnet = (
+                        (currency.network == 'BEP20' and getattr(settings, 'BSC_NETWORK', 'mainnet') == 'testnet') or
+                        (currency.network == 'ERC20' and getattr(settings, 'ETHEREUM_NETWORK', 'mainnet') in ['goerli', 'sepolia']) or
+                        (currency.network == 'TRC20' and getattr(settings, 'TRON_NETWORK', 'mainnet') == 'nile') or
+                        (currency.network == 'BTC' and getattr(settings, 'BTC_NETWORK', 'mainnet') == 'testnet') or
+                        (currency.network == 'SOL' and getattr(settings, 'SOLANA_NETWORK', 'mainnet') == 'devnet')
+                    )
+                    
                     if currency.requires_memo:
                         # Валюты с MEMO - зачисляем сразу полную сумму
                         net_amount = amount
@@ -535,8 +562,15 @@ def check_blockchain_deposits():
                         deposit_status = "completed"
                         should_credit_now = True
                         logger.info(f"[BATCH] MEMO currency - will credit immediately: {amount} {currency.symbol}")
+                    elif is_testnet:
+                        # В TESTNET зачисляем сразу (без консолидации)
+                        net_amount = amount
+                        gas_cost = Decimal('0')
+                        deposit_status = "completed"
+                        should_credit_now = True
+                        logger.info(f"[BATCH] TESTNET mode - will credit immediately: {amount} {currency.symbol}")
                     else:
-                        # Валюты БЕЗ MEMO - НЕ зачисляем, ждём консолидации
+                        # Валюты БЕЗ MEMO в MAINNET - НЕ зачисляем, ждём консолидации
                         deposit_info = calculate_net_deposit_amount(
                             currency=currency,
                             deposit_amount=amount,
@@ -846,19 +880,25 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
             
             # --- Проверка баланса пользователя ---
             user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
-            if user_wallet.balance < total_amount:
+            
+            # Проверяем ДОСТУПНЫЙ баланс (available_balance), а не общий баланс
+            # available_balance = balance - locked_balance (не включает заблокированные средства)
+            if user_wallet.available_balance < total_amount:
                 withdrawal.transaction.status = 'failed'
-                withdrawal.transaction.notes = f"Insufficient funds at the time of processing. Required: {total_amount} (including gas: {gas_cost})"
+                withdrawal.transaction.notes = f"Insufficient funds at the time of processing. Required: {total_amount} (including gas: {gas_cost}). Available: {user_wallet.available_balance}, Locked: {user_wallet.locked_balance}"
                 withdrawal.transaction.save()
-                logger.error(f"Insufficient funds for withdrawal {withdrawal.id}. Balance: {user_wallet.balance}, required: {total_amount} (gas: {gas_cost})")
+                logger.error(f"Insufficient funds for withdrawal {withdrawal.id}. Available balance: {user_wallet.available_balance}, Total balance: {user_wallet.balance}, Locked: {user_wallet.locked_balance}, Required: {total_amount} (gas: {gas_cost})")
                 return "error:insufficient_funds"
 
             # Блокируем средства на балансе пользователя (включая газ)
+            # balance уменьшается, locked_balance увеличивается
+            # available_balance автоматически пересчитается в save() как balance - locked_balance
             user_wallet.balance -= total_amount
             user_wallet.locked_balance += total_amount
-            user_wallet.save()
+            user_wallet.save()  # save() автоматически обновит available_balance
             
             logger.info(f"Funds locked for withdrawal {withdrawal.id}: {total_amount} (amount: {amount_to_send}, platform_fee: {platform_fee}, gas: {gas_cost})")
+            logger.info(f"After locking: balance={user_wallet.balance}, locked={user_wallet.locked_balance}, available={user_wallet.available_balance}")
 
             # Меняем статус на "в обработке" перед отправкой в сеть
             withdrawal.transaction.status = 'processing'
@@ -1508,5 +1548,6 @@ def sync_balances_with_blockchain():
         except Exception as e:
             logger.error(f"[BALANCE_SYNC] Error syncing system wallet {wallet.id} ({wallet.currency.symbol}): {e}")
             error_count += 1
-   
-   
+    
+    logger.info(f"[BALANCE_SYNC] Finished: {synced_count} wallets updated, {error_count} errors")
+    return f"Synced {synced_count} system wallets, {error_count} errors"

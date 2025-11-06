@@ -47,7 +47,7 @@ class UserWalletAdmin(admin.ModelAdmin):
     list_filter = ('is_active', 'is_system_wallet', 'currency__symbol')
     search_fields = ('user__email', 'user__username', 'currency__name', 'currency__symbol')
     readonly_fields = ('created_at', 'updated_at')
-    actions = ['delete_selected_wallets']
+    actions = ['delete_selected_wallets', 'sync_balance_with_blockchain']
     
     def has_delete_permission(self, request, obj=None):
         # Разрешаем удаление кошельков только суперпользователям
@@ -108,6 +108,76 @@ class UserWalletAdmin(admin.ModelAdmin):
             self.message_user(request, "Не выбрано ни одного кошелька для удаления.", level='WARNING')
     
     delete_selected_wallets.short_description = "🗑️ Удалить выбранные кошельки (ОСТОРОЖНО!)"
+
+    def sync_balance_with_blockchain(self, request, queryset):
+        """Обновить балансы выбранных кошельков из блокчейна"""
+        from .blockchain.factory import get_blockchain_service
+        from decimal import Decimal
+        
+        updated_count = 0
+        error_count = 0
+        
+        for wallet in queryset:
+            try:
+                # Обновляем только системные кошельки с адресами
+                if not wallet.is_system_wallet:
+                    continue
+                    
+                if not wallet.deposit_address:
+                    self.message_user(
+                        request, 
+                        f"Кошелек {wallet.currency.symbol} не имеет адреса для обновления", 
+                        level='WARNING'
+                    )
+                    continue
+                
+                # Получаем сервис блокчейна
+                service = get_blockchain_service(wallet.currency.network or wallet.currency.symbol)
+                
+                # Получаем реальный баланс из блокчейна
+                real_balance = service.get_balance(wallet.deposit_address)
+                
+                # Обновляем баланс только если он изменился
+                if wallet.balance != real_balance:
+                    old_balance = wallet.balance
+                    wallet.balance = real_balance
+                    wallet.save()
+                    self.message_user(
+                        request, 
+                        f"Баланс {wallet.currency.symbol} обновлен: {old_balance} → {real_balance}", 
+                        level='SUCCESS'
+                    )
+                    updated_count += 1
+                else:
+                    self.message_user(
+                        request, 
+                        f"Баланс {wallet.currency.symbol} уже актуален: {real_balance}", 
+                        level='INFO'
+                    )
+                    
+            except Exception as e:
+                error_count += 1
+                self.message_user(
+                    request, 
+                    f"Ошибка обновления баланса {wallet.currency.symbol}: {str(e)}", 
+                    level='ERROR'
+                )
+        
+        if updated_count > 0:
+            self.message_user(
+                request, 
+                f"Успешно обновлено балансов: {updated_count}", 
+                level='SUCCESS'
+            )
+        
+        if error_count > 0:
+            self.message_user(
+                request, 
+                f"Ошибок при обновлении: {error_count}", 
+                level='ERROR'
+            )
+    
+    sync_balance_with_blockchain.short_description = "🔄 Обновить баланс из блокчейна"
 
     def user_display(self, obj):
         if obj.user:

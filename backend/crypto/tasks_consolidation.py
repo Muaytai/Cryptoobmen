@@ -175,6 +175,9 @@ def check_consolidation_confirmations():
                         is_system_wallet=False
                     )
                     
+                    # Сохраняем старый адрес для WebSocket уведомления (до генерации нового)
+                    old_deposit_address = user_wallet.deposit_address
+                    
                     # ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ЛОГИКА ЗАЧИСЛЕНИЯ ПОСЛЕ КОНСОЛИДАЦИИ:
                     # Зачисляем пользователю РЕАЛЬНУЮ сумму, которая была консолидирована (tx.amount)
                     # Это amount_to_send из consolidate_user_deposits - вся сумма с блокчейна минус газ
@@ -208,6 +211,32 @@ def check_consolidation_confirmations():
                         logger.info(f"\033[92m✅ Consolidation completed for user {tx.user.id}: credited {consolidation_amount} {tx.crypto.symbol}\033[0m")
                         logger.info(f"\033[94m📊 Total pending deposits value was: {total_pending_deposits_value} {tx.crypto.symbol}\033[0m")
                         logger.info(f"\033[94m💡 Note: User credited with consolidated amount ({consolidation_amount}), not deposit amount ({total_pending_deposits_value})\033[0m")
+                        
+                        # Отправляем WebSocket уведомление о зачислении средств на СТАРЫЙ адрес
+                        # (до генерации нового адреса, т.к. фронтенд подключен к старому адресу)
+                        try:
+                            from channels.layers import get_channel_layer
+                            from asgiref.sync import async_to_sync
+                            
+                            channel_layer = get_channel_layer()
+                            if channel_layer and old_deposit_address:
+                                logger.info(f"\033[94m📡 Sending WebSocket notification for address {old_deposit_address}\033[0m")
+                                async_to_sync(channel_layer.group_send)(
+                                    f"deposit_address_{old_deposit_address}",
+                                    {
+                                        "type": "deposit_status_update",
+                                        "data": {
+                                            'address': old_deposit_address,
+                                            'status': 'used',
+                                            'message': 'Deposit completed',
+                                            'amount': str(consolidation_amount),
+                                            'currency': tx.crypto.symbol
+                                        }
+                                    }
+                                )
+                                logger.info(f"\033[92m✅ WebSocket notification sent to {old_deposit_address}\033[0m")
+                        except Exception as ws_error:
+                            logger.error(f"\033[91m❌ Failed to send WebSocket notification: {ws_error}\033[0m")
                     else:
                         logger.warning(f"\033[93m⚠️ Consolidation {tx.tx_hash} completed but consolidation amount is zero\033[0m")
                     

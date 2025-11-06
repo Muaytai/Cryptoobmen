@@ -5,6 +5,7 @@ from .tron import TronService
 from .bitcoin import BitcoinService
 from .xrp import XRPService
 from .ethereum import EthereumService
+from .bsc import BSCService
 from .polygon import PolygonService
 
 def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainService:
@@ -37,6 +38,10 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
     elif network_lower in ['erc20', 'ethereum', 'eth']:
         eth_network = getattr(settings, 'ETHEREUM_NETWORK', 'goerli')
         return EthereumService(network=eth_network)
+    elif network_lower in ['bsc', 'bep20', 'binance', 'bnb']:
+        # Default to mainnet unless explicitly told otherwise in settings
+        bsc_network = getattr(settings, 'BSC_NETWORK', 'mainnet')
+        return BSCService(network=bsc_network)
     elif network_lower in ['xrp', 'ripple']:
         return XRPService(network='testnet')
     elif network_lower in ['polygon', 'matic', 'pol']:

@@ -284,6 +284,7 @@ class EthereumService(BaseBlockchainService):
         """Send ETH transaction."""
         nonce = self.w3.eth.get_transaction_count(account.address)
         gas_price = self._estimate_gas_price()
+        chain_id = self.w3.eth.chain_id
         
         # Convert ETH to Wei
         value_wei = Web3.to_wei(amount, 'ether')
@@ -294,10 +295,11 @@ class EthereumService(BaseBlockchainService):
             'gas': self.gas_limit_eth,
             'gasPrice': gas_price,
             'nonce': nonce,
+            'chainId': chain_id,
         }
         
         signed_txn = self.w3.eth.account.sign_transaction(transaction, account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         
         logger.info(f"Sent {amount} ETH from {account.address} to {to_address}, tx: {tx_hash.hex()}")
         return tx_hash.hex()
@@ -314,6 +316,7 @@ class EthereumService(BaseBlockchainService):
         
         nonce = self.w3.eth.get_transaction_count(account.address)
         gas_price = self._estimate_gas_price()
+        chain_id = self.w3.eth.chain_id
         
         # Build transaction
         transaction = contract.functions.transfer(to_address, token_amount).build_transaction({
@@ -321,10 +324,11 @@ class EthereumService(BaseBlockchainService):
             'gas': self.gas_limit_erc20,
             'gasPrice': gas_price,
             'nonce': nonce,
+            'chainId': chain_id,
         })
         
         signed_txn = self.w3.eth.account.sign_transaction(transaction, account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         
         logger.info(f"Sent {amount} tokens from {account.address} to {to_address}, tx: {tx_hash.hex()}")
         return tx_hash.hex()
@@ -427,3 +431,43 @@ class EthereumService(BaseBlockchainService):
                 'gas_fee_eth': Decimal('0.0042'),
                 'gas_fee_usd': Decimal('0.0')
             }
+    
+    def is_transaction_confirmed(self, tx_hash: str, required_confirmations: int = 12) -> bool:
+        """
+        Check if transaction is confirmed with required number of confirmations.
+        
+        :param tx_hash: Transaction hash
+        :param required_confirmations: Number of required confirmations (default: 12)
+        :return: True if confirmed
+        """
+        try:
+            # Получаем квитанцию транзакции
+            receipt = self.w3.eth.get_transaction_receipt(tx_hash)
+            if receipt is None:
+                logger.debug(f"Transaction {tx_hash} not found in blockchain")
+                return False
+            
+            # Проверяем статус транзакции (0 = failed, 1 = success)
+            if receipt.get('status') == 0:
+                logger.warning(f"Transaction {tx_hash} failed in blockchain")
+                return False
+            
+            # Получаем текущий блок
+            current_block = self.w3.eth.block_number
+            tx_block = receipt.get('blockNumber')
+            
+            if tx_block is None:
+                logger.debug(f"Transaction {tx_hash} not yet mined")
+                return False
+            
+            # Вычисляем количество подтверждений
+            confirmations = current_block - tx_block
+            
+            is_confirmed = confirmations >= required_confirmations
+            logger.debug(f"Transaction {tx_hash}: {confirmations} confirmations (required: {required_confirmations})")
+            
+            return is_confirmed
+            
+        except Exception as e:
+            logger.warning(f"Failed to check transaction confirmation for {tx_hash}: {e}")
+            return False
