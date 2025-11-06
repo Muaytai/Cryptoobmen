@@ -271,6 +271,13 @@ def check_blockchain_deposits():
                         deposit_memo.status = "used"
                         deposit_memo.save()
                     processed += 1
+                    logger.info(f"Successfully processed deposit for user {user.id}, tx_hash={tx_hash}")
+                    
+                    # ⚠️ ВАЖНО: Для MEMO валют депозиты зачисляются сразу (status="completed")
+                    # Консолидация не требуется для MEMO валют, поэтому эта проверка не нужна здесь
+                    # Консолидация запускается только для валют БЕЗ MEMO (в batch обработке)
+
+                # После успешной транзакции отправляем сигнал
                 if deposit_memo:
                     channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
@@ -347,9 +354,15 @@ def check_blockchain_deposits():
                             timestamp=timezone.now()
                         )
                         processed += 1
+                        logger.info(f"[BATCH] Deposit recorded with status '{deposit_status}': {user_wallet.user} {currency.symbol} {amount} (balance NOT credited for no-MEMO currencies)")
+                        
+                        # Немедленная попытка консолидации для pending депозитов
+                        # ⚠️ ВАЖНО: Консолидация работает с балансом блокчейна, а НЕ с балансом в БД!
+                        # Используем countdown=3 чтобы дать время транзакции БД коммититься (предотвращаем race condition)
                         if deposit_status == "pending":
+                            logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash} (with 3s delay to avoid race condition)")
                             from .tasks_consolidation import consolidate_user_deposits
-                            consolidate_user_deposits.delay()
+                            consolidate_user_deposits.apply_async(countdown=3)
 
                     try:
                         channel_layer = get_channel_layer()
@@ -416,6 +429,7 @@ def check_blockchain_deposits():
                     deposit_memo.status = "used"
                     deposit_memo.save()
                     processed += 1
+                    logger.info(f"[XRP] Successfully processed deposit for tag='{memo}', tx_hash={tx_hash}")
         except Exception as e:
             logger.error(f"[XRP] Error: {e}", exc_info=True)
 
@@ -493,6 +507,12 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
         with transaction.atomic():
             withdrawal.transaction.tx_hash = tx_hash
             withdrawal.transaction.status = 'awaiting_confirmation'
+            # ⚠️ ВАЖНО: Сохраняем первоначальную заблокированную сумму в notes для последующей разблокировки
+            # Формат: "locked_amount: {total_amount}" (для парсинга)
+            if withdrawal.transaction.notes:
+                withdrawal.transaction.notes += f"\nlocked_amount: {total_amount}"
+            else:
+                withdrawal.transaction.notes = f"locked_amount: {total_amount}"
             withdrawal.transaction.save()
             commission_wallet, _ = CommissionWallet.objects.get_or_create(currency=crypto)
             commission_wallet.balance += platform_fee
@@ -571,12 +591,27 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal, D
                 private_key_input = gw.private_key
             else:
                 return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
-        tx_hash = blockchain_service.send_transaction(
-            private_key=private_key_input,
-            to_address=system_wallet_address,
-            amount=amount_to_send,
-            contract_address=contract_address,
-        )
+        # ⚠️ ВАЖНО: contract_address передаем только для TRC-20 и ERC-20 токенов
+        # Polygon (POL) не поддерживает contract_address в send_transaction
+        import inspect
+        sig = inspect.signature(blockchain_service.send_transaction)
+        params = list(sig.parameters.keys())
+        
+        if 'contract_address' in params and contract_address:
+            # Сервис поддерживает contract_address (Tron, Ethereum для ERC-20)
+            tx_hash = blockchain_service.send_transaction(
+                private_key=private_key_input,
+                to_address=system_wallet_address,
+                amount=amount_to_send,
+                contract_address=contract_address,
+            )
+        else:
+            # Для нативных валют (POL, ETH native, BTC) не передаем contract_address
+            tx_hash = blockchain_service.send_transaction(
+                private_key=private_key_input,
+                to_address=system_wallet_address,
+                amount=amount_to_send,
+            )
         return (True, tx_hash, amount_to_send, gas_cost)
     except Exception as e:
         logger.error(f"[CONSOLIDATION] Error: {e}")
@@ -663,17 +698,76 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
             amount_to_withdraw = withdrawal.transaction.amount + withdrawal.transaction.fee + gas_cost
             with transaction.atomic():
                 user_wallet = UserWallet.objects.select_for_update().get(id=withdrawal.wallet.id)
-                if user_wallet.locked_balance < amount_to_withdraw:
+                
+                # Повторная проверка заблокированного баланса на всякий случай
+                # При подтверждении проверяем locked_balance, так как средства уже были зарезервированы при отправке
+                # ⚠️ ВАЖНО: Используем небольшую дельту для учета погрешностей округления Decimal
+                # (разница в 0.000000000001 не должна блокировать подтверждение)
+                delta = Decimal('0.000001')  # Допустимая погрешность для сравнения
+                
+                if user_wallet.locked_balance < (amount_to_withdraw - delta):
                     withdrawal.transaction.status = 'failed'
-                    withdrawal.transaction.notes = f"Insufficient locked funds."
+                    withdrawal.transaction.notes = f"Insufficient locked funds discovered upon withdrawal confirmation. Required: {amount_to_withdraw} (including gas: {gas_cost})"
                     withdrawal.transaction.save()
+                    logger.error(f"Insufficient locked funds for withdrawal {withdrawal.id} upon confirmation. Locked balance: {user_wallet.locked_balance}, required: {amount_to_withdraw}")
                     return "error:insufficient_locked_funds_on_confirmation"
-                user_wallet.locked_balance -= amount_to_withdraw
+
+                # ⚠️ КРИТИЧЕСКИ ВАЖНО: Разблокируем средства
+                # При блокировке была заблокирована сумма total_amount = amount + fee + gas_cost_initial
+                # При подтверждении gas_cost может измениться, поэтому amount_to_withdraw может отличаться
+                # Но средства уже списаны с баланса при блокировке, поэтому нужно разблокировать ВСЮ заблокированную сумму
+                # для этого вывода, а не только amount_to_withdraw
+                
+                # Сохраняем текущий locked_balance до разблокировки для логирования
+                locked_before = user_wallet.locked_balance
+                
+                # Пытаемся получить первоначальную заблокированную сумму из notes транзакции
+                original_locked_amount = None
+                if withdrawal.transaction.notes:
+                    import re
+                    match = re.search(r'locked_amount:\s*([\d.]+)', withdrawal.transaction.notes)
+                    if match:
+                        try:
+                            original_locked_amount = Decimal(match.group(1))
+                            logger.info(f"Withdrawal {withdrawal_id}: Found original locked amount in notes: {original_locked_amount}")
+                        except (ValueError, Exception) as e:
+                            logger.warning(f"Withdrawal {withdrawal_id}: Failed to parse locked_amount from notes: {e}")
+                
+                # Определяем сумму для разблокировки
+                if original_locked_amount:
+                    # Используем первоначальную заблокированную сумму
+                    amount_to_unlock = original_locked_amount
+                    logger.info(f"Withdrawal {withdrawal_id}: Using original locked amount: {amount_to_unlock}")
+                else:
+                    # Fallback: используем amount_to_withdraw (может быть неточным из-за изменения gas_cost)
+                    amount_to_unlock = amount_to_withdraw
+                    logger.warning(f"Withdrawal {withdrawal_id}: Original locked amount not found, using amount_to_withdraw: {amount_to_unlock}")
+                
+                # Разблокируем средства
+                user_wallet.locked_balance = max(Decimal('0'), user_wallet.locked_balance - amount_to_unlock)
+                
+                # Если остался небольшой остаток (меньше дельты), разблокируем его тоже
+                # Это может быть из-за погрешностей округления или изменения gas_cost
+                if user_wallet.locked_balance > 0 and user_wallet.locked_balance < delta:
+                    logger.info(f"Withdrawal {withdrawal_id}: Unlocking remaining small locked balance: {user_wallet.locked_balance} (rounding error)")
+                    user_wallet.locked_balance = Decimal('0')
+                
                 user_wallet.save()
+                
+                unlocked_amount = locked_before - user_wallet.locked_balance
+                logger.info(f"Withdrawal {withdrawal_id} completed: {amount_to_withdraw} deducted (amount: {withdrawal.transaction.amount}, platform_fee: {withdrawal.transaction.fee}, gas: {gas_cost}). Unlocked: {unlocked_amount} (was locked: {locked_before}, original: {original_locked_amount})")
+
+                # Обновляем транзакцию
+                # ⚠️ КРИТИЧЕСКИ ВАЖНО: Сохраняем транзакцию в той же атомарной транзакции,
+                # чтобы сигнал не сработал преждевременно и не вернул средства
                 withdrawal.transaction.status = 'completed'
                 withdrawal.transaction.save()
+                
+                # Обновляем сам вывод
                 withdrawal.confirmation_date = timezone.now()
                 withdrawal.save()
+
+            logger.info(f"Successfully finalized withdrawal {withdrawal.id}.")
             return f"success:confirmed_and_completed"
         else:
             if self.request.retries >= self.max_retries:
@@ -740,6 +834,7 @@ def consolidate_funds():
                     continue
 
                 # Рассчитываем максимальную отправляемую сумму (баланс - газ)
+                gas_cost = Decimal('0')
                 if hasattr(service, 'get_max_sendable_amount'):
                     # Для POL используем умный расчёт газа
                     max_sendable = service.get_max_sendable_amount(u_wallet.deposit_address, system_wallet_address)
@@ -747,11 +842,13 @@ def consolidate_funds():
                         logger.warning(f"[CONSOLIDATE] Cannot consolidate for user {u_wallet.user.id}: insufficient balance after gas deduction")
                         continue
                     amount_to_send = max_sendable
-                    logger.info(f"[CONSOLIDATE] Smart gas calculation: sending {amount_to_send} {currency.symbol} (from balance {actual_balance})")
+                    gas_cost = actual_balance - max_sendable  # Рассчитываем стоимость газа
+                    logger.info(f"[CONSOLIDATE] Smart gas calculation: sending {amount_to_send} {currency.symbol} (from balance {actual_balance}, gas: {gas_cost})")
                 else:
                     # Fallback для других валют - вычитаем фиксированный резерв
                     gas_reserve = get_gas_reserve(currency)
                     amount_to_send = actual_balance - gas_reserve
+                    gas_cost = gas_reserve  # Используем резерв как оценку газа
                     if amount_to_send <= 0:
                         logger.warning(f"[CONSOLIDATE] Cannot consolidate for user {u_wallet.user.id}: insufficient balance after gas reserve")
                         continue
@@ -798,13 +895,27 @@ def consolidate_funds():
                             continue
 
                 # Отправляем средства на системный кошелек
-                # Передаём contract_address для токенов (иначе отправится нативная монета)
-                tx_hash = service.send_transaction(
-                    private_key=private_key,
-                    to_address=system_wallet_address,
-                    amount=amount_to_send,
-                    contract_address=contract_address,
-                )
+                # ⚠️ ВАЖНО: contract_address передаем только для TRC-20 и ERC-20 токенов
+                # Polygon (POL) не поддерживает contract_address в send_transaction
+                import inspect
+                sig = inspect.signature(service.send_transaction)
+                params = list(sig.parameters.keys())
+                
+                if 'contract_address' in params and contract_address:
+                    # Сервис поддерживает contract_address (Tron, Ethereum для ERC-20)
+                    tx_hash = service.send_transaction(
+                        private_key=private_key,
+                        to_address=system_wallet_address,
+                        amount=amount_to_send,
+                        contract_address=contract_address,
+                    )
+                else:
+                    # Для нативных валют (POL, ETH native, BTC) не передаем contract_address
+                    tx_hash = service.send_transaction(
+                        private_key=private_key,
+                        to_address=system_wallet_address,
+                        amount=amount_to_send,
+                    )
                 
                 logger.info(f"[CONSOLIDATE] Consolidation transaction sent for user {u_wallet.user.id}. Tx hash: {tx_hash}")
 
@@ -830,8 +941,19 @@ def consolidate_funds():
 
 @shared_task
 def sync_balances_with_blockchain():
-    logger.info("[BALANCE_SYNC] Starting balance synchronization...")
-    from .models import UserWallet
+    """
+    Синхронизирует балансы в базе данных с реальными балансами в блокчейне.
+    
+    ⚠️ ВАЖНО:
+    - Для системных кошельков: синхронизирует баланс с балансом в блокчейне
+    - Для пользовательских кошельков: синхронизирует ТОЛЬКО для валют С MEMO
+    - Для валют БЕЗ MEMO: НЕ синхронизирует, так как баланс пользователя в БД = зачисленные средства после консолидации,
+      а баланс на депозитном адресе = средства, которые еще не консолидированы
+    """
+    logger.info("[BALANCE_SYNC] Starting balance synchronization with blockchain...")
+    
+    from .models import UserWallet, Cryptocurrency
+    
     synced_count = 0
     error_count = 0
     system_wallets = UserWallet.objects.filter(is_system_wallet=True, currency__is_active=True)
@@ -850,4 +972,42 @@ def sync_balances_with_blockchain():
         except Exception as e:
             logger.error(f"[BALANCE_SYNC] Error syncing {wallet.currency.symbol}: {e}")
             error_count += 1
-    logger.info(f"[BALANCE_SYNC] Done. Synced: {synced_count}, Errors: {error_count}")
+    
+    # ⚠️ КРИТИЧЕСКИ ВАЖНО: Синхронизируем ТОЛЬКО кошельки валют С MEMO!
+    # Для валют БЕЗ MEMO баланс пользователя в БД - это зачисленные средства после консолидации,
+    # а баланс на депозитном адресе - это средства, которые еще не консолидированы.
+    # Синхронизация баланса пользователя с балансом депозитного адреса приведет к неправильному зачислению!
+    user_wallets = UserWallet.objects.filter(
+        is_system_wallet=False,
+        currency__is_active=True,
+        deposit_address__isnull=False,
+        currency__requires_memo=True  # ⚠️ ТОЛЬКО валюты с MEMO!
+    ).exclude(deposit_address='')
+    
+    logger.info(f"[BALANCE_SYNC] Found {user_wallets.count()} user wallets to sync (only MEMO currencies)")
+    
+    for wallet in user_wallets:
+        try:
+            service = get_blockchain_service(wallet.currency.network or wallet.currency.symbol)
+            # Для TRC-20 токенов передаем contract_address при получении баланса
+            contract_address = wallet.currency.contract_address if wallet.currency.network and wallet.currency.network.upper() == 'TRC20' else None
+            if contract_address:
+                real_balance = service.get_balance(wallet.deposit_address, contract_address=contract_address)
+            else:
+                real_balance = service.get_balance(wallet.deposit_address)
+            
+            if wallet.balance != real_balance:
+                old_balance = wallet.balance
+                wallet.balance = real_balance
+                wallet.save()
+                logger.info(f"[BALANCE_SYNC] User wallet {wallet.id} (User {wallet.user.id}, {wallet.currency.symbol}): {old_balance} → {real_balance}")
+                synced_count += 1
+            else:
+                logger.debug(f"[BALANCE_SYNC] User wallet {wallet.id} (User {wallet.user.id}, {wallet.currency.symbol}) already in sync: {real_balance}")
+                
+        except Exception as e:
+            logger.error(f"[BALANCE_SYNC] Error syncing user wallet {wallet.id} (User {wallet.user.id}, {wallet.currency.symbol}): {e}")
+            error_count += 1
+    
+    logger.info(f"[BALANCE_SYNC] Balance synchronization completed. Synced: {synced_count}, Errors: {error_count}")
+    return f"Synced {synced_count} wallets, {error_count} errors"

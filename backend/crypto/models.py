@@ -601,18 +601,25 @@ class GeneratedWallet(models.Model):
     def record_generated_wallet(cls, address: str, private_key: str, currency, network: str, 
                               user=None, wallet_type: str = 'user', created_by: str = '', notes: str = ''):
         """
-        Записывает сгенерированный кошелек в БД
+        Записывает сгенерированный кошелек в БД.
+        Использует get_or_create для предотвращения дубликатов адресов (race condition).
         """
-        return cls.objects.create(
+        wallet, created = cls.objects.get_or_create(
             address=address,
-            encrypted_private_key=private_key,
-            currency=currency,
-            network=network,
-            user=user,
-            wallet_type=wallet_type,
-            created_by=created_by,
-            notes=notes
+            defaults={
+                'encrypted_private_key': private_key,
+                'currency': currency,
+                'network': network,
+                'user': user,
+                'wallet_type': wallet_type,
+                'created_by': created_by,
+                'notes': notes
+            }
         )
+        if not created:
+            # Адрес уже существует - обновляем только если нужно
+            logger.debug(f"GeneratedWallet with address {address[:20]}... already exists, skipping duplicate creation")
+        return wallet
     
     @classmethod
     def get_wallet_by_address(cls, address: str):

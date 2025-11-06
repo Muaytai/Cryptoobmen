@@ -56,3 +56,6 @@ core/local_settings.py
 .env.production.local
 
 *.dat
+
+# Скрипт для генерации приватных ключей из seed
+get_private_key_from_seed.py
