@@ -241,7 +241,8 @@ def check_consolidation_confirmations():
                         old_address = user_wallet.deposit_address
                         if old_address:
                             blockchain_service = get_blockchain_service(tx.crypto.network or tx.crypto.symbol)
-                            new_address, private_key = blockchain_service.create_new_address()
+                            # Передаем user_id для корректной HD-генерации адреса (обязательно для TRON)
+                            new_address, private_key = blockchain_service.create_new_address(user_id=tx.user.id)
                             if not new_address or not private_key:
                                 raise ValueError(f"Blockchain service returned empty address or key")
                             user_wallet.deposit_address = new_address
@@ -383,6 +384,18 @@ def consolidate_user_deposits():
                         logger.info(f"\033[93m⚠️ Balance too small for consolidation\033[0m")
                         continue
 
+                    # Проверяем, нет ли уже pending консолидации для этого пользователя и валюты
+                    existing_pending_consolidation = Transaction.objects.filter(
+                        user=user_wallet.user,
+                        crypto=currency,
+                        type="consolidation",
+                        status="pending"
+                    ).first()
+                    
+                    if existing_pending_consolidation:
+                        logger.info(f"\033[93m⚠️ Skipping consolidation for user {user_wallet.user.id} and {currency.symbol}: already has pending consolidation (tx: {existing_pending_consolidation.tx_hash})")
+                        continue
+
                     system_wallet_address = get_system_wallet_address(currency)
 
                     if hasattr(blockchain_service, 'get_max_sendable_amount'):
@@ -479,8 +492,23 @@ def consolidate_user_deposits():
                     tx_hash = send_consolidation_transaction()
                     logger.info(f"\033[92m✅ Transaction sent: {tx_hash}\033[0m")
 
+                    # Проверяем, не существует ли уже транзакция с таким tx_hash
+                    if Transaction.objects.filter(tx_hash=tx_hash).exists():
+                        logger.warning(f"\033[93m⚠️ Transaction with hash {tx_hash} already exists in DB. Skipping creation.")
+                        continue
+
                     consolidation_amount_to_save = amount_to_send if currency.symbol != 'BTC' else blockchain_balance
                     with transaction.atomic():
+                        # Дополнительная проверка внутри транзакции для защиты от race condition
+                        if Transaction.objects.filter(
+                            user=user_wallet.user,
+                            crypto=currency,
+                            type="consolidation",
+                            status="pending"
+                        ).exists():
+                            logger.warning(f"\033[93m⚠️ Pending consolidation already exists for user {user_wallet.user.id} and {currency.symbol}. Skipping creation.")
+                            continue
+                            
                         Transaction.objects.create(
                             user=user_wallet.user,
                             crypto=currency,
