@@ -46,7 +46,6 @@ export const AddWalletForm = () => {
     {value: "eth", label: "Ethereum", icon: "/images/profile/ethereum.svg"},
     {value: "lte", label: "Litecoin", icon: "/images/profile/litecoin.svg"},
     {value: "usdt_trc20", label: "USDT (TRC20)", icon: "/images/profile/vector-usdt.svg",},
-    {value: "usdt_erc20", label: "USDT (ERC20)", icon: "/images/profile/vector-usdt.svg",},
     {value: "usdt_bep20", label: "USDT (BEP20)", icon: "/images/profile/vector-usdt.svg",},
     {value: "toncoin", label: "Toncoin", icon: "/images/profile/toncoin.svg",},
   ];
