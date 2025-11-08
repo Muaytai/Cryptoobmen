@@ -15,10 +15,6 @@ class Command(BaseCommand):
                 'contract_address': 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj', 'decimals': 6
             },
             {
-                'name': 'Tether USD', 'symbol': 'USDT', 'network': 'ERC20', 'coingecko_id': 'tether',
-                'contract_address': '0xdac17f958d2ee523a2206206994597c13d831ec7', 'decimals': 6
-            },
-            {
                 'name': 'Bitcoin', 'symbol': 'BTC', 'network': 'BTC', 'coingecko_id': 'bitcoin',
                 'contract_address': '', 'decimals': 8
             },
