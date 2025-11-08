@@ -38,6 +38,10 @@ class Command(BaseCommand):
                 'name': 'Binance Coin', 'symbol': 'BNB', 'network': 'BEP20', 'coingecko_id': 'binancecoin',
                 'contract_address': '', 'decimals': 18
             },
+
+            {'name':'Ripple', 'symbol':'XRP', 'network':'XRP', 
+            'coingecko_id':'ripple', 'contract_address':'','decimals':6
+            }
         ]
 
         # Сначала проверяем существующие валюты и обновляем их поля network, если они null
