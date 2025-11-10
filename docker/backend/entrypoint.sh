@@ -44,6 +44,15 @@ while True:
         time.sleep(2)
 "
 
+# Выполняем миграции и сбор статических файлов (только для продакшена)
+# Проверяем, не является ли это командой celery
+if echo "$@" | grep -qv "celery"; then
+    echo "Running migrations..."
+    python manage.py migrate --noinput || echo "Migration failed, continuing..."
+    
+    echo "Collecting static files..."
+    python manage.py collectstatic --noinput || echo "Collectstatic failed, continuing..."
+fi
 
 # Запускаем команду, переданную в docker-compose
 echo "Executing command: $@"
