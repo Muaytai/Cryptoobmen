@@ -500,6 +500,94 @@ def consolidate_user_deposits():
                     # Для TRC-20 токенов передаем contract_address
                     contract_address_for_send = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
                     
+                    # ⚠️ ВАЖНО: Для TRC-20 токенов проверяем наличие TRX для оплаты газа
+                    # Если TRX недостаточно, отправляем TRX с системного кошелька
+                    if currency.network and currency.network.upper() == 'TRC20':
+                        # Получаем баланс TRX на адресе пользователя (без contract_address для нативного TRX)
+                        trx_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                        min_trx_for_gas = Decimal('3')  # Минимум TRX для оплаты газа
+                        
+                        logger.info(f"\033[94m💎 TRX balance on address: {trx_balance} TRX (minimum required: {min_trx_for_gas} TRX)\033[0m")
+                        
+                        if trx_balance < min_trx_for_gas:
+                            logger.warning(f"\033[93m⚠️ Insufficient TRX ({trx_balance} TRX) for gas on address {user_wallet.deposit_address}. Need to send TRX from system wallet.\033[0m")
+                            
+                            # Получаем системный TRX кошелек
+                            try:
+                                from .models import SystemWalletAddress
+                                trx_currency = Cryptocurrency.objects.get(symbol='TRX', network='TRC20')
+                                system_trx_wallet = SystemWalletAddress.objects.get(currency=trx_currency)
+                                
+                                # Проверяем баланс системного TRX кошелька
+                                system_trx_balance = blockchain_service.get_balance(system_trx_wallet.address)
+                                logger.info(f"\033[94m💎 System TRX wallet balance: {system_trx_balance} TRX\033[0m")
+                                
+                                # Рассчитываем необходимую сумму TRX для отправки
+                                trx_amount_needed = min_trx_for_gas - trx_balance
+                                
+                                # Добавляем небольшой запас для надежности
+                                trx_amount_to_send = trx_amount_needed + Decimal('1')
+                                
+                                # ⚠️ ВАЖНО: Учитываем комиссию за транзакцию TRX (обычно ~0.00001 TRX, но берем запас)
+                                trx_transaction_fee = Decimal('0.1')  # Запас для комиссии транзакции TRX
+                                total_trx_needed = trx_amount_to_send + trx_transaction_fee
+                                
+                                logger.info(f"\033[94m💸 Need to send {trx_amount_to_send} TRX + {trx_transaction_fee} TRX (fee) = {total_trx_needed} TRX total\033[0m")
+                                
+                                # Проверяем, достаточно ли TRX на системном кошельке
+                                if system_trx_balance < total_trx_needed:
+                                    logger.error(f"\033[91m❌ Insufficient TRX on system wallet! Balance: {system_trx_balance} TRX, needed: {total_trx_needed} TRX\033[0m")
+                                    logger.error(f"\033[91m❌ Cannot send TRX for gas payment. Please top up system TRX wallet.\033[0m")
+                                    continue
+                                
+                                # Отправляем TRX для оплаты газа
+                                trx_service = get_blockchain_service('TRC20')
+                                
+                                logger.info(f"\033[94m💸 Sending {trx_amount_to_send} TRX from system wallet ({system_trx_wallet.address}) to {user_wallet.deposit_address} for gas payment\033[0m")
+                                
+                                # Используем приватный ключ системного TRX кошелька
+                                system_trx_private_key = system_trx_wallet.private_key
+                                
+                                @retry_on_rpc_error(max_retries=3, delay=2, backoff=2)
+                                def send_trx_for_gas():
+                                    return trx_service.send_transaction(
+                                        private_key=system_trx_private_key,
+                                        to_address=user_wallet.deposit_address,
+                                        amount=trx_amount_to_send,
+                                    )
+                                
+                                gas_tx_hash = send_trx_for_gas()
+                                logger.info(f"\033[92m✅ TRX gas payment sent successfully: {gas_tx_hash}\033[0m")
+                                
+                                # Ждем подтверждения TRX транзакции
+                                logger.info(f"\033[94m⏳ Waiting 10 seconds for TRX transaction confirmation...\033[0m")
+                                time.sleep(10)  # Ждем 10 секунд для подтверждения
+                                
+                                # Проверяем, что TRX действительно поступил
+                                new_trx_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                                logger.info(f"\033[94m💎 New TRX balance after transfer: {new_trx_balance} TRX\033[0m")
+                                
+                                if new_trx_balance < min_trx_for_gas:
+                                    logger.warning(f"\033[93m⚠️ TRX balance still insufficient after transfer. Waiting additional 10 seconds...\033[0m")
+                                    time.sleep(10)
+                                    new_trx_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                                    logger.info(f"\033[94m💎 TRX balance after additional wait: {new_trx_balance} TRX\033[0m")
+                                
+                            except Cryptocurrency.DoesNotExist:
+                                logger.error(f"\033[91m❌ TRX currency not found in database. Cannot send TRX for gas payment.\033[0m")
+                                continue
+                            except SystemWalletAddress.DoesNotExist:
+                                logger.error(f"\033[91m❌ System TRX wallet not found. Cannot send TRX for gas payment.\033[0m")
+                                continue
+                            except Exception as gas_error:
+                                import traceback
+                                error_trace = traceback.format_exc()
+                                logger.error(f"\033[91m❌ Failed to send TRX for gas payment: {gas_error}\033[0m")
+                                logger.error(f"\033[91m❌ Traceback: {error_trace}\033[0m")
+                                continue
+                        else:
+                            logger.info(f"\033[92m✅ Sufficient TRX balance ({trx_balance} TRX) for gas payment\033[0m")
+                    
                     @retry_on_rpc_error(max_retries=3, delay=2, backoff=2)
                     def send_consolidation_transaction():
                         # ⚠️ ВАЖНО: contract_address передаем только для TRC-20 и ERC-20 токенов
