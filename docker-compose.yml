@@ -11,8 +11,15 @@ services:
       - static_volume:/usr/share/nginx/static
       - media_volume:/usr/share/nginx/media
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - cryptoobmen_network
 
@@ -26,6 +33,17 @@ services:
       - media_volume:/app/media
     env_file:
       - ./backend/.env.backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8000)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - cryptoobmen_network
 
@@ -38,12 +56,39 @@ services:
     command: npm start
     environment:
       - NODE_OPTIONS=--max-old-space-size=4096
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cryptoobmen_network
+
+  postgres:
+    container_name: cryptoobmen-postgres
+    restart: always
+    image: postgres:17.4
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ./backend/.env.backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - cryptoobmen_network
 
   redis:
     image: redis:7-alpine
     restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - cryptoobmen_network
 
@@ -55,8 +100,12 @@ services:
     env_file:
       - ./backend/.env.backend
     depends_on:
-      - backend
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     networks:
       - cryptoobmen_network
 
@@ -68,8 +117,12 @@ services:
     env_file:
       - ./backend/.env.backend
     depends_on:
-      - backend
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     networks:
       - cryptoobmen_network
 
@@ -80,3 +133,5 @@ networks:
 volumes:
   static_volume:
   media_volume:
+  postgres_data:
+    name: cryptoobmen_postgres_data

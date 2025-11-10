@@ -4,6 +4,7 @@ FROM nginx:1.23
 RUN apt-get update && apt-get install -y \
     apache2-utils \
     openssl \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Аргументы для учетных данных
