@@ -32,7 +32,6 @@ RPC_ENDPOINTS = {
     "devnet": f"https://devnet.helius-rpc.com/?api-key={HELIUS_API_KEY}",
 }
 
-
 from solana.rpc.types import TxOpts
 from typing import Optional
 from requests.exceptions import Timeout, ConnectionError

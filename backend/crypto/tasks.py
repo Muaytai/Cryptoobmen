@@ -499,8 +499,14 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
             'private_key': system_wallet.encrypted_private_key,
             'to_address': withdrawal.destination_address,
             'amount': amount_to_send,
-            'memo': f"withdrawal_{withdrawal.id}"
         }
+
+        memo_value = None
+        if getattr(crypto, 'requires_memo', False) and crypto.symbol.upper() != 'XRP':
+            memo_value = withdrawal.memo or f"withdrawal_{withdrawal.id}"
+
+        if memo_value:
+            tx_kwargs['memo'] = memo_value
         if network.upper() in ('ERC20', 'TRC20'):
             tx_kwargs['contract_address'] = crypto.contract_address
         tx_hash = service.send_transaction(**tx_kwargs)

@@ -19,7 +19,6 @@ from transactions.models import Transaction
 logger = get_task_logger(__name__)
 logger.setLevel(logging.DEBUG)
 
-
 def retry_on_rpc_error(max_retries=3, delay=2, backoff=2):
     """
     Декоратор для повторных попыток при ошибках RPC
@@ -58,7 +57,6 @@ def retry_on_rpc_error(max_retries=3, delay=2, backoff=2):
             
         return wrapper
     return decorator
-
 
 def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
     """Минимальная сумма для консолидации в зависимости от валюты"""
@@ -121,7 +119,6 @@ def get_system_wallet_address(currency: Cryptocurrency) -> str:
             return system_wallet.deposit_address
         except UserWallet.DoesNotExist:
             raise Exception(f"System wallet not found for {currency.symbol}")
-
 
 @shared_task
 def check_consolidation_confirmations():
@@ -279,7 +276,6 @@ def check_consolidation_confirmations():
     logger.info(f"\033[94m" + "="*60 + "\033[0m")
     
     return f"Checked consolidation confirmations: {confirmed} confirmed"
-
 
 @shared_task
 def consolidate_user_deposits():
