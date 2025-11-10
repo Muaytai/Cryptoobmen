@@ -1,7 +1,9 @@
-<<<<<<< HEAD
 from __future__ import absolute_import, unicode_literals
 import os
+import logging
 from celery import Celery
+from celery.utils.log import get_task_logger
+
 
 
 # Имя настроечного модуля Django берём из переменной окружения
@@ -24,12 +26,8 @@ app.autodiscover_tasks(['crypto'], related_name='tasks_consolidation')
 def debug_task(self):
     """Простейшая задача для проверки работоспособности Celery."""
     print(f"Request: {self.request!r}")
-=======
-from __future__ import absolute_import, unicode_literals
-import os
-import logging
-from celery import Celery
-from celery.utils.log import get_task_logger
+
+
 
 
 # Имя настроечного модуля Django берём из переменной окружения
@@ -74,4 +72,4 @@ app.autodiscover_tasks(['crypto'], related_name='tasks_consolidation')
 def debug_task(self):
     """Простейшая задача для проверки работоспособности Celery."""
     print(f"Request: {self.request!r}")
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
+

@@ -1,26 +1,16 @@
-<<<<<<< HEAD
-
-=======
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
 """
 Задачи консолидации средств - вспомогательные функции и проверка подтверждений
 """
 from __future__ import annotations
 
 import logging
-<<<<<<< HEAD
-=======
 import time
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
 from decimal import Decimal
 from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.utils import timezone
 from django.db import transaction
-<<<<<<< HEAD
-=======
 from functools import wraps
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
 
 from .models import UserWallet, Cryptocurrency
 from .blockchain.factory import get_blockchain_service
@@ -29,9 +19,6 @@ from transactions.models import Transaction
 logger = get_task_logger(__name__)
 logger.setLevel(logging.DEBUG)
 
-
-<<<<<<< HEAD
-=======
 def retry_on_rpc_error(max_retries=3, delay=2, backoff=2):
     """
     Декоратор для повторных попыток при ошибках RPC
@@ -71,18 +58,12 @@ def retry_on_rpc_error(max_retries=3, delay=2, backoff=2):
         return wrapper
     return decorator
 
-
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
 def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
     """Минимальная сумма для консолидации в зависимости от валюты"""
     minimums = {
         'POL': Decimal('0.01'),    # Снижено - теперь используем динамический расчёт газа
         'BTC': Decimal('0.0001'),
-<<<<<<< HEAD
-        'ETH': Decimal('0.01'),
-=======
         'ETH': Decimal('0.0001'),
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
         'TRX': Decimal('10'),
         'USDT': Decimal('10'),     # Добавлено для USDT TRC-20
     }
@@ -139,15 +120,9 @@ def get_system_wallet_address(currency: Cryptocurrency) -> str:
         except UserWallet.DoesNotExist:
             raise Exception(f"System wallet not found for {currency.symbol}")
 
-
 @shared_task
 def check_consolidation_confirmations():
     """
-<<<<<<< HEAD
-    Проверяет подтверждения транзакций консолидации в блокчейне.
-    """
-    logger.info("Checking consolidation confirmations...")
-=======
     ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ФУНКЦИЯ: Проверяет подтверждения транзакций консолидации в блокчейне.
     
     ВАЖНО ДЛЯ АГЕНТОВ:
@@ -160,7 +135,6 @@ def check_consolidation_confirmations():
     logger.info("\033[94m" + "="*60 + "\033[0m")
     logger.info("\033[94m🔍 [CONFIRMATION] Starting consolidation confirmations check...\033[0m")
     logger.info(f"\033[94m⏰ Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\033[0m")
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
     
     # Находим все ожидающие подтверждения консолидации
     pending_consolidations = Transaction.objects.filter(
@@ -168,32 +142,11 @@ def check_consolidation_confirmations():
         status="pending"
     )
     
-<<<<<<< HEAD
-=======
     logger.info(f"\033[94m📋 Found {pending_consolidations.count()} pending consolidation transactions\033[0m")
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
     confirmed = 0
     
     for tx in pending_consolidations:
         try:
-<<<<<<< HEAD
-            service = get_blockchain_service(tx.crypto.network or tx.crypto.symbol)
-            
-            # Проверяем подтверждение транзакции
-            is_confirmed = service.is_transaction_confirmed(tx.tx_hash)
-            
-            if is_confirmed:
-                with transaction.atomic():
-                    # Обновляем статус транзакции
-                    tx.status = "completed"
-                    tx.save()
-                    
-                    # КОНСОЛИДАЦИЯ НЕ СПИСЫВАЕТ средства с баланса пользователя!
-                    # Это внутренний перевод для безопасности, средства остаются у пользователя
-                    # Списываем только реальные комиссии (газ + платформенные)
-                    
-                    # Получаем кошелек пользователя для списания комиссий
-=======
             logger.info(f"\033[94m🔍 Checking confirmation for tx: {tx.tx_hash[:16]}... ({tx.crypto.symbol})\033[0m")
             service = get_blockchain_service(tx.crypto.network or tx.crypto.symbol)
             
@@ -212,44 +165,12 @@ def check_consolidation_confirmations():
                     tx.save()
                     
                     # Получаем кошелек пользователя
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
                     user_wallet = UserWallet.objects.get(
                         user=tx.user,
                         currency=tx.crypto,
                         is_system_wallet=False
                     )
                     
-<<<<<<< HEAD
-                    # Рассчитываем реальные комиссии
-                    gas_fee = tx.fee if tx.fee else Decimal('0')  # Комиссия за газ (уже записана в транзакции)
-                    platform_fee = Decimal('0')  # TODO: Платформенная комиссия (будет реализована позже)
-                    total_fees = gas_fee + platform_fee
-                    
-                    # Списываем только комиссии с баланса пользователя
-                    if total_fees > 0:
-                        user_wallet.balance -= total_fees
-                        user_wallet.available_balance = user_wallet.balance - user_wallet.locked_balance
-                        user_wallet.save()
-                        logger.info(f"Deducted fees from user {tx.user.id}: gas={gas_fee}, platform={platform_fee}, total={total_fees}")
-                        
-                        # Обновляем баланс пользователя с учетом зачисленного депозита минус газ
-                        # Депозит уже был зачислен ранее, теперь списываем только газ
-                        logger.info(f"User {tx.user.id} balance after consolidation: {user_wallet.balance} {tx.crypto.symbol} (deposit: {tx.amount}, gas deducted: {gas_fee})")
-                    
-                    logger.info(f"Consolidation confirmed: {tx.tx_hash} for {tx.amount} {tx.crypto.symbol} - funds secured, user balance preserved (fees: {total_fees})")
-                    confirmed += 1
-                    
-                    # ПРИМЕЧАНИЕ: Новый адрес уже сгенерирован при отправке консолидации в process_pending_deposits
-                    # Здесь генерация адреса больше не нужна
-                    
-        except Exception as e:
-            logger.error(f"Error checking consolidation confirmation for {tx.tx_hash}: {e}")
-            continue
-    
-    logger.info(f"Consolidation confirmations checked. Confirmed: {confirmed}")
-    return f"Checked consolidation confirmations: {confirmed} confirmed"
-
-=======
                     # ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ЛОГИКА ЗАЧИСЛЕНИЯ ПОСЛЕ КОНСОЛИДАЦИИ:
                     # Зачисляем пользователю РЕАЛЬНУЮ сумму, которая была консолидирована (tx.amount)
                     # Это amount_to_send из consolidate_user_deposits - вся сумма с блокчейна минус газ
@@ -355,7 +276,6 @@ def check_consolidation_confirmations():
     logger.info(f"\033[94m" + "="*60 + "\033[0m")
     
     return f"Checked consolidation confirmations: {confirmed} confirmed"
-
 
 @shared_task
 def consolidate_user_deposits():
@@ -656,4 +576,3 @@ def consolidate_user_deposits():
     
     return f"Consolidation completed: {processed} transactions"
 
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801

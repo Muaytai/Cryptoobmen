@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 
 from django.db import models
 from django.conf import settings
@@ -518,7 +518,7 @@ class GeneratedWallet(models.Model):
         except Exception:
             return False
 
-=======
+
 
 from django.db import models
 from django.conf import settings
@@ -1164,4 +1164,3 @@ class GeneratedWallet(models.Model):
         except Exception:
             return False
 
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801

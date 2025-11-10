@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 
 from pathlib import Path
 import os
@@ -651,7 +651,7 @@ else:  # testnet/amoy
 POLYGON_GAS_PRICE_MULTIPLIER = float(os.getenv('POLYGON_GAS_PRICE_MULTIPLIER', '1.1'))
 POLYGON_MAX_GAS_PRICE = int(os.getenv('POLYGON_MAX_GAS_PRICE', '50'))  # В Gwei
 
-=======
+
 
 from pathlib import Path
 import os
@@ -1317,5 +1317,5 @@ else:  # testnet/amoy
 POLYGON_GAS_PRICE_MULTIPLIER = float(os.getenv('POLYGON_GAS_PRICE_MULTIPLIER', '1.1'))
 POLYGON_MAX_GAS_PRICE = int(os.getenv('POLYGON_MAX_GAS_PRICE', '50'))  # В Gwei
 
->>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801
+
 POLYGON_GAS_LIMIT = int(os.getenv('POLYGON_GAS_LIMIT', '21000'))  # Для POL транзакций

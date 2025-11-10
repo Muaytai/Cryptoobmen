@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from crypto.models import Cryptocurrency, SystemWalletAddress
+from crypto.models import Cryptocurrency, SystemWalletAddress, UserWallet
 from crypto.blockchain.xrp import XRPService
 
 class Command(BaseCommand):
@@ -65,8 +65,29 @@ class Command(BaseCommand):
             self.stdout.write(f"   - Адрес: {system_address.address}")
             self.stdout.write(f"   - Сеть: {system_address.network}")
             self.stdout.write(f"   - Валюта: {system_address.currency.symbol}")
+
+            # 5. Обновляем/создаем системный кошелек для вывода
+            system_wallet, wallet_created = UserWallet.objects.get_or_create(
+                user=None,
+                currency=xrp_currency,
+                is_system_wallet=True,
+                defaults={
+                    'balance': 0,
+                    'available_balance': 0,
+                    'locked_balance': 0,
+                }
+            )
+
+            system_wallet.deposit_address = address
+            system_wallet.encrypted_private_key = private_key
+            system_wallet.save(update_fields=['deposit_address', 'encrypted_private_key'])
+
+            if wallet_created:
+                self.stdout.write(self.style.SUCCESS("✅ Создан системный кошелек XRP для вывода"))
+            else:
+                self.stdout.write(self.style.SUCCESS("✅ Обновлен системный кошелек XRP для вывода"))
             
-            # 5. Проверяем баланс
+            # 6. Проверяем баланс
             try:
                 balance = service.get_balance(address)
                 self.stdout.write(f"   - Баланс: {balance} XRP")
