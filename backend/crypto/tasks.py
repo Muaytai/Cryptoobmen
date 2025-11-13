@@ -126,12 +126,23 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
             wallet = address_to_wallet[address]
 
             from transactions.models import Transaction
+            from datetime import timedelta
             last_tx = Transaction.objects.filter(
                 user=wallet.user,
                 crypto=currency,
                 tx_hash__isnull=False
             ).order_by("-timestamp").first()
-            min_ts = int(last_tx.timestamp.timestamp() * 1000) if last_tx else 0
+
+            if last_tx:
+                # Используем расширенное окно времени (24 часа назад) для TRC-20 и ERC-20
+                # чтобы не пропустить транзакции, которые могли быть обработаны вне очереди
+                if currency.network and currency.network.upper() in ('ERC20', 'TRC20'):
+                    widened_time = last_tx.timestamp - timedelta(hours=24)
+                    min_ts = int(widened_time.timestamp() * 1000)
+                else:
+                    min_ts = int(last_tx.timestamp.timestamp() * 1000)
+            else:
+                min_ts = 0
 
             active_addresses.append(address)
 
@@ -376,6 +387,7 @@ def check_blockchain_deposits():
                     gas_cost = Decimal('0')
                     if not currency.requires_memo:
                         deposit_info = calculate_net_deposit_amount(currency=currency, deposit_amount=amount, user_address=address)
+                        net_amount = deposit_info['net_amount']
                         gas_cost = deposit_info['gas_cost']
 
                     with transaction.atomic():

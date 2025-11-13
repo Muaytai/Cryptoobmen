@@ -354,11 +354,11 @@ def consolidate_user_deposits():
                 continue
                 
             # Получаем все пользовательские кошельки с балансом на блокчейне
+            # Включаем кошельки с encrypted_private_key или с ключом в GeneratedWallet
             user_wallets = UserWallet.objects.filter(
                 currency=currency,
                 is_system_wallet=False,
-                deposit_address__isnull=False,
-                encrypted_private_key__isnull=False  # Только кошельки с приватными ключами
+                deposit_address__isnull=False
             ).exclude(deposit_address='')
             
             logger.info(f"\033[94m👥 Found {user_wallets.count()} user wallets for {currency.symbol}\033[0m")
@@ -370,6 +370,18 @@ def consolidate_user_deposits():
             for user_wallet in user_wallets:
                 try:
                     logger.info(f"\033[94m👤 Processing user {user_wallet.user.id} wallet: {user_wallet.deposit_address[:10]}...\033[0m")
+                    
+                    # Проверяем наличие приватного ключа (либо в encrypted_private_key, либо в GeneratedWallet)
+                    private_key_input = user_wallet.encrypted_private_key or ""
+                    if not private_key_input:
+                        from .models import GeneratedWallet
+                        gw = GeneratedWallet.objects.filter(address=user_wallet.deposit_address).first()
+                        if gw and gw.private_key:
+                            private_key_input = gw.private_key
+                            logger.info(f"\033[94m🔑 Found private key in GeneratedWallet for {user_wallet.deposit_address[:10]}...\033[0m")
+                        else:
+                            logger.warning(f"\033[93m⚠️ No private key found for wallet {user_wallet.deposit_address[:10]}... (neither in encrypted_private_key nor in GeneratedWallet), skipping\033[0m")
+                            continue
                     
                     # ⚠️ КРИТИЧЕСКИ ВАЖНО: Кошелек одноразовый, нужно ОПУСТОШИТЬ его максимально!
                     # Используем точный расчет максимальной суммы через get_max_sendable_amount или аналогичный метод
@@ -650,7 +662,7 @@ def consolidate_user_deposits():
                         if 'contract_address' in params and contract_address_for_send:
                             # Сервис поддерживает contract_address (Tron, Ethereum для ERC-20)
                             return blockchain_service.send_transaction(
-                                private_key=user_wallet.encrypted_private_key,
+                                private_key=private_key_input,
                                 to_address=system_wallet_address,
                                 amount=amount_to_send,
                                 memo=f"consolidation_{user_wallet.user_id}",
@@ -659,7 +671,7 @@ def consolidate_user_deposits():
                         else:
                             # Для нативных валют (POL, ETH native, BTC) не передаем contract_address
                             return blockchain_service.send_transaction(
-                                private_key=user_wallet.encrypted_private_key,
+                                private_key=private_key_input,
                                 to_address=system_wallet_address,
                                 amount=amount_to_send,
                                 memo=f"consolidation_{user_wallet.user_id}"

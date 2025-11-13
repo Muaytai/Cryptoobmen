@@ -12,7 +12,7 @@ class Command(BaseCommand):
         currencies = [
             {
                 'name': 'Tether USD', 'symbol': 'USDT', 'network': 'TRC20', 'coingecko_id': 'tether',
-                'contract_address': 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj', 'decimals': 6
+                'contract_address': 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf', 'decimals': 6  # Nile testnet USDT contract
             },
             {
                 'name': 'Bitcoin', 'symbol': 'BTC', 'network': 'BTC', 'coingecko_id': 'bitcoin',
