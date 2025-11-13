@@ -167,6 +167,7 @@ REST_FRAMEWORK = {
         'login': os.getenv('THROTTLE_LOGIN_RATE', '5/minute'),
         'register': os.getenv('THROTTLE_REGISTER_RATE', '10/hour'),
         'dj_rest_auth': '5/minute',
+
     }
 }
 
@@ -179,12 +180,14 @@ BLOCKCYPHER_API_KEY = os.getenv('BLOCKCYPHER_API_KEY', '')
 # TRON Network configuration
 TRON_NETWORK = os.getenv('TRON_NETWORK', 'mainnet') # По умолчанию mainnet
 
+
 # URL TronGrid берём из переменной окружения, с умным дефолтом по сети
 if TRON_NETWORK == 'nile':
     TRON_API_URL = os.getenv('TRON_API_URL', 'https://nile.trongrid.io')
     USDT_CONTRACT_ADDRESS = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'
 else: # mainnet
     TRON_API_URL = os.getenv('TRON_API_URL', 'https://api.trongrid.io')
+
     USDT_CONTRACT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 
 USDT_TRC20_CONTRACT_ADDRESS = os.getenv("USDT_TRC20_CONTRACT_ADDRESS", "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj")
@@ -282,6 +285,19 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+
+# ----------------- Email Configuration -----------------
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+=======
+
 # Настройки аутентификации
 AUTHENTICATION_BACKENDS = (
     'django.contrib.auth.backends.ModelBackend',
@@ -355,20 +371,12 @@ LOGGING = {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
             'style': '{',
         },
-        'colored': {
-            '()': 'core.colored_formatter.ColoredFormatter',
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
+
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'colored',
-        },
-        'colored_console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'colored',
+
         },
         'file': {
             'class': 'logging.FileHandler',
@@ -382,27 +390,31 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers': ['console'],
+
             'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
             'propagate': True,
         },
         'accounts': {
-            'handlers': ['console'],
+
             'level': 'INFO',
             'propagate': True,
         },
         'crypto': {
+
             'handlers': ['colored_console'],
             'level': 'INFO',
             'propagate': True,
         },
         'crypto.tasks_consolidation': {
             'handlers': ['colored_console'],
+
             'level': 'INFO',
             'propagate': True,
         },
         'transactions': {
+
             'handlers': ['console'],
+
             'level': 'INFO',
             'propagate': True,
         },
@@ -457,7 +469,9 @@ REST_AUTH = {
 ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'http'
+
 ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
+
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
@@ -466,7 +480,9 @@ ACCOUNT_EMAIL_CONFIRMATION_HMAC = True
 
 # Новые настройки для allauth 65.11.0+
 ACCOUNT_LOGIN_METHODS = ['email']
+
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1']
+
 ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 
 # Устаревшие настройки заменены на новые
@@ -543,11 +559,13 @@ CELERY_TASK_ROUTES = {
     'crypto.tasks_consolidation.consolidate_user_deposits': {'queue': 'medium_priority'},
     'crypto.tasks_consolidation.check_consolidation_confirmations': {'queue': 'medium_priority'},
     
+
     # Обработка депозитов - средний приоритет (запускает консолидацию)
     'crypto.tasks.process_pending_deposits': {'queue': 'medium_priority'},
     
     # Фоновое сканирование - низкий приоритет
     'crypto.tasks.check_blockchain_deposits': {'queue': 'low_priority'},
+
     'crypto.tasks.process_pending_withdrawals': {'queue': 'low_priority'},
     'crypto.tasks.sync_balances_with_blockchain': {'queue': 'low_priority'},
 }
@@ -560,6 +578,7 @@ CELERY_TASK_DEFAULT_PRIORITY = 5
 # Настройки производительности
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Обрабатывать по одной задаче за раз
 CELERY_TASK_ACKS_LATE = True  # Подтверждать выполнение только после завершения
+
 
 # Настройки логирования Celery
 CELERY_WORKER_LOG_FORMAT = '🔵 [%(asctime)s: %(levelname)s/%(processName)s] %(message)s'
@@ -583,6 +602,7 @@ CELERY_TASK_LOG_LEVEL = 'INFO'
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
 
+
 # Периодические задачи
 from celery.schedules import crontab
 
@@ -595,17 +615,33 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'crypto.tasks.process_pending_withdrawals',
         'schedule': 60.0,
     },
-    'consolidate-funds-every-5-minutes': {
-        'task': 'crypto.tasks.consolidate_funds',
+
+    'process-pending-deposits-every-minute': {
+        'task': 'crypto.tasks.process_pending_deposits',
+        'schedule': 60.0,
+    },
+    'consolidate-user-deposits-every-5-minutes': {
+        'task': 'crypto.tasks_consolidation.consolidate_user_deposits',
+
         'schedule': 300.0,  # 5 минут
     },
     'check-consolidation-confirmations-every-minute': {
         'task': 'crypto.tasks_consolidation.check_consolidation_confirmations',
         'schedule': 60.0,
     },
+
+    'consolidate_funds_every_5_minutes': {
+        'task': 'crypto.tasks.consolidate_funds',
+        'schedule': 300.0,  # 300 секунд = 5 минут
+    },
+    'sync-system-wallet-balances-every-2-minutes': {
+        'task': 'crypto.tasks.sync_balances_with_blockchain',
+        'schedule': 120.0,  # 120 секунд = 2 минуты
+
     'sync-balances-every-5-minutes': {
         'task': 'crypto.tasks.sync_balances_with_blockchain',
         'schedule': 300.0,  # 5 минут
+
     },
 }
 
@@ -638,6 +674,7 @@ INFURA_PROJECT_ID = os.getenv('INFURA_PROJECT_ID', '')
 ALCHEMY_API_KEY = os.getenv('ALCHEMY_API_KEY', '')
 
 # Ethereum контракты
+
 USDC_ERC20_CONTRACT_ADDRESS = os.getenv('USDC_ERC20_CONTRACT_ADDRESS', '0xA0b86a33E6441b8C4505B8C4505B8C4505B8C4505')
 DAI_ERC20_CONTRACT_ADDRESS = os.getenv('DAI_ERC20_CONTRACT_ADDRESS', '0x6B175474E89094C44Da98b954EedeAC495271d0F')
 
@@ -647,12 +684,22 @@ ETHEREUM_MAX_GAS_PRICE = int(os.getenv('ETHEREUM_MAX_GAS_PRICE', '100'))  # Ма
 ETHEREUM_GAS_LIMIT_ETH = int(os.getenv('ETHEREUM_GAS_LIMIT_ETH', '21000'))  # Лимит газа для ETH
 ETHEREUM_GAS_LIMIT_ERC20 = int(os.getenv('ETHEREUM_GAS_LIMIT_ERC20', '65000'))  # Лимит газа для ERC-20
 
+
+# BSC (Binance Smart Chain) настройки
+BSC_NETWORK = os.getenv('BSC_NETWORK', 'testnet')  # mainnet или testnet
+BSC_TESTNET_RPC_URL = os.getenv('BSC_TESTNET_RPC_URL', 'https://data-seed-prebsc-1-s1.binance.org:8545/')
+BSC_RPC_URL = os.getenv('BSC_RPC_URL', 'https://bsc-dataseed.binance.org')  # mainnet RPC
+BSCSCAN_API_KEY = os.getenv('BSCSCAN_API_KEY', '')  # Получить на https://bscscan.com/apis
+
+
 # Polygon настройки (только нативная валюта POL)
 POLYGON_NETWORK = os.getenv('POLYGON_NETWORK', 'testnet')  # mainnet, amoy (testnet)
 
 # Выбираем правильный RPC URL в зависимости от сети
 if POLYGON_NETWORK == 'mainnet':
+
     POLYGON_RPC_URL = os.getenv('POLYGON_RPC_URL', 'https://polygon-amoy-public.nodies.app')
+
     POLYGON_BACKUP_RPC_URL = os.getenv('POLYGON_BACKUP_RPC_URL', 'https://rpc-mainnet.maticvigil.com')
 else:  # testnet/amoy
     POLYGON_RPC_URL = os.getenv('POLYGON_TESTNET_RPC_URL', 'https://rpc-amoy.polygon.technology')
@@ -663,4 +710,6 @@ POLYGON_GAS_PRICE_MULTIPLIER = float(os.getenv('POLYGON_GAS_PRICE_MULTIPLIER', '
 POLYGON_MAX_GAS_PRICE = int(os.getenv('POLYGON_MAX_GAS_PRICE', '50'))  # В Gwei
 
 
+
 POLYGON_GAS_LIMIT = int(os.getenv('POLYGON_GAS_LIMIT', '21000'))  # Для POL транзакций
+

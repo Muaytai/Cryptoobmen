@@ -171,6 +171,9 @@ def check_consolidation_confirmations():
                         is_system_wallet=False
                     )
                     
+                    # Сохраняем старый адрес для WebSocket уведомления (до генерации нового)
+                    old_deposit_address = user_wallet.deposit_address
+                    
                     # ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ЛОГИКА ЗАЧИСЛЕНИЯ ПОСЛЕ КОНСОЛИДАЦИИ:
                     # Зачисляем пользователю РЕАЛЬНУЮ сумму, которая была консолидирована (tx.amount)
                     # Это amount_to_send из consolidate_user_deposits - вся сумма с блокчейна минус газ
@@ -207,6 +210,32 @@ def check_consolidation_confirmations():
                         logger.info(f"\033[94m📊 Balance: {user_wallet.balance} {tx.crypto.symbol}, Available: {user_wallet.available_balance} {tx.crypto.symbol}\033[0m")
                         logger.info(f"\033[94m📊 Total pending deposits value was: {total_pending_deposits_value} {tx.crypto.symbol}\033[0m")
                         logger.info(f"\033[94m💡 Note: User credited with consolidated amount ({consolidation_amount}), not deposit amount ({total_pending_deposits_value})\033[0m")
+                        
+                        # Отправляем WebSocket уведомление о зачислении средств на СТАРЫЙ адрес
+                        # (до генерации нового адреса, т.к. фронтенд подключен к старому адресу)
+                        try:
+                            from channels.layers import get_channel_layer
+                            from asgiref.sync import async_to_sync
+                            
+                            channel_layer = get_channel_layer()
+                            if channel_layer and old_deposit_address:
+                                logger.info(f"\033[94m📡 Sending WebSocket notification for address {old_deposit_address}\033[0m")
+                                async_to_sync(channel_layer.group_send)(
+                                    f"deposit_address_{old_deposit_address}",
+                                    {
+                                        "type": "deposit_status_update",
+                                        "data": {
+                                            'address': old_deposit_address,
+                                            'status': 'used',
+                                            'message': 'Deposit completed',
+                                            'amount': str(consolidation_amount),
+                                            'currency': tx.crypto.symbol
+                                        }
+                                    }
+                                )
+                                logger.info(f"\033[92m✅ WebSocket notification sent to {old_deposit_address}\033[0m")
+                        except Exception as ws_error:
+                            logger.error(f"\033[91m❌ Failed to send WebSocket notification: {ws_error}\033[0m")
                     else:
                         logger.warning(f"\033[93m⚠️ Consolidation {tx.tx_hash} completed but consolidation amount is zero\033[0m")
                     
@@ -475,6 +504,7 @@ def consolidate_user_deposits():
                     # Рассчитываем МАКСИМАЛЬНУЮ сумму к переводу (всё что можно отправить)
                     # ⚠️ ВАЖНО: Используем точный расчет через методы блокчейн-сервиса, НЕ gas_reserve!
                     system_wallet_address = get_system_wallet_address(currency)
+                    gas_cost = Decimal('0')  # Инициализируем gas_cost
                     
                     # ⚠️ ВАЖНО: Используем точные методы расчета максимальной суммы для каждой валюты
                     # Для Polygon и Ethereum (нативная валюта) используем get_max_sendable_amount
@@ -484,19 +514,39 @@ def consolidate_user_deposits():
                             user_wallet.deposit_address,
                             system_wallet_address
                         )
+                        # Рассчитываем реальную стоимость газа: баланс - отправляемая сумма
+                        gas_cost = blockchain_balance - amount_to_send
                         logger.info(f"\033[94m💸 Max sendable amount (calculated via get_max_sendable_amount): {amount_to_send} {currency.symbol}\033[0m")
+
+                        logger.info(f"\033[94m⛽ Gas cost (calculated): {gas_cost} {currency.symbol}\033[0m")
+                    # Для Ethereum используем estimate_gas_fee для точного расчета
+                    elif hasattr(blockchain_service, 'estimate_gas_fee'):
+                        gas_info = blockchain_service.estimate_gas_fee(
+                            to_address=system_wallet_address,
+                            amount=blockchain_balance,
+                            contract_address=getattr(currency, 'contract_address', None)
+                        )
+                        # estimate_gas_fee возвращает словарь с 'gas_fee_eth' или 'gas_fee_eth'
+                        gas_cost = gas_info.get('gas_fee_eth', Decimal('0'))
+                        amount_to_send = blockchain_balance - gas_cost
+                        logger.info(f"\033[94m⛽ Gas cost (from estimate_gas_fee): {gas_cost} {currency.symbol}\033[0m")
+                        logger.info(f"\033[94m💸 Amount to send (balance - gas): {amount_to_send} {currency.symbol}\033[0m")
+
                     # Для Bitcoin можно отправить amount=0 для sweep всех средств
                     elif currency.symbol == 'BTC':
                         amount_to_send = Decimal('0')  # 0 означает "отправить всё" (sweep)
+                        # Для Bitcoin газ рассчитывается автоматически при sweep, но мы можем оценить его
+                        # Используем фиксированный резерв для оценки
+                        gas_cost = get_gas_reserve(currency)
                         logger.info(f"\033[94m💸 Bitcoin sweep mode: will send all funds\033[0m")
+                        logger.info(f"\033[94m⛽ Estimated gas cost for BTC: {gas_cost} {currency.symbol}\033[0m")
                     else:
                         # Fallback: для других валют оцениваем газ динамически через gas_calculation
                         from .gas_calculation import calculate_estimated_gas_cost
                         gas_cost = calculate_estimated_gas_cost(
                             currency=currency,
-                            from_address=user_wallet.deposit_address,
-                            to_address=system_wallet_address,
-                            amount=blockchain_balance
+                            deposit_amount=blockchain_balance,
+                            user_address=user_wallet.deposit_address
                         )
                         amount_to_send = blockchain_balance - gas_cost
                         logger.info(f"\033[94m⛽ Gas cost (estimated via gas_calculation): {gas_cost} {currency.symbol}\033[0m")
@@ -635,11 +685,19 @@ def consolidate_user_deposits():
                     # Для других валют amount_to_send - это реальная сумма, которая будет зачислена пользователю
                     consolidation_amount_to_save = amount_to_send if currency.symbol != 'BTC' else blockchain_balance
                     
+                    # Для Bitcoin пересчитываем gas_cost после sweep (реальная разница между балансом и отправленной суммой)
+                    if currency.symbol == 'BTC':
+                        # После sweep реальный газ = баланс - отправленная сумма
+                        # Но amount_to_send = 0 для sweep, поэтому используем оценку или пересчитываем
+                        # В данном случае gas_cost уже рассчитан выше
+                        pass
+                    
                     with transaction.atomic():
                         Transaction.objects.create(
                             user=user_wallet.user,
                             crypto=currency,
                             amount=consolidation_amount_to_save,  # ⚠️ Это сумма, которая будет зачислена пользователю!
+                            fee=gas_cost,  # ⚠️ ВАЖНО: Сохраняем реальную стоимость газа для учета комиссии
                             tx_hash=tx_hash,
                             type="consolidation",
                             status="pending",
