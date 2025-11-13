@@ -110,13 +110,25 @@ class TronService(BaseBlockchainService):
     def _get_transaction_by_id(self, tx_id: str) -> Dict[str, Any]:
         url = f"{self.api_url}/wallet/gettransactionbyid"
         payload = {"value": tx_id}
-        try:
-            resp = requests.post(url, json=payload, headers=self._headers(), timeout=10)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.RequestException as e:
-            logger.exception(f"[_get_transaction_by_id] Unexpected error for tx_id {tx_id}: {e}")
-            raise TronGridError(f"Failed to get transaction {tx_id}: {e}")
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                resp = requests.post(url, json=payload, headers=self._headers(), timeout=30)
+                resp.raise_for_status()
+                return resp.json()
+            except (requests.Timeout, requests.ConnectionError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                    logger.warning(f"[_get_transaction_by_id] Attempt {attempt + 1}/{max_retries} failed for tx_id {tx_id}, retrying in {wait_time}s...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.exception(f"[_get_transaction_by_id] All retries failed for tx_id {tx_id}: {e}")
+                    raise TronGridError(f"Failed to get transaction {tx_id} after {max_retries} attempts: {e}")
+            except requests.RequestException as e:
+                logger.exception(f"[_get_transaction_by_id] Unexpected error for tx_id {tx_id}: {e}")
+                raise TronGridError(f"Failed to get transaction {tx_id}: {e}")
 
     def get_transactions(self, address: str, min_timestamp: int = 0, contract_address: str = None) -> List[Dict[str, Any]]:
         """Fetches TRC20 transfers or native TRX transfers to *address* after *min_timestamp* (ms)."""
@@ -141,19 +153,31 @@ class TronService(BaseBlockchainService):
             "contract_address": contract_address
         }
         
-        try:
-            resp = requests.get(url, params=params, headers=self._headers(), timeout=20)
-            resp.raise_for_status()
-            data = resp.json()
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(url, params=params, headers=self._headers(), timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
 
-            if not data.get("success", False):
-                raise TronGridError(str(data))
+                if not data.get("success", False):
+                    raise TronGridError(str(data))
 
-            return data.get("data", [])
+                return data.get("data", [])
 
-        except requests.RequestException as e:
-            logger.error(f"Request to TronGrid failed for TRC20: {e}")
-            raise TronGridError(f"TronGrid TRC20 request failed: {e}")
+            except (requests.Timeout, requests.ConnectionError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                    logger.warning(f"[_get_trc20_transactions] Attempt {attempt + 1}/{max_retries} failed for {address}, retrying in {wait_time}s...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"[_get_trc20_transactions] All retries failed for {address}: {e}")
+                    raise TronGridError(f"TronGrid TRC20 request failed after {max_retries} attempts: {e}")
+            except requests.RequestException as e:
+                logger.error(f"Request to TronGrid failed for TRC20: {e}")
+                raise TronGridError(f"TronGrid TRC20 request failed: {e}")
 
     def _get_native_trx_transactions(self, address: str, min_timestamp: int) -> List[Dict[str, Any]]:
         """Fetches native TRX transfers."""
@@ -165,27 +189,39 @@ class TronService(BaseBlockchainService):
             "order_by": "block_timestamp,asc"
         }
         
-        try:
-            resp = requests.get(url, params=params, headers=self._headers(), timeout=20)
-            resp.raise_for_status()
-            data = resp.json()
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(url, params=params, headers=self._headers(), timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
 
-            if not data.get("success", False):
-                raise TronGridError(str(data))
+                if not data.get("success", False):
+                    raise TronGridError(str(data))
 
-            # Фильтруем только нативные TRX переводы (не TRC20)
-            native_transactions = []
-            for tx in data.get("data", []):
-                # Проверяем, что это обычный перевод TRX, а не TRC20
-                contracts = tx.get("raw_data", {}).get("contract", [])
-                if contracts and contracts[0].get("type") == "TransferContract":
-                    native_transactions.append(tx)
-                    
-            return native_transactions
+                # Фильтруем только нативные TRX переводы (не TRC20)
+                native_transactions = []
+                for tx in data.get("data", []):
+                    # Проверяем, что это обычный перевод TRX, а не TRC20
+                    contracts = tx.get("raw_data", {}).get("contract", [])
+                    if contracts and contracts[0].get("type") == "TransferContract":
+                        native_transactions.append(tx)
+                        
+                return native_transactions
 
-        except requests.RequestException as e:
-            logger.error(f"Request to TronGrid failed for native TRX: {e}")
-            raise TronGridError(f"TronGrid native TRX request failed: {e}")
+            except (requests.Timeout, requests.ConnectionError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                    logger.warning(f"[_get_native_trx_transactions] Attempt {attempt + 1}/{max_retries} failed for {address}, retrying in {wait_time}s...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"[_get_native_trx_transactions] All retries failed for {address}: {e}")
+                    raise TronGridError(f"TronGrid native TRX request failed after {max_retries} attempts: {e}")
+            except requests.RequestException as e:
+                logger.error(f"Request to TronGrid failed for native TRX: {e}")
+                raise TronGridError(f"TronGrid native TRX request failed: {e}")
 
     def send_transaction(self, private_key: str, to_address: str, amount: Decimal, memo: str = "", contract_address: str = None) -> str:
         """Sends TRC20 token or native TRX from a platform wallet to an external address."""
@@ -280,19 +316,41 @@ class TronService(BaseBlockchainService):
             decimals = 6 # Default
             logger.warning(f"Could not find Cryptocurrency with contract {contract_address}, defaulting to {decimals} decimals.")
         
-        contract = Contract(addr=contract_address, abi=json.loads(TRC20_ABI), client=self.client)
-        balance_raw = contract.functions.balanceOf(address)
-        return self.from_atomic_unit(balance_raw, decimals)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                contract = Contract(addr=contract_address, abi=json.loads(TRC20_ABI), client=self.client)
+                balance_raw = contract.functions.balanceOf(address)
+                return self.from_atomic_unit(balance_raw, decimals)
+            except (TimeoutError, ConnectionError, Exception) as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                    logger.warning(f"[_get_trc20_balance] Attempt {attempt + 1}/{max_retries} failed for {address}, retrying in {wait_time}s...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"[_get_trc20_balance] All retries failed for {address}: {e}")
+                    return Decimal('0')
 
     def _get_native_trx_balance(self, address: str) -> Decimal:
         """Gets native TRX balance."""
-        try:
-            account_info = self.client.get_account(address)
-            balance_sun = account_info.get('balance', 0)  # Баланс в SUN (1 TRX = 1,000,000 SUN)
-            return self.from_atomic_unit(balance_sun, 6)  # TRX имеет 6 decimals
-        except Exception as e:
-            logger.error(f"Error getting native TRX balance for {address}: {e}")
-            return Decimal('0')
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                account_info = self.client.get_account(address)
+                balance_sun = account_info.get('balance', 0)  # Баланс в SUN (1 TRX = 1,000,000 SUN)
+                return self.from_atomic_unit(balance_sun, 6)  # TRX имеет 6 decimals
+            except (TimeoutError, ConnectionError, Exception) as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                    logger.warning(f"[_get_native_trx_balance] Attempt {attempt + 1}/{max_retries} failed for {address}, retrying in {wait_time}s...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"[_get_native_trx_balance] All retries failed for {address}: {e}")
+                    return Decimal('0')
 
     def create_new_address(self, user_id: int, **kwargs) -> Tuple[str, str]:
         """Creates a new Tron address and private key for a user using HD generation."""
