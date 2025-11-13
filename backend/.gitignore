@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Виртуальное окружение
 venv/
 venv_main/
@@ -56,3 +57,66 @@ core/local_settings.py
 .env.production.local
 
 *.dat
+=======
+# Виртуальное окружение
+venv/
+venv_main/
+env/
+.env
+
+# Python кэш
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Django
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+static/
+
+# Редакторы
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Файлы базы данных
+*.db
+*.sql
+
+# Локальные конфигурации
+core/local_settings.py 
+.idea/
+.venv_main/
+.venv/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+*.dat
+
+# Скрипт для генерации приватных ключей из seed
+get_private_key_from_seed.py
+>>>>>>> 00c09af4f1961dcaedc7a03b538cb8d9686d4801

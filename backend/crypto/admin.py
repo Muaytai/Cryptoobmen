@@ -1,3 +1,4 @@
+
 from django.contrib import admin
 from django.conf import settings
 from tronpy import Tron
@@ -7,11 +8,10 @@ from .models import (
     Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, 
     SystemWalletAddress, UserDepositMemo,
     BlockchainState, CommissionWallet, CommissionTransaction,
-    GeneratedWallet
+    GeneratedWallet, SystemWalletBalanceLog
 )
 import csv
 from django.http import HttpResponse
-
 
 @admin.register(Cryptocurrency)
 class CryptocurrencyAdmin(admin.ModelAdmin):
@@ -19,7 +19,6 @@ class CryptocurrencyAdmin(admin.ModelAdmin):
     list_filter = ('is_active', 'currency_type', 'network')
     search_fields = ('name', 'symbol', 'network')
     readonly_fields = ('created_at', 'updated_at')
-
 
 @admin.register(CryptoPrice)
 class CryptoPriceAdmin(admin.ModelAdmin):
@@ -32,7 +31,6 @@ class CryptoPriceAdmin(admin.ModelAdmin):
         # Запрещаем изменение истории цен
         return False
 
-
 @admin.register(ExchangePair)
 class ExchangePairAdmin(admin.ModelAdmin):
     list_display = ('from_crypto', 'to_crypto', 'is_active', 'custom_fee_percentage')
@@ -40,14 +38,13 @@ class ExchangePairAdmin(admin.ModelAdmin):
     search_fields = ('from_crypto__name', 'to_crypto__name')
     readonly_fields = ('created_at', 'updated_at')
 
-
 @admin.register(UserWallet)
 class UserWalletAdmin(admin.ModelAdmin):
     list_display = ('user_display', 'currency', 'balance', 'available_balance', 'locked_balance', 'is_system_wallet', 'is_active', 'delete_button')
     list_filter = ('is_active', 'is_system_wallet', 'currency__symbol')
     search_fields = ('user__email', 'user__username', 'currency__name', 'currency__symbol')
     readonly_fields = ('created_at', 'updated_at')
-    actions = ['delete_selected_wallets', 'sync_balance_with_blockchain']
+    actions = ['delete_selected_wallets']
     
     def has_delete_permission(self, request, obj=None):
         # Разрешаем удаление кошельков только суперпользователям
@@ -109,82 +106,11 @@ class UserWalletAdmin(admin.ModelAdmin):
     
     delete_selected_wallets.short_description = "🗑️ Удалить выбранные кошельки (ОСТОРОЖНО!)"
 
-    def sync_balance_with_blockchain(self, request, queryset):
-        """Обновить балансы выбранных кошельков из блокчейна"""
-        from .blockchain.factory import get_blockchain_service
-        from decimal import Decimal
-        
-        updated_count = 0
-        error_count = 0
-        
-        for wallet in queryset:
-            try:
-                # Обновляем только системные кошельки с адресами
-                if not wallet.is_system_wallet:
-                    continue
-                    
-                if not wallet.deposit_address:
-                    self.message_user(
-                        request, 
-                        f"Кошелек {wallet.currency.symbol} не имеет адреса для обновления", 
-                        level='WARNING'
-                    )
-                    continue
-                
-                # Получаем сервис блокчейна
-                service = get_blockchain_service(wallet.currency.network or wallet.currency.symbol)
-                
-                # Получаем реальный баланс из блокчейна
-                real_balance = service.get_balance(wallet.deposit_address)
-                
-                # Обновляем баланс только если он изменился
-                if wallet.balance != real_balance:
-                    old_balance = wallet.balance
-                    wallet.balance = real_balance
-                    wallet.save()
-                    self.message_user(
-                        request, 
-                        f"Баланс {wallet.currency.symbol} обновлен: {old_balance} → {real_balance}", 
-                        level='SUCCESS'
-                    )
-                    updated_count += 1
-                else:
-                    self.message_user(
-                        request, 
-                        f"Баланс {wallet.currency.symbol} уже актуален: {real_balance}", 
-                        level='INFO'
-                    )
-                    
-            except Exception as e:
-                error_count += 1
-                self.message_user(
-                    request, 
-                    f"Ошибка обновления баланса {wallet.currency.symbol}: {str(e)}", 
-                    level='ERROR'
-                )
-        
-        if updated_count > 0:
-            self.message_user(
-                request, 
-                f"Успешно обновлено балансов: {updated_count}", 
-                level='SUCCESS'
-            )
-        
-        if error_count > 0:
-            self.message_user(
-                request, 
-                f"Ошибок при обновлении: {error_count}", 
-                level='ERROR'
-            )
-    
-    sync_balance_with_blockchain.short_description = "🔄 Обновить баланс из блокчейна"
-
     def user_display(self, obj):
         if obj.user:
             return obj.user.email
         return "Системный кошелек"
     user_display.short_description = 'Пользователь / Система'
-
 
 @admin.register(SystemWalletAddress)
 class SystemWalletAddressAdmin(admin.ModelAdmin):
@@ -228,7 +154,6 @@ class SystemWalletAddressAdmin(admin.ModelAdmin):
 
     display_balance.short_description = 'Real-time Balance'
 
-
 @admin.register(UserDepositMemo)
 class UserDepositMemoAdmin(admin.ModelAdmin):
     list_display = ('user', 'currency', 'network', 'memo', 'status', 'created_at', 'expires_at')
@@ -236,19 +161,16 @@ class UserDepositMemoAdmin(admin.ModelAdmin):
     search_fields = ('user__email', 'memo')
     readonly_fields = ('user', 'currency', 'network', 'memo', 'created_at', 'expires_at')
 
-
 @admin.register(BlockchainState)
 class BlockchainStateAdmin(admin.ModelAdmin):
     list_display = ('blockchain', 'last_processed_block', 'updated_at')
     readonly_fields = ('updated_at',)
-
 
 @admin.register(CommissionWallet)
 class CommissionWalletAdmin(admin.ModelAdmin):
     list_display = ('currency', 'balance', 'is_active', 'updated_at')
     list_filter = ('is_active', 'currency__symbol')
     readonly_fields = ('created_at', 'updated_at')
-
 
 @admin.register(CommissionTransaction)
 class CommissionTransactionAdmin(admin.ModelAdmin):
@@ -269,7 +191,6 @@ class CommissionTransactionAdmin(admin.ModelAdmin):
             writer.writerow([getattr(obj, field) for field in field_names])
         return response
     export_as_csv.short_description = "Экспортировать выбранные в CSV"
-
 
 @admin.register(GeneratedWallet)
 class GeneratedWalletAdmin(admin.ModelAdmin):
@@ -325,3 +246,119 @@ class GeneratedWalletAdmin(admin.ModelAdmin):
             f"Соответствуют: {verified}. Не соответствуют: {mismatched}."
         )
     verify_key_address_match.short_description = "Проверить соответствие ключ-адрес"
+
+@admin.register(SystemWalletBalanceLog)
+class SystemWalletBalanceLogAdmin(admin.ModelAdmin):
+    """Админ-интерфейс для просмотра истории баланса системного кошелька"""
+    
+    list_display = (
+        'currency_symbol', 'system_address_short', 'blockchain_balance', 
+        'database_balance', 'balance_difference', 'transaction_type', 
+        'created_at', 'related_transaction_link'
+    )
+    list_filter = (
+        'currency__symbol', 'transaction_type', 'created_at',
+        ('currency__network', admin.EmptyFieldListFilter)
+    )
+    search_fields = ('currency__symbol', 'system_address', 'notes')
+    readonly_fields = (
+        'currency', 'system_address', 'blockchain_balance', 'database_balance',
+        'transaction_type', 'related_transaction', 'notes', 'created_at'
+    )
+    date_hierarchy = 'created_at'
+    ordering = ['-created_at']
+    
+    def currency_symbol(self, obj):
+        """Отображает символ валюты с сетью"""
+        if obj.currency.network:
+            return f"{obj.currency.symbol} ({obj.currency.network})"
+        return obj.currency.symbol
+    currency_symbol.short_description = "Валюта"
+    currency_symbol.admin_order_field = 'currency__symbol'
+    
+    def system_address_short(self, obj):
+        """Сокращенный адрес системного кошелька"""
+        if len(obj.system_address) > 20:
+            return f"{obj.system_address[:10]}...{obj.system_address[-10:]}"
+        return obj.system_address
+    system_address_short.short_description = "Системный адрес"
+    
+    def balance_difference(self, obj):
+        """Показывает разность между балансами в блокчейне и БД"""
+        if obj.database_balance is None:
+            return "N/A"
+        
+        diff = obj.blockchain_balance - obj.database_balance
+        if diff == 0:
+            color = "green"
+            symbol = "✓"
+        elif diff > 0:
+            color = "orange"
+            symbol = "+"
+        else:
+            color = "red"
+            symbol = "-"
+            
+        return format_html(
+            '<span style="color: {};">{} {}</span>',
+            color,
+            symbol,
+            abs(diff)
+        )
+    balance_difference.short_description = "Разность"
+    
+    def related_transaction_link(self, obj):
+        """Ссылка на связанную транзакцию"""
+        if obj.related_transaction:
+            url = reverse('admin:transactions_transaction_change', args=[obj.related_transaction.id])
+            return format_html('<a href="{}" target="_blank">{}</a>', url, obj.related_transaction.tx_hash[:16] + "...")
+        return "-"
+    related_transaction_link.short_description = "Связанная транзакция"
+    
+    def has_add_permission(self, request):
+        """Запрещаем создание записей через админку"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Запрещаем редактирование записей"""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Разрешаем удаление только суперпользователям"""
+        return request.user.is_superuser
+    
+    actions = ['export_balance_log']
+    
+    def export_balance_log(self, request, queryset):
+        """Экспорт логов баланса в CSV"""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="system_wallet_balance_log.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'Дата', 'Валюта', 'Сеть', 'Системный адрес', 
+            'Баланс в блокчейне', 'Баланс в БД', 'Разность',
+            'Тип транзакции', 'Связанная транзакция', 'Примечания'
+        ])
+        
+        for log in queryset:
+            diff = "N/A"
+            if log.database_balance is not None:
+                diff = float(log.blockchain_balance - log.database_balance)
+            
+            writer.writerow([
+                log.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                log.currency.symbol,
+                log.currency.network or '',
+                log.system_address,
+                float(log.blockchain_balance),
+                float(log.database_balance) if log.database_balance else 'N/A',
+                diff,
+                log.get_transaction_type_display(),
+                log.related_transaction.tx_hash if log.related_transaction else '',
+                log.notes
+            ])
+        
+        return response
+    export_balance_log.short_description = "Экспортировать выбранные логи в CSV"
+

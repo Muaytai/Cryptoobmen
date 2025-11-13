@@ -1,3 +1,4 @@
+
 """Service for interacting with the Ethereum blockchain (ETH and ERC-20 tokens)."""
 from __future__ import annotations
 
@@ -471,3 +472,4 @@ class EthereumService(BaseBlockchainService):
         except Exception as e:
             logger.warning(f"Failed to check transaction confirmation for {tx_hash}: {e}")
             return False
+

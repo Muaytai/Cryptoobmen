@@ -156,6 +156,7 @@ class WithdrawalService:
         logger.info(f"Создание запроса на вывод: user={user.username}, crypto_id={crypto_id}, amount={amount}, address={destination_address}")
         
         # --- Блок валидации (взят и адаптирован из старого сериализатора) ---
+        requires_memo_for_withdrawal = False
         try:
             crypto = Cryptocurrency.objects.get(id=crypto_id, is_active=True)
             logger.info(f"Найдена криптовалюта: {crypto.name} ({crypto.symbol})")
@@ -190,8 +191,12 @@ class WithdrawalService:
             if amount_after_fee <= 0:
                 raise serializers.ValidationError("Сумма к выводу после комиссии должна быть положительной")
 
-            # Проверяем MEMO
-            if getattr(crypto, 'requires_memo', False) and not memo:
+            # Проверяем MEMO (для XRP при выводе memo не требуется)
+            requires_memo_for_withdrawal = (
+                getattr(crypto, 'requires_memo', False)
+                and crypto.symbol.upper() != 'XRP'
+            )
+            if requires_memo_for_withdrawal and not memo:
                 logger.error(f"Требуется MEMO для {crypto.symbol}")
                 raise serializers.ValidationError("Для этой валюты требуется MEMO/Tag")
 
@@ -229,7 +234,7 @@ class WithdrawalService:
                 transaction=transaction_obj,
                 wallet=wallet,
                 destination_address=destination_address,
-                memo=memo,
+                memo=memo if requires_memo_for_withdrawal else None,
                 is_email_confirmed=False,
                 email_confirmation_token=token,
                 email_confirmation_token_expires_at=expires_at

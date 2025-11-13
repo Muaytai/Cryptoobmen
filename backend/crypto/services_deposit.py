@@ -36,23 +36,34 @@ class DepositService:
                 network__iexact=network,
                 is_active=True
             )
+            
+            logger.info(f"Found currency: {currency.symbol} (ID: {currency.id}), network: {currency.network}, requires_memo: {currency.requires_memo}")
 
             if currency.requires_memo:
                 # --- Логика для валют с MEMO ---
+                logger.info(f"Processing currency with memo: {currency.symbol} (network: {network})")
                 system_wallet = SystemWalletAddress.objects.get(currency=currency)
                 address = system_wallet.address
                 if not address:
                     raise ValueError(f"Системный адрес для {currency_symbol} в сети {network} не настроен.")
 
                 memo = DepositService._generate_unique_memo()
+                logger.info(f"Generated memo for {currency.symbol}: {memo}")
                 expires_at = timezone.now() + timedelta(hours=24)
                 UserDepositMemo.objects.create(
                     user=user, currency=currency, network=network, memo=memo, expires_at=expires_at
                 )
                 
-                # Для некоторых сетей (например, XRP) QR-код может включать доп. параметры
-                qr_data = f"{address}?dt={memo}" if currency.symbol == 'XRP' else f"{address}:{memo}"
+                # Для XRP QR-код должен содержать адрес и destination tag в формате ripple:ADDRESS?dt=TAG
+                # Для других валют с memo используем формат ADDRESS:MEMO
+                if currency.symbol == 'XRP':
+                    # XRP использует destination tag (dt) в URI формате
+                    qr_data = f"ripple:{address}?dt={memo}"
+                else:
+                    # Для других валют (например, BNB) используем формат ADDRESS:MEMO
+                    qr_data = f"{address}:{memo}"
                 qr_code = generate_qr_code(qr_data)
+                logger.info(f"Returning deposit info for {currency.symbol}: address={address}, memo={memo}")
                 return address, memo, qr_code, None  # Нет информации о газе для валют с мемо
             else:
                 # --- Логика для валют без MEMO (BTC, USDT TRC-20 и т.д.) ---

@@ -3,6 +3,7 @@ from django.dispatch import receiver
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from decimal import Decimal
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,6 @@ def _create_missing_wallets_for_user(user: User) -> None:  # type: ignore[name-d
         logger.info(
             "Created %s wallets for user %s", len(wallets_to_create), getattr(user, 'email', user.pk)
         )
-
 
 @receiver(post_save, sender=User, dispatch_uid='crypto_create_user_wallets')
 def create_user_wallets(sender, instance, created, **kwargs):
@@ -108,7 +108,6 @@ def send_deposit_status_update_DISABLED(sender, instance, **kwargs):
 
 from transactions.models import Transaction as TransactionModel, Withdrawal as WithdrawalModel
 
-
 @receiver(post_save, sender=TransactionModel)
 def handle_transaction_status_change(sender, instance, **kwargs):
     """
@@ -117,9 +116,11 @@ def handle_transaction_status_change(sender, instance, **kwargs):
     """
     logger.info(f"Signal handle_transaction_status_change called for transaction {instance.pk}")
     
-    # Проверяем, изменился ли статус на 'cancelled' или 'failed'
-    if (instance.status in ['cancelled', 'failed'] and 
-        instance.type == 'withdrawal'):
+    if instance.type != 'withdrawal':
+        return
+
+    # Возврат средств только при отмене/ошибке вывода
+    if instance.status in ['cancelled', 'failed']:
         
         logger.info(f"Refunding transaction {instance.pk}")
         # Ищем связанный объект Withdrawal
@@ -129,20 +130,81 @@ def handle_transaction_status_change(sender, instance, **kwargs):
             
             # Проверяем, что средства еще не были возвращены
             if not withdrawal.refunded and withdrawal.wallet:
-                # Возвращаем средства на баланс пользователя
-                withdrawal.wallet.balance += instance.amount
-                withdrawal.wallet.available_balance += instance.amount
-                withdrawal.wallet.save(update_fields=['balance', 'available_balance'])
+                # ⚠️ ВАЖНО: При возврате средств нужно:
+                # 1. Вернуть средства на баланс пользователя
+                # 2. Разблокировать замороженные средства (locked_balance)
+                # 3. Вернуть available_balance
+                
+                # Рассчитываем сумму для возврата (включая комиссию и газ)
+                # Используем ту же логику, что и при блокировке
+                from .gas_calculation import calculate_withdrawal_gas_cost
+                
+                try:
+                    # ⚠️ ВАЖНО: instance.amount - это сумма после вычета fee (amount_after_fee)
+                    # Но для расчета total_cost нужно использовать сумму ДО вычета fee
+                    # Поэтому используем instance.amount + instance.fee как withdrawal_amount
+                    # Или можно просто сложить: amount + fee + gas
+                    
+                    # Рассчитываем газ для суммы после fee (как в process_withdrawal)
+                    gas_cost = calculate_withdrawal_gas_cost(
+                        currency=instance.crypto,
+                        withdrawal_amount=instance.amount,
+                        destination_address=withdrawal.destination_address
+                    )
+                    
+                    # Общая заблокированная сумма = amount + fee + gas
+                    total_locked_amount = instance.amount + instance.fee + gas_cost
+                    
+                    # ⚠️ КРИТИЧЕСКИ ВАЖНО: При возврате средств нужно вернуть ВСЮ заблокированную сумму,
+                    # а не только instance.amount! При блокировке было списано total_amount с balance,
+                    # поэтому нужно вернуть total_amount обратно на balance.
+                    # amount - это сумма после fee, но на баланс была списана total_amount (amount + fee + gas)
+                    withdrawal.wallet.balance += total_locked_amount
+                    withdrawal.wallet.available_balance += total_locked_amount
+                    
+                    # ⚠️ КРИТИЧЕСКИ ВАЖНО: Разблокируем замороженные средства
+                    # Используем max() чтобы избежать отрицательного locked_balance
+                    withdrawal.wallet.locked_balance = max(
+                        Decimal('0'),
+                        withdrawal.wallet.locked_balance - total_locked_amount
+                    )
+                    
+                    withdrawal.wallet.save(update_fields=['balance', 'available_balance', 'locked_balance'])
+                    
+                    logger.info(
+                        f"Возвращены средства пользователю {instance.user.email}: "
+                        f"{total_locked_amount} {instance.crypto.symbol} "
+                        f"(amount: {instance.amount}, fee: {instance.fee}, gas: {gas_cost}, транзакция {instance.transaction_id}). "
+                        f"Разблокировано: {total_locked_amount} {instance.crypto.symbol}"
+                    )
+                except Exception as calc_error:
+                    # Если не удалось рассчитать точную сумму, используем упрощенный подход
+                    logger.warning(f"Не удалось рассчитать точную заблокированную сумму для возврата: {calc_error}. Используем упрощенный подход.")
+                    
+                    # Упрощенный подход: используем amount + fee (без газа, так как газ может измениться)
+                    # Это консервативный подход - вернем меньше, чем заблокировано, но не потеряем средства пользователя
+                    simplified_total = instance.amount + instance.fee
+                    
+                    withdrawal.wallet.balance += simplified_total
+                    withdrawal.wallet.available_balance += simplified_total
+                    
+                    # Разблокируем сумму, равную simplified_total (консервативный подход)
+                    withdrawal.wallet.locked_balance = max(
+                        Decimal('0'),
+                        withdrawal.wallet.locked_balance - simplified_total
+                    )
+                    withdrawal.wallet.save(update_fields=['balance', 'available_balance', 'locked_balance'])
+                    
+                    logger.warning(
+                        f"Возвращены средства пользователю {instance.user.email}: "
+                        f"{simplified_total} {instance.crypto.symbol} "
+                        f"(amount: {instance.amount}, fee: {instance.fee}, gas не учтен, транзакция {instance.transaction_id}, упрощенный расчет). "
+                        f"⚠️ Может потребоваться ручная разблокировка оставшихся средств."
+                    )
                 
                 # Отмечаем, что средства возвращены
                 withdrawal.refunded = True
                 withdrawal.save(update_fields=['refunded'])
-                
-                logger.info(
-                    f"Возвращены средства пользователю {instance.user.email}: "
-                    f"{instance.amount} {instance.crypto.symbol} "
-                    f"(транзакция {instance.transaction_id})"
-                )
                 
         except Withdrawal.DoesNotExist:
             logger.warning(

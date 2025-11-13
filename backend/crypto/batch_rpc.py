@@ -10,7 +10,6 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
-
 class BatchRPCProcessor:
     """Процессор для группировки и выполнения RPC запросов батчами"""
     
@@ -132,7 +131,6 @@ class BatchRPCProcessor:
             logger.warning(f"[BATCH] Failed to get transactions for {address}: {e}")
             return []
 
-
 class CachedBatchProcessor(BatchRPCProcessor):
     """Батч-процессор с дополнительным кэшированием"""
     
@@ -230,7 +228,6 @@ class CachedBatchProcessor(BatchRPCProcessor):
         
         if keys_to_remove:
             logger.info(f"[CACHED_BATCH] Cleaned up {len(keys_to_remove)} expired cache entries")
-
 
 # Глобальные экземпляры для использования в задачах
 batch_processor = BatchRPCProcessor(max_workers=10, batch_size=25)

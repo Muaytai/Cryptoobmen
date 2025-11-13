@@ -440,6 +440,7 @@ export const DepositPage: React.FC = () => {
       
       const data = response;
       console.log('DepositPage: успешно получена информация для депозита:', data);
+      console.log('DepositPage: memo =', data.memo, 'requires_memo =', data.requires_memo);
       
       if (!data || !data.address) {
         throw new Error('Сервер вернул некорректные данные без адреса');
@@ -463,10 +464,11 @@ export const DepositPage: React.FC = () => {
         setStatus('select_currency'); // Возвращаемся к выбору валюты до подтверждения
       } else {
         // Обычный депозит без прокси кошелька
+        console.log('DepositPage: Setting depositInfo with memo:', data.memo, 'requires_memo:', data.requires_memo);
         setDepositInfo({
           address: data.address,
-          memo: data.memo,
-          requires_memo: data.requires_memo,
+          memo: data.memo || null,  // Явно устанавливаем null если memo отсутствует
+          requires_memo: data.requires_memo || false,
           qr_code: data.qr_code,
           currency_symbol: data.currency_symbol,
           network: data.network,
@@ -1076,6 +1078,42 @@ export const DepositPage: React.FC = () => {
                 </button>
               </div>
             </div>
+            {/* MEMO для валют, которые его требуют */}
+            {depositInfo.requires_memo && depositInfo.memo && (
+              <div className="mb-4">
+                <label htmlFor="deposit-memo" className="block text-sm font-medium text-gray-600 dark:text-gray-400">
+                  MEMO (Destination Tag):
+                </label>
+                <div className="mt-1 relative">
+                  <input
+                    id="deposit-memo"
+                    type="text"
+                    readOnly
+                    value={depositInfo.memo}
+                    className="block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-900 dark:text-white p-2 pr-10"
+                  />
+                  <button 
+                    onClick={() => copyToClipboard(depositInfo.memo || '', 'memo')}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white"
+                    title="Копировать MEMO"
+                  >
+                    {copiedMemo ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-1">
+                  ⚠️ Обязательно укажите MEMO при переводе
+                </p>
+              </div>
+            )}
+            
             {/* QR-код для депозита */}
             {depositInfo.qr_code && (
               <div className="mb-6 flex flex-col items-center">
@@ -1087,66 +1125,6 @@ export const DepositPage: React.FC = () => {
                   style={{ objectFit: 'contain', background: '#fff' }}
                 />
               </div>
-            )}
-            {depositInfo.requires_memo && (
-              <>
-                <div className="mb-6">
-                  <label htmlFor="deposit-memo" className="block text-sm font-medium text-gray-600 dark:text-gray-400">MEMO (обязательно для зачисления):</label>
-                  <div className="mt-1 relative">
-                    <input
-                      id="deposit-memo"
-                      type="text"
-                      readOnly
-                      value={depositInfo.memo}
-                      className="block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-900 dark:text-white p-2 pr-10"
-                    />
-                    <button 
-                      onClick={() => copyToClipboard(depositInfo.memo || '', 'memo')}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white"
-                      title="Копировать MEMO"
-                    >
-                      {copiedMemo ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
-                <div className="bg-yellow-50 dark:bg-yellow-900 border-l-4 border-yellow-500 text-yellow-800 dark:text-yellow-200 p-4 rounded-md mb-6">
-                  <h4 className="font-bold flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    ВАЖНО!
-                  </h4>
-                  <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
-                    <li>Отправляйте только {selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol} в сети {selectedNetwork}.</li>
-                    <li>Обязательно укажите MEMO в комментарии к транзакции.</li>
-                    <li>Средства, отправленные без MEMO, могут быть утеряны.</li>
-                    <li>Минимальная сумма пополнения: 10 {selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol}.</li>
-                  </ul>
-                </div>
-                <div className="bg-blue-50 dark:bg-blue-900 border-l-4 border-blue-500 text-blue-800 dark:text-blue-200 p-4 rounded-md mb-6">
-                  <h4 className="font-bold flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                    Как пополнить кошелек:
-                  </h4>
-                  <ol className="list-decimal pl-5 mt-2 space-y-1 text-sm">
-                    <li>Скопируйте адрес и MEMO, нажав на соответствующие кнопки.</li>
-                    <li>Откройте ваш внешний кошелек или биржу.</li>
-                    <li>Создайте новый перевод на указанный адрес.</li>
-                    <li>Обязательно укажите MEMO в поле комментария/примечания.</li>
-                    <li>После отправки средств дождитесь подтверждения сети.</li>
-                  </ol>
-                </div>
-              </>
             )}
             
             {/* Информация о газе для прокси кошелька */}
@@ -1173,7 +1151,16 @@ export const DepositPage: React.FC = () => {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              Ожидаем поступления средств... ({depositInfo.memo})
+              Ожидаем поступления средств...{(() => {
+                const memoValue = depositInfo?.memo;
+                if (memoValue && (typeof memoValue === 'string' || typeof memoValue === 'number')) {
+                  const memoStr = String(memoValue).trim();
+                  if (memoStr) {
+                    return ` (${memoStr})`;
+                  }
+                }
+                return '';
+              })()}
             </div>
             
             <div className="mt-6 text-center">

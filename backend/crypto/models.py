@@ -379,6 +379,9 @@ class CommissionTransaction(models.Model):
     COMMISSION_TYPE_CHOICES = [
         ('exchange', 'Обмен'),
         ('withdraw', 'Вывод'),
+
+        ('consolidation', 'Консолидация'),
+
     ]
     created_at = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
@@ -398,14 +401,15 @@ class CommissionTransaction(models.Model):
 
 # --- Фикстура для автозаполнения популярных валют и сетей ---
 def create_default_cryptocurrencies():
-    # Примеры: BTC, ETH, USDT-ERC20, USDT-TRC20, BNB, XRP, LTC, SOL, MATIC
+
+    # Примеры: BTC, ETH, USDT-TRC20, BNB, XRP, LTC, SOL, MATIC
     default_cryptos = [
         {"name": "Bitcoin", "symbol": "BTC", "network": "BTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
         {"name": "Ethereum", "symbol": "ETH", "network": "ERC20", "decimals": 18, "requires_memo": False, "icon_b64": None},
-        {"name": "Tether USD", "symbol": "USDT", "network": "ERC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
         {"name": "Tether USD", "symbol": "USDT", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
         {"name": "Tron", "symbol": "TRX", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
-        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "decimals": 18, "requires_memo": False, "icon_b64": None},
+        {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "decimals": 18, "requires_memo": True, "icon_b64": None},
+
         {"name": "Ripple", "symbol": "XRP", "network": "XRP", "decimals": 6, "requires_memo": True, "icon_b64": None},
         {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
         {"name": "Solana", "symbol": "SOL", "network": "SOL", "decimals": 9, "requires_memo": False, "icon_b64": None},
@@ -433,6 +437,127 @@ def create_default_cryptocurrencies():
         obj.save()
 
 # Вызов при миграции или через shell
+
+
+
+class SystemWalletBalanceLog(models.Model):
+    """
+    Логирует баланс системного кошелька после каждой транзакции для мониторинга
+    """
+    TRANSACTION_TYPE_CHOICES = [
+        ('deposit', _('Deposit')),
+        ('consolidation', _('Consolidation')),
+        ('withdrawal', _('Withdrawal')),
+        ('manual_check', _('Manual Check')),
+        ('system_update', _('System Update')),
+    ]
+    
+    currency = models.ForeignKey(Cryptocurrency, on_delete=models.CASCADE, verbose_name=_('Currency'))
+    system_address = models.CharField(max_length=255, verbose_name=_('System Address'))
+    
+    # Баланс в блокчейне
+    blockchain_balance = models.DecimalField(
+        max_digits=24, 
+        decimal_places=8, 
+        verbose_name=_('Blockchain Balance')
+    )
+    
+    # Баланс в БД (для сравнения)
+    database_balance = models.DecimalField(
+        max_digits=24, 
+        decimal_places=8, 
+        verbose_name=_('Database Balance'),
+        null=True, 
+        blank=True
+    )
+    
+    # Тип транзакции, которая вызвала обновление
+    transaction_type = models.CharField(
+        max_length=20, 
+        choices=TRANSACTION_TYPE_CHOICES, 
+        verbose_name=_('Transaction Type')
+    )
+    
+    # Связанная транзакция (если есть)
+    related_transaction = models.ForeignKey(
+        'transactions.Transaction', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        verbose_name=_('Related Transaction')
+    )
+    
+    # Дополнительная информация
+    notes = models.TextField(blank=True, verbose_name=_('Notes'))
+    
+    # Временные метки
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Created At'))
+    
+    class Meta:
+        verbose_name = _('System Wallet Balance Log')
+        verbose_name_plural = _('System Wallet Balance Logs')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['currency', 'created_at']),
+            models.Index(fields=['transaction_type', 'created_at']),
+            models.Index(fields=['system_address']),
+        ]
+    
+    def __str__(self):
+        return f"{self.currency.symbol} System Wallet: {self.blockchain_balance} ({self.get_transaction_type_display()}) - {self.created_at}"
+    
+    @classmethod
+    def log_system_wallet_balance(cls, currency, system_address: str, blockchain_balance: Decimal, 
+                                 transaction_type: str, related_transaction=None, notes: str = '', 
+                                 sync_balance: bool = True):
+        """
+        Записывает текущий баланс системного кошелька в лог и синхронизирует баланс в БД
+        """
+        # Получаем баланс из БД для сравнения
+        database_balance = None
+        system_wallet = None
+        
+        try:
+            system_wallet = UserWallet.objects.get(
+                user=None,
+                currency=currency,
+                is_system_wallet=True,
+                is_active=True
+            )
+            database_balance = system_wallet.balance
+        except UserWallet.DoesNotExist:
+            pass
+        
+        # Синхронизируем баланс в БД если запрошено и кошелек найден
+        balance_synced = False
+        if sync_balance and system_wallet:
+            try:
+                old_balance = system_wallet.balance
+                system_wallet.balance = blockchain_balance
+                system_wallet.available_balance = blockchain_balance - system_wallet.locked_balance
+                system_wallet.save()
+                balance_synced = True
+                
+                # Обновляем database_balance для корректного логирования
+                database_balance = blockchain_balance
+                
+                logger.info(f"[BALANCE_SYNC] System wallet {currency.symbol} balance synced: {old_balance} -> {blockchain_balance}")
+            except Exception as sync_error:
+                logger.error(f"[BALANCE_SYNC] Failed to sync system wallet balance: {sync_error}")
+        
+        # Создаем запись в логе
+        log_entry = cls.objects.create(
+            currency=currency,
+            system_address=system_address,
+            blockchain_balance=blockchain_balance,
+            database_balance=database_balance,
+            transaction_type=transaction_type,
+            related_transaction=related_transaction,
+            notes=notes + (f" | Synced: {balance_synced}" if sync_balance else "")
+        )
+        
+        return log_entry
+
 
 
 class GeneratedWallet(models.Model):
@@ -482,18 +607,27 @@ class GeneratedWallet(models.Model):
     def record_generated_wallet(cls, address: str, private_key: str, currency, network: str, 
                               user=None, wallet_type: str = 'user', created_by: str = '', notes: str = ''):
         """
-        Записывает сгенерированный кошелек в БД
+
+        Записывает сгенерированный кошелек в БД.
+        Использует get_or_create для предотвращения дубликатов адресов (race condition).
         """
-        return cls.objects.create(
+        wallet, created = cls.objects.get_or_create(
             address=address,
-            encrypted_private_key=private_key,
-            currency=currency,
-            network=network,
-            user=user,
-            wallet_type=wallet_type,
-            created_by=created_by,
-            notes=notes
+            defaults={
+                'encrypted_private_key': private_key,
+                'currency': currency,
+                'network': network,
+                'user': user,
+                'wallet_type': wallet_type,
+                'created_by': created_by,
+                'notes': notes
+            }
         )
+        if not created:
+            # Адрес уже существует - обновляем только если нужно
+            logger.debug(f"GeneratedWallet with address {address[:20]}... already exists, skipping duplicate creation")
+        return wallet
+
     
     @classmethod
     def get_wallet_by_address(cls, address: str):

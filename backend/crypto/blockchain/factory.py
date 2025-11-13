@@ -5,7 +5,9 @@ from .tron import TronService
 from .bitcoin import BitcoinService
 from .xrp import XRPService
 from .ethereum import EthereumService
+
 from .bsc import BSCService
+
 from .polygon import PolygonService
 
 def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainService:
@@ -17,18 +19,26 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
     if address:
         if address.startswith('T') and len(address) == 34:
             tron_network = getattr(settings, 'TRON_NETWORK', 'nile')
+
+            # Используем настройки из settings для определения сети
+
             return TronService(network=tron_network)
         elif address.startswith('0x') and len(address) == 42:
             eth_network = getattr(settings, 'ETHEREUM_NETWORK', 'goerli')
             return EthereumService(network=eth_network)
         elif address.startswith('bc1') or address.startswith('tb1'):
-             return BitcoinService(network='testnet' if address.startswith('tb1') else 'mainnet')
+
+            return BitcoinService(network='testnet' if address.startswith('tb1') else 'mainnet')
+
         elif address.startswith('r') and len(address) > 25:
             return XRPService(network='mainnet') # Упрощено для примера
 
     # Определение по имени сети (как было раньше)
     network_lower = network.lower() if network else ''
     if network_lower in ['trc20', 'tron']:
+
+        # Используем настройку из settings для определения сети TRON
+
         tron_network = getattr(settings, 'TRON_NETWORK', 'nile')
         return TronService(network=tron_network)
     elif network_lower in ['btc', 'bitcoin']:
@@ -38,10 +48,12 @@ def get_blockchain_service(network: str, address: str = None) -> BaseBlockchainS
     elif network_lower in ['erc20', 'ethereum', 'eth']:
         eth_network = getattr(settings, 'ETHEREUM_NETWORK', 'goerli')
         return EthereumService(network=eth_network)
+
     elif network_lower in ['bsc', 'bep20', 'binance', 'bnb']:
         # Default to mainnet unless explicitly told otherwise in settings
         bsc_network = getattr(settings, 'BSC_NETWORK', 'mainnet')
         return BSCService(network=bsc_network)
+
     elif network_lower in ['xrp', 'ripple']:
         return XRPService(network='testnet')
     elif network_lower in ['polygon', 'matic', 'pol']:
