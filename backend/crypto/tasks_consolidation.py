@@ -391,6 +391,7 @@ def consolidate_user_deposits():
                     # Рассчитываем МАКСИМАЛЬНУЮ сумму к переводу (всё что можно отправить)
                     # ⚠️ ВАЖНО: Используем точный расчет через методы блокчейн-сервиса, НЕ gas_reserve!
                     system_wallet_address = get_system_wallet_address(currency)
+                    gas_cost = Decimal('0')  # Инициализируем gas_cost
                     
                     # ⚠️ ВАЖНО: Используем точные методы расчета максимальной суммы для каждой валюты
                     # Для Polygon используем get_max_sendable_amount
@@ -399,7 +400,10 @@ def consolidate_user_deposits():
                             user_wallet.deposit_address,
                             system_wallet_address
                         )
+                        # Рассчитываем реальную стоимость газа: баланс - отправляемая сумма
+                        gas_cost = blockchain_balance - amount_to_send
                         logger.info(f"\033[94m💸 Max sendable amount (calculated via get_max_sendable_amount): {amount_to_send} {currency.symbol}\033[0m")
+                        logger.info(f"\033[94m⛽ Gas cost (calculated): {gas_cost} {currency.symbol}\033[0m")
                     # Для Ethereum используем estimate_gas_fee для точного расчета
                     elif hasattr(blockchain_service, 'estimate_gas_fee'):
                         gas_info = blockchain_service.estimate_gas_fee(
@@ -415,15 +419,18 @@ def consolidate_user_deposits():
                     # Для Bitcoin можно отправить amount=0 для sweep всех средств
                     elif currency.symbol == 'BTC':
                         amount_to_send = Decimal('0')  # 0 означает "отправить всё" (sweep)
+                        # Для Bitcoin газ рассчитывается автоматически при sweep, но мы можем оценить его
+                        # Используем фиксированный резерв для оценки
+                        gas_cost = get_gas_reserve(currency)
                         logger.info(f"\033[94m💸 Bitcoin sweep mode: will send all funds\033[0m")
+                        logger.info(f"\033[94m⛽ Estimated gas cost for BTC: {gas_cost} {currency.symbol}\033[0m")
                     else:
                         # Fallback: для других валют оцениваем газ динамически через gas_calculation
                         from .gas_calculation import calculate_estimated_gas_cost
                         gas_cost = calculate_estimated_gas_cost(
                             currency=currency,
-                            from_address=user_wallet.deposit_address,
-                            to_address=system_wallet_address,
-                            amount=blockchain_balance
+                            deposit_amount=blockchain_balance,
+                            user_address=user_wallet.deposit_address
                         )
                         amount_to_send = blockchain_balance - gas_cost
                         logger.info(f"\033[94m⛽ Gas cost (estimated via gas_calculation): {gas_cost} {currency.symbol}\033[0m")
@@ -453,11 +460,19 @@ def consolidate_user_deposits():
                     # Для других валют amount_to_send - это реальная сумма, которая будет зачислена пользователю
                     consolidation_amount_to_save = amount_to_send if currency.symbol != 'BTC' else blockchain_balance
                     
+                    # Для Bitcoin пересчитываем gas_cost после sweep (реальная разница между балансом и отправленной суммой)
+                    if currency.symbol == 'BTC':
+                        # После sweep реальный газ = баланс - отправленная сумма
+                        # Но amount_to_send = 0 для sweep, поэтому используем оценку или пересчитываем
+                        # В данном случае gas_cost уже рассчитан выше
+                        pass
+                    
                     with transaction.atomic():
                         Transaction.objects.create(
                             user=user_wallet.user,
                             crypto=currency,
                             amount=consolidation_amount_to_save,  # ⚠️ Это сумма, которая будет зачислена пользователю!
+                            fee=gas_cost,  # ⚠️ ВАЖНО: Сохраняем реальную стоимость газа для учета комиссии
                             tx_hash=tx_hash,
                             type="consolidation",
                             status="pending",
