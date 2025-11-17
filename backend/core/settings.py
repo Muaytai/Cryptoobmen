@@ -193,7 +193,8 @@ USDT_TRC20_CONTRACT_ADDRESS = os.getenv("USDT_TRC20_CONTRACT_ADDRESS", "TXLAQ63X
 # В реальном проекте этот ключ должен быть в .env файле
 BITCOIN_XPUB_KEY = os.getenv('BITCOIN_XPUB_KEY')
 
-# TRON HD Wallet Master Seed
+# HD master seeds
+BITCOIN_MASTER_SEED_HEX = os.getenv('BITCOIN_MASTER_SEED_HEX')
 TRON_MASTER_SEED_HEX = os.getenv('TRON_MASTER_SEED_HEX')
 
 
