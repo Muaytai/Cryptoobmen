@@ -96,7 +96,7 @@ services:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
-    command: celery -A core worker -l info
+    command: celery -A core worker -l info -Q high_priority,medium_priority,low_priority
     env_file:
       - ./backend/.env.backend
     depends_on:

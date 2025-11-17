@@ -65,7 +65,7 @@ services:
     depends_on:
       - backend
       - redis
-    command: celery -A core worker -l info --pool=solo
+    command: celery -A core worker -l info --pool=solo -Q high_priority,medium_priority,low_priority
     networks:
       - default
       - cryptoobmen_network
