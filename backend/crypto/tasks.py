@@ -363,7 +363,30 @@ def check_blockchain_deposits():
                         if existing_tx.status == 'completed':
                             continue
                         elif existing_tx.status == 'pending':
-                            processed += 1
+                            # Обновляем существующий pending депозит, если amount был 0 (заглушка)
+                            if existing_tx.amount == 0:
+                                try:
+                                    if '.' in amount_str and Decimal(amount_str) < Decimal('1000') and currency.symbol == 'POL':
+                                        amount = Decimal(amount_str)
+                                    elif currency.network and currency.network.upper() == 'ERC20':
+                                        if currency.symbol == 'ETH':
+                                            amount = Decimal(amount_str) / Decimal(10**18)
+                                        else:
+                                            amount = Decimal(amount_str) / Decimal(10**currency.decimals)
+                                    else:
+                                        amount = Decimal(amount_str) / Decimal(10**currency.decimals)
+                                    
+                                    deposit_info = calculate_net_deposit_amount(currency=currency, deposit_amount=amount, user_address=address)
+                                    net_amount = deposit_info['net_amount']
+                                    gas_cost = deposit_info['gas_cost']
+                                    
+                                    existing_tx.amount = net_amount
+                                    existing_tx.fee = gas_cost
+                                    existing_tx.save()
+                                    processed += 1
+                                    logger.info(f"[BATCH] Updated pending deposit {tx_hash} with amount {net_amount} (was 0)")
+                                except Exception as e:
+                                    logger.error(f"[BATCH] Error updating deposit {tx_hash}: {e}")
                             continue
                         else:
                             continue
@@ -390,29 +413,49 @@ def check_blockchain_deposits():
                         net_amount = deposit_info['net_amount']
                         gas_cost = deposit_info['gas_cost']
 
-                    with transaction.atomic():
-                        Transaction.objects.create(
-                            user=user_wallet.user,
-                            crypto=currency,
-                            amount=net_amount,
-                            fee=gas_cost,
-                            tx_hash=tx_hash,
-                            type="deposit",
-                            status=deposit_status,
-                            timestamp=timezone.now()
-                        )
 
+                    # Проверяем, есть ли депозит без tx_hash (заглушка) для обновления
+                    stub_deposit = Transaction.objects.filter(
+                        user=user_wallet.user,
+                        crypto=currency,
+                        type="deposit",
+                        status__in=['pending', 'awaiting_confirmation'],
+                        tx_hash__isnull=True
+                    ).first()
+                    
+                    if stub_deposit:
+                        # Обновляем заглушку реальными данными
+                        stub_deposit.tx_hash = tx_hash
+                        stub_deposit.amount = net_amount
+                        stub_deposit.fee = gas_cost
+                        stub_deposit.status = deposit_status
+                        stub_deposit.save()
+                        processed += 1
+                        logger.info(f"[BATCH] Updated stub deposit {stub_deposit.transaction_id} with tx_hash {tx_hash} and amount {net_amount}")
+                    else:
+                        # Создаем новую транзакцию
+                        with transaction.atomic():
+                            Transaction.objects.create(
+                                user=user_wallet.user,
+                                crypto=currency,
+                                amount=net_amount,
+                                fee=gas_cost,
+                                tx_hash=tx_hash,
+                                type="deposit",
+                                status=deposit_status,
+                                timestamp=timezone.now()
+                            )
                         processed += 1
                         logger.info(f"[BATCH] Deposit recorded with status '{deposit_status}': {user_wallet.user} {currency.symbol} {amount} (balance NOT credited for no-MEMO currencies)")
-                        
-                        # Немедленная попытка консолидации для pending депозитов
-                        # ⚠️ ВАЖНО: Консолидация работает с балансом блокчейна, а НЕ с балансом в БД!
+                    
+                    # Немедленная попытка консолидации для pending депозитов
+                    # ⚠️ ВАЖНО: Консолидация работает с балансом блокчейна, а НЕ с балансом в БД!
+                    # Используем countdown=3 чтобы дать время транзакции БД коммититься (предотвращаем race condition)
+                    if deposit_status == "pending":
+                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash} (with 3s delay to avoid race condition)")
+                        from .tasks_consolidation import consolidate_user_deposits
+                        consolidate_user_deposits.apply_async(countdown=3)
 
-                        # Используем countdown=3 чтобы дать время транзакции БД коммититься (предотвращаем race condition)
-                        if deposit_status == "pending":
-                            logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash} (with 3s delay to avoid race condition)")
-                            from .tasks_consolidation import consolidate_user_deposits
-                            consolidate_user_deposits.apply_async(countdown=3)
 
 
                     try:
@@ -693,6 +736,9 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal, D
                 to_address=system_wallet_address,
                 amount=amount_to_send,
             )
+        if not tx_hash:
+            logger.warning(f"[CONSOLIDATION] No tx_hash returned for wallet {user_wallet.deposit_address}, skipping.")
+            return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
         return (True, tx_hash, amount_to_send, gas_cost)
     except Exception as e:
         logger.error(f"[CONSOLIDATION] Error: {e}")
@@ -736,7 +782,7 @@ def process_pending_deposits():
                     wallet = futures[future]
                     try:
                         success, tx_hash, amount_sent, gas_cost = future.result(timeout=120)
-                        if success and not Transaction.objects.filter(tx_hash=tx_hash).exists():
+                        if success and tx_hash and not Transaction.objects.filter(tx_hash=tx_hash).exists():
                             with transaction.atomic():
                                 Transaction.objects.create(
                                     user=wallet.user,
@@ -1022,6 +1068,10 @@ def consolidate_funds():
                         amount=amount_to_send,
                     )
 
+                
+                if not tx_hash:
+                    logger.warning(f"[CONSOLIDATE] No tx_hash returned for user {u_wallet.user.id}, skipping transaction creation.")
+                    continue
                 
                 logger.info(f"[CONSOLIDATE] Consolidation transaction sent for user {u_wallet.user.id}. Tx hash: {tx_hash}")
 

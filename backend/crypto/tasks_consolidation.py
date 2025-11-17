@@ -294,6 +294,123 @@ def check_consolidation_confirmations():
             logger.error(f"\033[91m❌ Error checking consolidation confirmation for {tx.tx_hash}: {e}\033[0m")
             continue
     
+    # Дополнительная проверка: обновляем pending депозиты, для которых уже есть подтвержденная консолидация
+    # Это нужно для случаев, когда депозит был обнаружен после того, как консолидация уже подтвердилась
+    logger.info(f"\033[94m🔍 Checking for pending deposits with already confirmed consolidations...\033[0m")
+    from crypto.models import Cryptocurrency
+    currencies_no_memo = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
+    logger.info(f"\033[94m📊 Found {currencies_no_memo.count()} currencies without MEMO\033[0m")
+    
+    for currency in currencies_no_memo:
+        # Находим все подтвержденные консолидации для этой валюты
+        confirmed_consolidations = Transaction.objects.filter(
+            type="consolidation",
+            status="completed",
+            crypto=currency
+        ).select_related('user')
+        
+        logger.info(f"\033[94m📋 Found {confirmed_consolidations.count()} confirmed consolidations for {currency.symbol}\033[0m")
+        
+        for consolidation in confirmed_consolidations:
+            # Находим pending депозиты для этого пользователя и валюты
+            pending_deposits = Transaction.objects.filter(
+                user=consolidation.user,
+                crypto=currency,
+                type="deposit",
+                status="pending"
+            )
+            
+            logger.info(f"\033[94m👤 User {consolidation.user.id} ({consolidation.user.email}): {pending_deposits.count()} pending deposits\033[0m")
+            
+            if pending_deposits.exists():
+                # Проверяем баланс на адресе - если 0, значит средства уже консолидированы
+                try:
+                    user_wallet = UserWallet.objects.get(
+                        user=consolidation.user,
+                        currency=currency,
+                        is_system_wallet=False
+                    )
+                    if user_wallet.deposit_address:
+                        service = get_blockchain_service(currency.network or currency.symbol)
+                        blockchain_balance = service.get_balance(user_wallet.deposit_address)
+                        logger.info(f"\033[94m💰 User {consolidation.user.id} address {user_wallet.deposit_address}: balance = {blockchain_balance} {currency.symbol}\033[0m")
+                        
+                        # Если баланс 0 и есть подтвержденная консолидация, обновляем депозиты
+                        # Зачисление уже произошло при подтверждении консолидации, просто обновляем статус
+                        if blockchain_balance == 0:
+                            logger.info(f"\033[94m✅ Found {pending_deposits.count()} pending deposits for user {consolidation.user.id} with confirmed consolidation and zero balance\033[0m")
+                            
+                            # Обновляем статусы депозитов на completed
+                            # Зачисление уже произошло при подтверждении консолидации
+                            for deposit in pending_deposits:
+                                deposit.status = "completed"
+                                deposit.save()
+                                logger.info(f"\033[94m✅ Marked deposit {deposit.tx_hash or deposit.transaction_id} as completed (consolidation already confirmed)\033[0m")
+                except UserWallet.DoesNotExist:
+                    continue
+                except Exception as e:
+                    logger.error(f"\033[91m❌ Error checking balance for user {consolidation.user.id}: {e}\033[0m")
+                    continue
+    
+    # Дополнительная проверка: ищем pending депозиты без консолидаций
+    # Это может быть случай, когда депозит обнаружен, но консолидация еще не создана или не подтвердилась
+    logger.info(f"\033[94m🔍 Checking for pending deposits without consolidations...\033[0m")
+    for currency in currencies_no_memo:
+        # Находим все pending депозиты для этой валюты
+        all_pending_deposits = Transaction.objects.filter(
+            crypto=currency,
+            type="deposit",
+            status="pending"
+        ).select_related('user')
+        
+        if all_pending_deposits.exists():
+            logger.info(f"\033[94m📋 Found {all_pending_deposits.count()} total pending deposits for {currency.symbol}\033[0m")
+            
+            for deposit in all_pending_deposits:
+                # Проверяем, есть ли консолидация (pending или completed) для этого пользователя
+                has_consolidation = Transaction.objects.filter(
+                    user=deposit.user,
+                    crypto=currency,
+                    type="consolidation"
+                ).exists()
+                
+                if not has_consolidation:
+                    logger.info(f"\033[94m⚠️ User {deposit.user.id} has pending deposit {deposit.tx_hash or deposit.transaction_id} but no consolidation transaction\033[0m")
+                    
+                    # Проверяем баланс на адресе - если 0, значит средства уже консолидированы
+                    try:
+                        user_wallet = UserWallet.objects.get(
+                            user=deposit.user,
+                            currency=currency,
+                            is_system_wallet=False
+                        )
+                        if user_wallet.deposit_address:
+                            service = get_blockchain_service(currency.network or currency.symbol)
+                            blockchain_balance = service.get_balance(user_wallet.deposit_address)
+                            logger.info(f"\033[94m💰 User {deposit.user.id} address {user_wallet.deposit_address}: balance = {blockchain_balance} {currency.symbol}\033[0m")
+                            
+                            # Если баланс 0, значит средства уже консолидированы (возможно, вручную или другой транзакцией)
+                            # Обновляем статус депозита и зачисляем средства пользователю
+                            if blockchain_balance == 0:
+                                logger.info(f"\033[94m✅ User {deposit.user.id} has zero balance, marking deposit as completed\033[0m")
+                                
+                                # Зачисляем сумму депозита пользователю
+                                deposit_amount = deposit.amount
+                                user_wallet.balance += deposit_amount
+                                user_wallet.available_balance += deposit_amount
+                                user_wallet.save()
+                                
+                                # Обновляем статус депозита
+                                deposit.status = "completed"
+                                deposit.save()
+                                logger.info(f"\033[94m✅ Marked deposit {deposit.tx_hash or deposit.transaction_id} as completed and credited {deposit_amount} {currency.symbol} to user {deposit.user.id}\033[0m")
+                    except UserWallet.DoesNotExist:
+                        logger.warning(f"\033[91m⚠️ UserWallet not found for user {deposit.user.id}, currency {currency.symbol}\033[0m")
+                        continue
+                    except Exception as e:
+                        logger.error(f"\033[91m❌ Error checking balance for user {deposit.user.id}: {e}\033[0m")
+                        continue
+    
     end_time = timezone.now()
     duration = (end_time - start_time).total_seconds()
     
@@ -678,6 +795,10 @@ def consolidate_user_deposits():
                             )
                     
                     tx_hash = send_consolidation_transaction()
+                    if not tx_hash:
+                        logger.warning(f"\033[93m⚠️ No tx_hash returned for user {user_wallet.user.id}, skipping transaction creation.\033[0m")
+                        continue
+                    
                     logger.info(f"\033[92m✅ Transaction sent successfully: {tx_hash}\033[0m")
                     
                     # ⚠️ КРИТИЧЕСКИ ВАЖНО: Записываем транзакцию консолидации
