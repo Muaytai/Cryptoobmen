@@ -1,12 +1,11 @@
 from pathlib import Path
 import os
-import sys
 from datetime import timedelta
 from django.core.exceptions import ImproperlyConfigured
 
 # Применяем патч для совместимости channels-redis 4.x
 try:
-    import core.channel_layer_patch
+    import core.channel_layer_patch  # noqa: F401
 except ImportError:
     pass
 
@@ -296,8 +295,6 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
-=======
-
 # Настройки аутентификации
 AUTHENTICATION_BACKENDS = (
     'django.contrib.auth.backends.ModelBackend',
@@ -371,21 +368,61 @@ LOGGING = {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
             'style': '{',
         },
-
+        'celery_worker': {
+            'format': '🔵 [%(asctime)s: %(levelname)s/%(processName)s] %(message)s',
+            'style': '%',
+        },
+        'celery_task': {
+            'format': '🟢 [%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s',
+            'style': '%',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-
         },
         'file': {
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.RotatingFileHandler',
             'filename': str(BASE_DIR / 'logs' / 'django.log'),
             'formatter': 'verbose',
             'mode': 'a',
+            'maxBytes': 1024 * 1024,  # 1 MB
+            'backupCount': 5,  # Хранить до 5 резервных файлов
         } if not DEBUG else {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+        },
+        'celery_beat': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(BASE_DIR / 'logs' / 'celery' / 'beat.log'),
+            'formatter': 'celery_worker',
+            'mode': 'a',
+            'maxBytes': 1024 * 1024,  # 1 MB
+            'backupCount': 5,
+        },
+        'celery_high_priority': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(BASE_DIR / 'logs' / 'celery' / 'high_priority.log'),
+            'formatter': 'celery_task',
+            'mode': 'a',
+            'maxBytes': 1024 * 1024,  # 1 MB
+            'backupCount': 5,
+        },
+        'celery_medium_priority': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(BASE_DIR / 'logs' / 'celery' / 'medium_priority.log'),
+            'formatter': 'celery_task',
+            'mode': 'a',
+            'maxBytes': 1024 * 1024,  # 1 MB
+            'backupCount': 5,
+        },
+        'celery_low_priority': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(BASE_DIR / 'logs' / 'celery' / 'low_priority.log'),
+            'formatter': 'celery_task',
+            'mode': 'a',
+            'maxBytes': 1024 * 1024,  # 1 MB
+            'backupCount': 5,
         },
     },
     'loggers': {
@@ -401,12 +438,12 @@ LOGGING = {
         },
         'crypto': {
 
-            'handlers': ['colored_console'],
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': True,
         },
         'crypto.tasks_consolidation': {
-            'handlers': ['colored_console'],
+            'handlers': ['console'],
 
             'level': 'INFO',
             'propagate': True,
@@ -417,6 +454,31 @@ LOGGING = {
 
             'level': 'INFO',
             'propagate': True,
+        },
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'celery.beat': {
+            'handlers': ['celery_beat', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'celery.worker.high_priority': {
+            'handlers': ['celery_high_priority', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'celery.worker.medium_priority': {
+            'handlers': ['celery_medium_priority', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'celery.worker.low_priority': {
+            'handlers': ['celery_low_priority', 'console'],
+            'level': 'INFO',
+            'propagate': False,
         },
     },
 }
@@ -604,8 +666,6 @@ CELERY_TASK_SEND_SENT_EVENT = True
 
 
 # Периодические задачи
-from celery.schedules import crontab
-
 CELERY_BEAT_SCHEDULE = {
     'scan_deposits_every_30s': {
         'task': 'crypto.tasks.check_blockchain_deposits',
@@ -637,7 +697,7 @@ CELERY_BEAT_SCHEDULE = {
     'sync-system-wallet-balances-every-2-minutes': {
         'task': 'crypto.tasks.sync_balances_with_blockchain',
         'schedule': 120.0,  # 120 секунд = 2 минуты
-
+    },
     'sync-balances-every-5-minutes': {
         'task': 'crypto.tasks.sync_balances_with_blockchain',
         'schedule': 300.0,  # 5 минут

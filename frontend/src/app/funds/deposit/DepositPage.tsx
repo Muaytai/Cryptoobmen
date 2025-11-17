@@ -680,6 +680,7 @@ export const DepositPage: React.FC = () => {
             // Для memo
             if (depositInfo.memo && data.memo === depositInfo.memo && data.status) {
               if (data.status === 'used') {
+                console.log('DepositPage: Депозит подтвержден через memo, устанавливаем статус completed');
                 setStatus('completed');
                 localStorage.removeItem(DEPOSIT_INFO_KEY);
                 toast.success('Пополнение успешно зачислено!', {
@@ -695,6 +696,7 @@ export const DepositPage: React.FC = () => {
             // Для адреса
             if (depositInfo.address && data.address === depositInfo.address && data.status) {
               if (data.status === 'used') {
+                console.log('DepositPage: Депозит подтвержден через address, устанавливаем статус completed');
                 setStatus('completed');
                 localStorage.removeItem(DEPOSIT_INFO_KEY);
                 toast.success('Пополнение успешно зачислено!', {
