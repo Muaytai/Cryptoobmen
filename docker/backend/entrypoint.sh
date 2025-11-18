@@ -14,8 +14,8 @@ import os
 dbname = os.environ.get('POSTGRES_DB')
 user = os.environ.get('POSTGRES_USER')
 password = os.environ.get('POSTGRES_PASSWORD')
-host = os.environ.get('POSTGRES_HOST')
-port = os.environ.get('POSTGRES_PORT')
+host = os.environ.get('POSTGRES_HOST', 'postgres')  # По умолчанию используем имя сервиса в Docker
+port = os.environ.get('POSTGRES_PORT', '5432')
 
 print(f'Trying to connect to PostgreSQL at {host}:{port}...')
 
