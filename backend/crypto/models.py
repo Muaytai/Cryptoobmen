@@ -379,7 +379,9 @@ class CommissionTransaction(models.Model):
     COMMISSION_TYPE_CHOICES = [
         ('exchange', 'Обмен'),
         ('withdraw', 'Вывод'),
+
         ('consolidation', 'Консолидация'),
+
     ]
     created_at = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
@@ -399,6 +401,7 @@ class CommissionTransaction(models.Model):
 
 # --- Фикстура для автозаполнения популярных валют и сетей ---
 def create_default_cryptocurrencies():
+
     # Примеры: BTC, ETH, USDT-TRC20, BNB, XRP, LTC, SOL, MATIC
     default_cryptos = [
         {"name": "Bitcoin", "symbol": "BTC", "network": "BTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
@@ -406,6 +409,7 @@ def create_default_cryptocurrencies():
         {"name": "Tether USD", "symbol": "USDT", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
         {"name": "Tron", "symbol": "TRX", "network": "TRC20", "decimals": 6, "requires_memo": False, "icon_b64": None},
         {"name": "Binance Coin", "symbol": "BNB", "network": "BEP20", "decimals": 18, "requires_memo": True, "icon_b64": None},
+
         {"name": "Ripple", "symbol": "XRP", "network": "XRP", "decimals": 6, "requires_memo": True, "icon_b64": None},
         {"name": "Litecoin", "symbol": "LTC", "network": "LTC", "decimals": 8, "requires_memo": False, "icon_b64": None},
         {"name": "Solana", "symbol": "SOL", "network": "SOL", "decimals": 9, "requires_memo": False, "icon_b64": None},
@@ -433,6 +437,7 @@ def create_default_cryptocurrencies():
         obj.save()
 
 # Вызов при миграции или через shell
+
 
 
 class SystemWalletBalanceLog(models.Model):
@@ -554,6 +559,7 @@ class SystemWalletBalanceLog(models.Model):
         return log_entry
 
 
+
 class GeneratedWallet(models.Model):
     """
     Отслеживает все сгенерированные кошельки для предотвращения потери соответствия ключ-адрес
@@ -601,6 +607,7 @@ class GeneratedWallet(models.Model):
     def record_generated_wallet(cls, address: str, private_key: str, currency, network: str, 
                               user=None, wallet_type: str = 'user', created_by: str = '', notes: str = ''):
         """
+
         Записывает сгенерированный кошелек в БД.
         Использует get_or_create для предотвращения дубликатов адресов (race condition).
         """
@@ -620,6 +627,7 @@ class GeneratedWallet(models.Model):
             # Адрес уже существует - обновляем только если нужно
             logger.debug(f"GeneratedWallet with address {address[:20]}... already exists, skipping duplicate creation")
         return wallet
+
     
     @classmethod
     def get_wallet_by_address(cls, address: str):

@@ -57,27 +57,25 @@ class BitcoinService(BaseBlockchainService):
             else:
                 key = PrivateKey(private_key)
             
-            # Если amount указан как 0, отправляем все средства (sweep)
+            unspents = key.get_unspents()
+            if not unspents:
+                logger.warning(f"No unspents available for {key.address}, skipping send.")
+                return None
+
             if amount == Decimal('0.0'):
-                # Получаем все неистраченные выходы
-                unspents = key.get_unspents()
-                if not unspents:
-                    logger.warning(f"No unspents to sweep from {key.address}")
-                    return None
-                
-                # Для sweep отправляем все средства на указанный адрес
-                # Используем правильный синтаксис для библиотеки bit
-                try:
-                    # Пробуем метод send с массивом выходов
-                    outputs = [(to_address, key.balance_as('satoshi'), 'satoshi')]
-                    tx_hash = key.send(outputs, unspents=unspents)
-                except TypeError:
-                    # Если не работает с unspents, используем простой метод
-                    outputs = [(to_address, key.balance_as('satoshi'), 'satoshi')]
-                    tx_hash = key.send(outputs)
+                amount_satoshi = sum(int(u.amount) for u in unspents)
             else:
                 amount_satoshi = int(amount * Decimal('100000000'))
-                tx_hash = key.send([(to_address, amount_satoshi, 'satoshi')])
+
+            outputs = [(to_address, amount_satoshi, 'satoshi')]
+            tx_hex = key.create_transaction(
+                outputs,
+                fee=None,
+                leftover=to_address,
+                unspents=unspents or None,
+            )
+
+            tx_hash = self._broadcast_transaction(tx_hex)
             
             logger.info(f"Bitcoin transaction sent from {key.address}: {tx_hash}")
             return tx_hash
@@ -100,6 +98,36 @@ class BitcoinService(BaseBlockchainService):
             logger.error(f"Error getting balance for {address}: {e}")
             return Decimal('0.0')
 
+    def is_transaction_confirmed(self, tx_hash: str) -> bool:
+        """Проверяет, подтверждена ли транзакция в Blockstream API."""
+        try:
+            url = f"{self.api_url}/tx/{tx_hash}"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            return data.get('status', {}).get('confirmed', False)
+        except Exception as e:
+            logger.error(f"Error checking Bitcoin transaction {tx_hash}: {e}")
+            return False
+
+    def _broadcast_transaction(self, tx_hex: str) -> str:
+        """Публикует транзакцию через BlockCypher API, чтобы гарантировать доставку."""
+        token = getattr(settings, 'BLOCKCYPHER_API_KEY', '')
+        network_path = "test3" if self.network == 'testnet' else "main"
+        url = f"https://api.blockcypher.com/v1/btc/{network_path}/txs/push"
+        payload = {"tx": tx_hex}
+        if token:
+            payload["token"] = token
+
+        response = requests.post(url, json=payload, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        tx = data.get("tx") or {}
+        tx_hash = tx.get("hash") or data.get("hash")
+        if not tx_hash:
+            raise ValueError("BlockCypher response did not contain transaction hash.")
+        return tx_hash
+
     def create_new_address(self, user_id: int, **kwargs) -> Tuple[str, str]:
         """Создает новый адрес и приватный ключ для пользователя, используя HD-генерацию."""
         try:
@@ -120,7 +148,8 @@ class BitcoinService(BaseBlockchainService):
             bip44_chg = bip44_acc.Change(Bip44Changes.CHAIN_EXT)
             bip44_addr = bip44_chg.AddressIndex(unique_index)
 
-            address = bip44_addr.Address()
+            # bip_utils v3+ не имеет метода Address(), нужно дергать публичный ключ
+            address = bip44_addr.PublicKey().ToAddress()
             private_key_wif = bip44_addr.PrivateKey().ToWif()
             
             logger.info(f"Generated new Bitcoin address for user {user_id} (index {unique_index}): {address}")

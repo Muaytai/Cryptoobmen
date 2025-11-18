@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
 from django.core.asgi import get_asgi_application
-from asgiref.sync import sync_to_async
 from core.utils import lifespan
 
 from core.routing import websocket_urlpatterns

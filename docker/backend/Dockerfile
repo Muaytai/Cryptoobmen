@@ -42,14 +42,11 @@ RUN mkdir -p /app/static /app/media && \
     touch /app/logs/django.log && \
     chown -R app:app /app
 
-# Выполнение сбора статических файлов для продакшена
-ENV DEBUG=False
-RUN python manage.py collectstatic --noinput
-
-ENTRYPOINT ["/app/entrypoint.sh"]
-
 # Переключение на непривилегированного пользователя
 USER app
+
+# Entrypoint будет выполнять collectstatic при запуске контейнера
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 
 

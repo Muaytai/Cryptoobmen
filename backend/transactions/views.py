@@ -446,13 +446,22 @@ class DepositViewSet(viewsets.ViewSet):
                 address, memo, qr_code = result
                 gas_info = None
 
+            # Убеждаемся, что memo не None для валют с requires_memo
+            if currency.requires_memo and not memo:
+                logger.warning(f"Currency {currency.symbol} requires memo but memo is None or empty")
+                memo = None  # Явно устанавливаем None если memo отсутствует
+
             response_data = {
                 'address': address,
-                'memo': memo,
+                'memo': memo if memo else None,  # Явно устанавливаем None вместо пустой строки
                 'qr_code': qr_code,
                 'currency_symbol': currency.symbol,
-                'network': currency.network
+                'network': currency.network,
+                'requires_memo': currency.requires_memo  # Добавляем информацию о необходимости memo
             }
+            
+            # Логируем для отладки
+            logger.info(f"Deposit address response for {currency.symbol}: memo={memo}, requires_memo={currency.requires_memo}")
             
             # Добавляем информацию о газе для валют без мемо
             if gas_info is not None:

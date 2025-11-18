@@ -19,7 +19,6 @@ from transactions.models import Transaction
 logger = get_task_logger(__name__)
 logger.setLevel(logging.DEBUG)
 
-
 def retry_on_rpc_error(max_retries=3, delay=2, backoff=2):
     """
     Декоратор для повторных попыток при ошибках RPC
@@ -58,7 +57,6 @@ def retry_on_rpc_error(max_retries=3, delay=2, backoff=2):
             
         return wrapper
     return decorator
-
 
 def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
     """Минимальная сумма для консолидации в зависимости от валюты"""
@@ -122,7 +120,6 @@ def get_system_wallet_address(currency: Cryptocurrency) -> str:
         except UserWallet.DoesNotExist:
             raise Exception(f"System wallet not found for {currency.symbol}")
 
-
 @shared_task
 def check_consolidation_confirmations():
     """
@@ -174,6 +171,9 @@ def check_consolidation_confirmations():
                         is_system_wallet=False
                     )
                     
+                    # Сохраняем старый адрес для WebSocket уведомления (до генерации нового)
+                    old_deposit_address = user_wallet.deposit_address
+                    
                     # ⚠️ КРИТИЧЕСКИ ВАЖНАЯ ЛОГИКА ЗАЧИСЛЕНИЯ ПОСЛЕ КОНСОЛИДАЦИИ:
                     # Зачисляем пользователю РЕАЛЬНУЮ сумму, которая была консолидирована (tx.amount)
                     # Это amount_to_send из consolidate_user_deposits - вся сумма с блокчейна минус газ
@@ -210,6 +210,32 @@ def check_consolidation_confirmations():
                         logger.info(f"\033[94m📊 Balance: {user_wallet.balance} {tx.crypto.symbol}, Available: {user_wallet.available_balance} {tx.crypto.symbol}\033[0m")
                         logger.info(f"\033[94m📊 Total pending deposits value was: {total_pending_deposits_value} {tx.crypto.symbol}\033[0m")
                         logger.info(f"\033[94m💡 Note: User credited with consolidated amount ({consolidation_amount}), not deposit amount ({total_pending_deposits_value})\033[0m")
+                        
+                        # Отправляем WebSocket уведомление о зачислении средств на СТАРЫЙ адрес
+                        # (до генерации нового адреса, т.к. фронтенд подключен к старому адресу)
+                        try:
+                            from channels.layers import get_channel_layer
+                            from asgiref.sync import async_to_sync
+                            
+                            channel_layer = get_channel_layer()
+                            if channel_layer and old_deposit_address:
+                                logger.info(f"\033[94m📡 Sending WebSocket notification for address {old_deposit_address}\033[0m")
+                                async_to_sync(channel_layer.group_send)(
+                                    f"deposit_address_{old_deposit_address}",
+                                    {
+                                        "type": "deposit_status_update",
+                                        "data": {
+                                            'address': old_deposit_address,
+                                            'status': 'used',
+                                            'message': 'Deposit completed',
+                                            'amount': str(consolidation_amount),
+                                            'currency': tx.crypto.symbol
+                                        }
+                                    }
+                                )
+                                logger.info(f"\033[92m✅ WebSocket notification sent to {old_deposit_address}\033[0m")
+                        except Exception as ws_error:
+                            logger.error(f"\033[91m❌ Failed to send WebSocket notification: {ws_error}\033[0m")
                     else:
                         logger.warning(f"\033[93m⚠️ Consolidation {tx.tx_hash} completed but consolidation amount is zero\033[0m")
                     
@@ -268,6 +294,123 @@ def check_consolidation_confirmations():
             logger.error(f"\033[91m❌ Error checking consolidation confirmation for {tx.tx_hash}: {e}\033[0m")
             continue
     
+    # Дополнительная проверка: обновляем pending депозиты, для которых уже есть подтвержденная консолидация
+    # Это нужно для случаев, когда депозит был обнаружен после того, как консолидация уже подтвердилась
+    logger.info(f"\033[94m🔍 Checking for pending deposits with already confirmed consolidations...\033[0m")
+    from crypto.models import Cryptocurrency
+    currencies_no_memo = Cryptocurrency.objects.filter(is_active=True, requires_memo=False)
+    logger.info(f"\033[94m📊 Found {currencies_no_memo.count()} currencies without MEMO\033[0m")
+    
+    for currency in currencies_no_memo:
+        # Находим все подтвержденные консолидации для этой валюты
+        confirmed_consolidations = Transaction.objects.filter(
+            type="consolidation",
+            status="completed",
+            crypto=currency
+        ).select_related('user')
+        
+        logger.info(f"\033[94m📋 Found {confirmed_consolidations.count()} confirmed consolidations for {currency.symbol}\033[0m")
+        
+        for consolidation in confirmed_consolidations:
+            # Находим pending депозиты для этого пользователя и валюты
+            pending_deposits = Transaction.objects.filter(
+                user=consolidation.user,
+                crypto=currency,
+                type="deposit",
+                status="pending"
+            )
+            
+            logger.info(f"\033[94m👤 User {consolidation.user.id} ({consolidation.user.email}): {pending_deposits.count()} pending deposits\033[0m")
+            
+            if pending_deposits.exists():
+                # Проверяем баланс на адресе - если 0, значит средства уже консолидированы
+                try:
+                    user_wallet = UserWallet.objects.get(
+                        user=consolidation.user,
+                        currency=currency,
+                        is_system_wallet=False
+                    )
+                    if user_wallet.deposit_address:
+                        service = get_blockchain_service(currency.network or currency.symbol)
+                        blockchain_balance = service.get_balance(user_wallet.deposit_address)
+                        logger.info(f"\033[94m💰 User {consolidation.user.id} address {user_wallet.deposit_address}: balance = {blockchain_balance} {currency.symbol}\033[0m")
+                        
+                        # Если баланс 0 и есть подтвержденная консолидация, обновляем депозиты
+                        # Зачисление уже произошло при подтверждении консолидации, просто обновляем статус
+                        if blockchain_balance == 0:
+                            logger.info(f"\033[94m✅ Found {pending_deposits.count()} pending deposits for user {consolidation.user.id} with confirmed consolidation and zero balance\033[0m")
+                            
+                            # Обновляем статусы депозитов на completed
+                            # Зачисление уже произошло при подтверждении консолидации
+                            for deposit in pending_deposits:
+                                deposit.status = "completed"
+                                deposit.save()
+                                logger.info(f"\033[94m✅ Marked deposit {deposit.tx_hash or deposit.transaction_id} as completed (consolidation already confirmed)\033[0m")
+                except UserWallet.DoesNotExist:
+                    continue
+                except Exception as e:
+                    logger.error(f"\033[91m❌ Error checking balance for user {consolidation.user.id}: {e}\033[0m")
+                    continue
+    
+    # Дополнительная проверка: ищем pending депозиты без консолидаций
+    # Это может быть случай, когда депозит обнаружен, но консолидация еще не создана или не подтвердилась
+    logger.info(f"\033[94m🔍 Checking for pending deposits without consolidations...\033[0m")
+    for currency in currencies_no_memo:
+        # Находим все pending депозиты для этой валюты
+        all_pending_deposits = Transaction.objects.filter(
+            crypto=currency,
+            type="deposit",
+            status="pending"
+        ).select_related('user')
+        
+        if all_pending_deposits.exists():
+            logger.info(f"\033[94m📋 Found {all_pending_deposits.count()} total pending deposits for {currency.symbol}\033[0m")
+            
+            for deposit in all_pending_deposits:
+                # Проверяем, есть ли консолидация (pending или completed) для этого пользователя
+                has_consolidation = Transaction.objects.filter(
+                    user=deposit.user,
+                    crypto=currency,
+                    type="consolidation"
+                ).exists()
+                
+                if not has_consolidation:
+                    logger.info(f"\033[94m⚠️ User {deposit.user.id} has pending deposit {deposit.tx_hash or deposit.transaction_id} but no consolidation transaction\033[0m")
+                    
+                    # Проверяем баланс на адресе - если 0, значит средства уже консолидированы
+                    try:
+                        user_wallet = UserWallet.objects.get(
+                            user=deposit.user,
+                            currency=currency,
+                            is_system_wallet=False
+                        )
+                        if user_wallet.deposit_address:
+                            service = get_blockchain_service(currency.network or currency.symbol)
+                            blockchain_balance = service.get_balance(user_wallet.deposit_address)
+                            logger.info(f"\033[94m💰 User {deposit.user.id} address {user_wallet.deposit_address}: balance = {blockchain_balance} {currency.symbol}\033[0m")
+                            
+                            # Если баланс 0, значит средства уже консолидированы (возможно, вручную или другой транзакцией)
+                            # Обновляем статус депозита и зачисляем средства пользователю
+                            if blockchain_balance == 0:
+                                logger.info(f"\033[94m✅ User {deposit.user.id} has zero balance, marking deposit as completed\033[0m")
+                                
+                                # Зачисляем сумму депозита пользователю
+                                deposit_amount = deposit.amount
+                                user_wallet.balance += deposit_amount
+                                user_wallet.available_balance += deposit_amount
+                                user_wallet.save()
+                                
+                                # Обновляем статус депозита
+                                deposit.status = "completed"
+                                deposit.save()
+                                logger.info(f"\033[94m✅ Marked deposit {deposit.tx_hash or deposit.transaction_id} as completed and credited {deposit_amount} {currency.symbol} to user {deposit.user.id}\033[0m")
+                    except UserWallet.DoesNotExist:
+                        logger.warning(f"\033[91m⚠️ UserWallet not found for user {deposit.user.id}, currency {currency.symbol}\033[0m")
+                        continue
+                    except Exception as e:
+                        logger.error(f"\033[91m❌ Error checking balance for user {deposit.user.id}: {e}\033[0m")
+                        continue
+    
     end_time = timezone.now()
     duration = (end_time - start_time).total_seconds()
     
@@ -279,7 +422,6 @@ def check_consolidation_confirmations():
     logger.info(f"\033[94m" + "="*60 + "\033[0m")
     
     return f"Checked consolidation confirmations: {confirmed} confirmed"
-
 
 @shared_task
 def consolidate_user_deposits():
@@ -329,11 +471,11 @@ def consolidate_user_deposits():
                 continue
                 
             # Получаем все пользовательские кошельки с балансом на блокчейне
+            # Включаем кошельки с encrypted_private_key или с ключом в GeneratedWallet
             user_wallets = UserWallet.objects.filter(
                 currency=currency,
                 is_system_wallet=False,
-                deposit_address__isnull=False,
-                encrypted_private_key__isnull=False  # Только кошельки с приватными ключами
+                deposit_address__isnull=False
             ).exclude(deposit_address='')
             
             logger.info(f"\033[94m👥 Found {user_wallets.count()} user wallets for {currency.symbol}\033[0m")
@@ -345,6 +487,18 @@ def consolidate_user_deposits():
             for user_wallet in user_wallets:
                 try:
                     logger.info(f"\033[94m👤 Processing user {user_wallet.user.id} wallet: {user_wallet.deposit_address[:10]}...\033[0m")
+                    
+                    # Проверяем наличие приватного ключа (либо в encrypted_private_key, либо в GeneratedWallet)
+                    private_key_input = user_wallet.encrypted_private_key or ""
+                    if not private_key_input:
+                        from .models import GeneratedWallet
+                        gw = GeneratedWallet.objects.filter(address=user_wallet.deposit_address).first()
+                        if gw and gw.private_key:
+                            private_key_input = gw.private_key
+                            logger.info(f"\033[94m🔑 Found private key in GeneratedWallet for {user_wallet.deposit_address[:10]}...\033[0m")
+                        else:
+                            logger.warning(f"\033[93m⚠️ No private key found for wallet {user_wallet.deposit_address[:10]}... (neither in encrypted_private_key nor in GeneratedWallet), skipping\033[0m")
+                            continue
                     
                     # ⚠️ КРИТИЧЕСКИ ВАЖНО: Кошелек одноразовый, нужно ОПУСТОШИТЬ его максимально!
                     # Используем точный расчет максимальной суммы через get_max_sendable_amount или аналогичный метод
@@ -467,6 +621,7 @@ def consolidate_user_deposits():
                     # Рассчитываем МАКСИМАЛЬНУЮ сумму к переводу (всё что можно отправить)
                     # ⚠️ ВАЖНО: Используем точный расчет через методы блокчейн-сервиса, НЕ gas_reserve!
                     system_wallet_address = get_system_wallet_address(currency)
+                    gas_cost = Decimal('0')  # Инициализируем gas_cost
                     
                     # ⚠️ ВАЖНО: Используем точные методы расчета максимальной суммы для каждой валюты
                     # Для Polygon и Ethereum (нативная валюта) используем get_max_sendable_amount
@@ -476,19 +631,39 @@ def consolidate_user_deposits():
                             user_wallet.deposit_address,
                             system_wallet_address
                         )
+                        # Рассчитываем реальную стоимость газа: баланс - отправляемая сумма
+                        gas_cost = blockchain_balance - amount_to_send
                         logger.info(f"\033[94m💸 Max sendable amount (calculated via get_max_sendable_amount): {amount_to_send} {currency.symbol}\033[0m")
+
+                        logger.info(f"\033[94m⛽ Gas cost (calculated): {gas_cost} {currency.symbol}\033[0m")
+                    # Для Ethereum используем estimate_gas_fee для точного расчета
+                    elif hasattr(blockchain_service, 'estimate_gas_fee'):
+                        gas_info = blockchain_service.estimate_gas_fee(
+                            to_address=system_wallet_address,
+                            amount=blockchain_balance,
+                            contract_address=getattr(currency, 'contract_address', None)
+                        )
+                        # estimate_gas_fee возвращает словарь с 'gas_fee_eth' или 'gas_fee_eth'
+                        gas_cost = gas_info.get('gas_fee_eth', Decimal('0'))
+                        amount_to_send = blockchain_balance - gas_cost
+                        logger.info(f"\033[94m⛽ Gas cost (from estimate_gas_fee): {gas_cost} {currency.symbol}\033[0m")
+                        logger.info(f"\033[94m💸 Amount to send (balance - gas): {amount_to_send} {currency.symbol}\033[0m")
+
                     # Для Bitcoin можно отправить amount=0 для sweep всех средств
                     elif currency.symbol == 'BTC':
                         amount_to_send = Decimal('0')  # 0 означает "отправить всё" (sweep)
+                        # Для Bitcoin газ рассчитывается автоматически при sweep, но мы можем оценить его
+                        # Используем фиксированный резерв для оценки
+                        gas_cost = get_gas_reserve(currency)
                         logger.info(f"\033[94m💸 Bitcoin sweep mode: will send all funds\033[0m")
+                        logger.info(f"\033[94m⛽ Estimated gas cost for BTC: {gas_cost} {currency.symbol}\033[0m")
                     else:
                         # Fallback: для других валют оцениваем газ динамически через gas_calculation
                         from .gas_calculation import calculate_estimated_gas_cost
                         gas_cost = calculate_estimated_gas_cost(
                             currency=currency,
-                            from_address=user_wallet.deposit_address,
-                            to_address=system_wallet_address,
-                            amount=blockchain_balance
+                            deposit_amount=blockchain_balance,
+                            user_address=user_wallet.deposit_address
                         )
                         amount_to_send = blockchain_balance - gas_cost
                         logger.info(f"\033[94m⛽ Gas cost (estimated via gas_calculation): {gas_cost} {currency.symbol}\033[0m")
@@ -504,6 +679,94 @@ def consolidate_user_deposits():
                     # Для TRC-20 токенов передаем contract_address
                     contract_address_for_send = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
                     
+                    # ⚠️ ВАЖНО: Для TRC-20 токенов проверяем наличие TRX для оплаты газа
+                    # Если TRX недостаточно, отправляем TRX с системного кошелька
+                    if currency.network and currency.network.upper() == 'TRC20':
+                        # Получаем баланс TRX на адресе пользователя (без contract_address для нативного TRX)
+                        trx_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                        min_trx_for_gas = Decimal('3')  # Минимум TRX для оплаты газа
+                        
+                        logger.info(f"\033[94m💎 TRX balance on address: {trx_balance} TRX (minimum required: {min_trx_for_gas} TRX)\033[0m")
+                        
+                        if trx_balance < min_trx_for_gas:
+                            logger.warning(f"\033[93m⚠️ Insufficient TRX ({trx_balance} TRX) for gas on address {user_wallet.deposit_address}. Need to send TRX from system wallet.\033[0m")
+                            
+                            # Получаем системный TRX кошелек
+                            try:
+                                from .models import SystemWalletAddress
+                                trx_currency = Cryptocurrency.objects.get(symbol='TRX', network='TRC20')
+                                system_trx_wallet = SystemWalletAddress.objects.get(currency=trx_currency)
+                                
+                                # Проверяем баланс системного TRX кошелька
+                                system_trx_balance = blockchain_service.get_balance(system_trx_wallet.address)
+                                logger.info(f"\033[94m💎 System TRX wallet balance: {system_trx_balance} TRX\033[0m")
+                                
+                                # Рассчитываем необходимую сумму TRX для отправки
+                                trx_amount_needed = min_trx_for_gas - trx_balance
+                                
+                                # Добавляем небольшой запас для надежности
+                                trx_amount_to_send = trx_amount_needed + Decimal('1')
+                                
+                                # ⚠️ ВАЖНО: Учитываем комиссию за транзакцию TRX (обычно ~0.00001 TRX, но берем запас)
+                                trx_transaction_fee = Decimal('0.1')  # Запас для комиссии транзакции TRX
+                                total_trx_needed = trx_amount_to_send + trx_transaction_fee
+                                
+                                logger.info(f"\033[94m💸 Need to send {trx_amount_to_send} TRX + {trx_transaction_fee} TRX (fee) = {total_trx_needed} TRX total\033[0m")
+                                
+                                # Проверяем, достаточно ли TRX на системном кошельке
+                                if system_trx_balance < total_trx_needed:
+                                    logger.error(f"\033[91m❌ Insufficient TRX on system wallet! Balance: {system_trx_balance} TRX, needed: {total_trx_needed} TRX\033[0m")
+                                    logger.error(f"\033[91m❌ Cannot send TRX for gas payment. Please top up system TRX wallet.\033[0m")
+                                    continue
+                                
+                                # Отправляем TRX для оплаты газа
+                                trx_service = get_blockchain_service('TRC20')
+                                
+                                logger.info(f"\033[94m💸 Sending {trx_amount_to_send} TRX from system wallet ({system_trx_wallet.address}) to {user_wallet.deposit_address} for gas payment\033[0m")
+                                
+                                # Используем приватный ключ системного TRX кошелька
+                                system_trx_private_key = system_trx_wallet.private_key
+                                
+                                @retry_on_rpc_error(max_retries=3, delay=2, backoff=2)
+                                def send_trx_for_gas():
+                                    return trx_service.send_transaction(
+                                        private_key=system_trx_private_key,
+                                        to_address=user_wallet.deposit_address,
+                                        amount=trx_amount_to_send,
+                                    )
+                                
+                                gas_tx_hash = send_trx_for_gas()
+                                logger.info(f"\033[92m✅ TRX gas payment sent successfully: {gas_tx_hash}\033[0m")
+                                
+                                # Ждем подтверждения TRX транзакции
+                                logger.info(f"\033[94m⏳ Waiting 10 seconds for TRX transaction confirmation...\033[0m")
+                                time.sleep(10)  # Ждем 10 секунд для подтверждения
+                                
+                                # Проверяем, что TRX действительно поступил
+                                new_trx_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                                logger.info(f"\033[94m💎 New TRX balance after transfer: {new_trx_balance} TRX\033[0m")
+                                
+                                if new_trx_balance < min_trx_for_gas:
+                                    logger.warning(f"\033[93m⚠️ TRX balance still insufficient after transfer. Waiting additional 10 seconds...\033[0m")
+                                    time.sleep(10)
+                                    new_trx_balance = blockchain_service.get_balance(user_wallet.deposit_address)
+                                    logger.info(f"\033[94m💎 TRX balance after additional wait: {new_trx_balance} TRX\033[0m")
+                                
+                            except Cryptocurrency.DoesNotExist:
+                                logger.error(f"\033[91m❌ TRX currency not found in database. Cannot send TRX for gas payment.\033[0m")
+                                continue
+                            except SystemWalletAddress.DoesNotExist:
+                                logger.error(f"\033[91m❌ System TRX wallet not found. Cannot send TRX for gas payment.\033[0m")
+                                continue
+                            except Exception as gas_error:
+                                import traceback
+                                error_trace = traceback.format_exc()
+                                logger.error(f"\033[91m❌ Failed to send TRX for gas payment: {gas_error}\033[0m")
+                                logger.error(f"\033[91m❌ Traceback: {error_trace}\033[0m")
+                                continue
+                        else:
+                            logger.info(f"\033[92m✅ Sufficient TRX balance ({trx_balance} TRX) for gas payment\033[0m")
+                    
                     @retry_on_rpc_error(max_retries=3, delay=2, backoff=2)
                     def send_consolidation_transaction():
                         # ⚠️ ВАЖНО: contract_address передаем только для TRC-20 и ERC-20 токенов
@@ -516,7 +779,7 @@ def consolidate_user_deposits():
                         if 'contract_address' in params and contract_address_for_send:
                             # Сервис поддерживает contract_address (Tron, Ethereum для ERC-20)
                             return blockchain_service.send_transaction(
-                                private_key=user_wallet.encrypted_private_key,
+                                private_key=private_key_input,
                                 to_address=system_wallet_address,
                                 amount=amount_to_send,
                                 memo=f"consolidation_{user_wallet.user_id}",
@@ -525,13 +788,17 @@ def consolidate_user_deposits():
                         else:
                             # Для нативных валют (POL, ETH native, BTC) не передаем contract_address
                             return blockchain_service.send_transaction(
-                                private_key=user_wallet.encrypted_private_key,
+                                private_key=private_key_input,
                                 to_address=system_wallet_address,
                                 amount=amount_to_send,
                                 memo=f"consolidation_{user_wallet.user_id}"
                             )
                     
                     tx_hash = send_consolidation_transaction()
+                    if not tx_hash:
+                        logger.warning(f"\033[93m⚠️ No tx_hash returned for user {user_wallet.user.id}, skipping transaction creation.\033[0m")
+                        continue
+                    
                     logger.info(f"\033[92m✅ Transaction sent successfully: {tx_hash}\033[0m")
                     
                     # ⚠️ КРИТИЧЕСКИ ВАЖНО: Записываем транзакцию консолидации
@@ -539,11 +806,19 @@ def consolidate_user_deposits():
                     # Для других валют amount_to_send - это реальная сумма, которая будет зачислена пользователю
                     consolidation_amount_to_save = amount_to_send if currency.symbol != 'BTC' else blockchain_balance
                     
+                    # Для Bitcoin пересчитываем gas_cost после sweep (реальная разница между балансом и отправленной суммой)
+                    if currency.symbol == 'BTC':
+                        # После sweep реальный газ = баланс - отправленная сумма
+                        # Но amount_to_send = 0 для sweep, поэтому используем оценку или пересчитываем
+                        # В данном случае gas_cost уже рассчитан выше
+                        pass
+                    
                     with transaction.atomic():
                         Transaction.objects.create(
                             user=user_wallet.user,
                             crypto=currency,
                             amount=consolidation_amount_to_save,  # ⚠️ Это сумма, которая будет зачислена пользователю!
+                            fee=gas_cost,  # ⚠️ ВАЖНО: Сохраняем реальную стоимость газа для учета комиссии
                             tx_hash=tx_hash,
                             type="consolidation",
                             status="pending",

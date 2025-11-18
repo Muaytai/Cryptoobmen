@@ -1,3 +1,4 @@
+
 from django.contrib import admin
 from django.conf import settings
 from tronpy import Tron
@@ -12,14 +13,12 @@ from .models import (
 import csv
 from django.http import HttpResponse
 
-
 @admin.register(Cryptocurrency)
 class CryptocurrencyAdmin(admin.ModelAdmin):
     list_display = ('name', 'symbol', 'currency_type', 'network', 'is_active', 'min_exchange_amount', 'max_exchange_amount')
     list_filter = ('is_active', 'currency_type', 'network')
     search_fields = ('name', 'symbol', 'network')
     readonly_fields = ('created_at', 'updated_at')
-
 
 @admin.register(CryptoPrice)
 class CryptoPriceAdmin(admin.ModelAdmin):
@@ -32,14 +31,12 @@ class CryptoPriceAdmin(admin.ModelAdmin):
         # Запрещаем изменение истории цен
         return False
 
-
 @admin.register(ExchangePair)
 class ExchangePairAdmin(admin.ModelAdmin):
     list_display = ('from_crypto', 'to_crypto', 'is_active', 'custom_fee_percentage')
     list_filter = ('is_active', 'from_crypto__symbol', 'to_crypto__symbol')
     search_fields = ('from_crypto__name', 'to_crypto__name')
     readonly_fields = ('created_at', 'updated_at')
-
 
 @admin.register(UserWallet)
 class UserWalletAdmin(admin.ModelAdmin):
@@ -115,7 +112,6 @@ class UserWalletAdmin(admin.ModelAdmin):
         return "Системный кошелек"
     user_display.short_description = 'Пользователь / Система'
 
-
 @admin.register(SystemWalletAddress)
 class SystemWalletAddressAdmin(admin.ModelAdmin):
     list_display = ('currency', 'network', 'address', 'display_balance', 'created_at')
@@ -158,7 +154,6 @@ class SystemWalletAddressAdmin(admin.ModelAdmin):
 
     display_balance.short_description = 'Real-time Balance'
 
-
 @admin.register(UserDepositMemo)
 class UserDepositMemoAdmin(admin.ModelAdmin):
     list_display = ('user', 'currency', 'network', 'memo', 'status', 'created_at', 'expires_at')
@@ -166,19 +161,16 @@ class UserDepositMemoAdmin(admin.ModelAdmin):
     search_fields = ('user__email', 'memo')
     readonly_fields = ('user', 'currency', 'network', 'memo', 'created_at', 'expires_at')
 
-
 @admin.register(BlockchainState)
 class BlockchainStateAdmin(admin.ModelAdmin):
     list_display = ('blockchain', 'last_processed_block', 'updated_at')
     readonly_fields = ('updated_at',)
-
 
 @admin.register(CommissionWallet)
 class CommissionWalletAdmin(admin.ModelAdmin):
     list_display = ('currency', 'balance', 'is_active', 'updated_at')
     list_filter = ('is_active', 'currency__symbol')
     readonly_fields = ('created_at', 'updated_at')
-
 
 @admin.register(CommissionTransaction)
 class CommissionTransactionAdmin(admin.ModelAdmin):
@@ -199,7 +191,6 @@ class CommissionTransactionAdmin(admin.ModelAdmin):
             writer.writerow([getattr(obj, field) for field in field_names])
         return response
     export_as_csv.short_description = "Экспортировать выбранные в CSV"
-
 
 @admin.register(GeneratedWallet)
 class GeneratedWalletAdmin(admin.ModelAdmin):
@@ -255,7 +246,6 @@ class GeneratedWalletAdmin(admin.ModelAdmin):
             f"Соответствуют: {verified}. Не соответствуют: {mismatched}."
         )
     verify_key_address_match.short_description = "Проверить соответствие ключ-адрес"
-
 
 @admin.register(SystemWalletBalanceLog)
 class SystemWalletBalanceLogAdmin(admin.ModelAdmin):
@@ -371,3 +361,4 @@ class SystemWalletBalanceLogAdmin(admin.ModelAdmin):
         
         return response
     export_balance_log.short_description = "Экспортировать выбранные логи в CSV"
+

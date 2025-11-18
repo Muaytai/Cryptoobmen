@@ -41,7 +41,6 @@ def _create_missing_wallets_for_user(user: User) -> None:  # type: ignore[name-d
             "Created %s wallets for user %s", len(wallets_to_create), getattr(user, 'email', user.pk)
         )
 
-
 @receiver(post_save, sender=User, dispatch_uid='crypto_create_user_wallets')
 def create_user_wallets(sender, instance, created, **kwargs):
     """Создает кошельки для нового пользователя после коммита транзакции."""
@@ -109,7 +108,6 @@ def send_deposit_status_update_DISABLED(sender, instance, **kwargs):
 
 from transactions.models import Transaction as TransactionModel, Withdrawal as WithdrawalModel
 
-
 @receiver(post_save, sender=TransactionModel)
 def handle_transaction_status_change(sender, instance, **kwargs):
     """
@@ -118,9 +116,11 @@ def handle_transaction_status_change(sender, instance, **kwargs):
     """
     logger.info(f"Signal handle_transaction_status_change called for transaction {instance.pk}")
     
-    # Проверяем, изменился ли статус на 'cancelled' или 'failed'
-    if (instance.status in ['cancelled', 'failed'] and 
-        instance.type == 'withdrawal'):
+    if instance.type != 'withdrawal':
+        return
+
+    # Возврат средств только при отмене/ошибке вывода
+    if instance.status in ['cancelled', 'failed']:
         
         logger.info(f"Refunding transaction {instance.pk}")
         # Ищем связанный объект Withdrawal

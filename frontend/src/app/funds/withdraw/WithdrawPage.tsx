@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -220,7 +221,12 @@ export const WithdrawPage: React.FC = () => {
       const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
       if (selectedWallet) {
         // Используем новый API для расчета стоимости
-        calculateWithdrawalCost(selectedWalletId, amount, destinationAddress, memo || undefined);
+        calculateWithdrawalCost(
+          selectedWalletId,
+          amount,
+          destinationAddress,
+          requiresMemo ? memo || undefined : undefined
+        );
       }
     } else {
       setFee("0");
@@ -375,7 +381,7 @@ export const WithdrawPage: React.FC = () => {
             selectedWalletId,
             testAmount,
             destinationAddress,
-            memo || undefined
+            requiresMemo ? memo || undefined : undefined
           );
           
           if (response && response.total_cost) {
@@ -421,7 +427,6 @@ export const WithdrawPage: React.FC = () => {
     }
   };
 
-
   // Получение requires_memo для выбранного кошелька
   useEffect(() => {
     const fetchRequiresMemo = async () => {
@@ -434,6 +439,13 @@ export const WithdrawPage: React.FC = () => {
       if (selectedWallet.currency.symbol === "SOL") {
         console.log("SOL detected, setting requires_memo to false");
         setRequiresMemo(false);
+        return;
+      }
+
+      if (selectedWallet.currency.symbol === "XRP") {
+        console.log("XRP withdrawal detected, memo is not required");
+        setRequiresMemo(false);
+        setMemo("");
         return;
       }
 
@@ -455,6 +467,12 @@ export const WithdrawPage: React.FC = () => {
     };
     fetchRequiresMemo();
   }, [selectedWallet]);
+
+  useEffect(() => {
+    if (!requiresMemo && memo) {
+      setMemo("");
+    }
+  }, [requiresMemo]);
 
   // Отправка формы
   const handleSubmit = async (e: React.FormEvent) => {
@@ -992,7 +1010,6 @@ export const WithdrawPage: React.FC = () => {
               </div>
             )}
 
-
           {/* Предупреждение о безопасности */}
           <div className="mb-6 p-4 bg-yellow-900 bg-opacity-20 rounded-lg border-l-4 border-yellow-500">
             <h3 className="font-medium text-yellow-300 mb-2">
@@ -1163,3 +1180,4 @@ export const WithdrawPage: React.FC = () => {
     </div>
   );
 };
+

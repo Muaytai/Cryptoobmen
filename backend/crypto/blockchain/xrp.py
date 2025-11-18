@@ -8,7 +8,7 @@ from .base import BaseBlockchainService
 
 try:
     from xrpl.clients import JsonRpcClient
-    from xrpl.models.requests import AccountTx, AccountInfo
+    from xrpl.models.requests import AccountTx, AccountInfo, Tx
     from xrpl.wallet import Wallet
     from xrpl.transaction.reliable_submission import submit_and_wait
     from xrpl.transaction import autofill_and_sign
@@ -80,7 +80,7 @@ class XRPService(BaseBlockchainService):
             transactions = []
             
             for tx_data in response.result.get('transactions', []):
-                tx = tx_data.get('tx', {})
+                tx = tx_data.get('tx') or tx_data.get('tx_json', {})
                 meta = tx_data.get('meta', {})
                 
                 # Проверяем только входящие платежи
@@ -92,7 +92,7 @@ class XRPService(BaseBlockchainService):
                     continue
                 
                 # Получаем сумму
-                amount = tx.get('Amount')
+                amount = tx.get('Amount') or tx.get('DeliverMax') or meta.get('delivered_amount')
                 if isinstance(amount, str):
                     # XRP в drops
                     amount_drops = amount
@@ -102,24 +102,32 @@ class XRPService(BaseBlockchainService):
                 else:
                     continue
                 
-                # Получаем memo если есть
+                # Получаем Destination Tag (для XRP это основной способ идентификации депозитов)
+                # Destination Tag - это числовое поле в транзакции Payment
                 memo = None
-                memos = tx.get('Memos', [])
-                if memos:
-                    memo_data = memos[0].get('Memo', {})
-                    memo_hex = memo_data.get('MemoData', '')
-                    if memo_hex:
-                        try:
-                            memo = bytes.fromhex(memo_hex).decode('utf-8')
-                        except:
-                            memo = memo_hex
+                destination_tag = tx.get('DestinationTag')
+                if destination_tag is not None:
+                    # Destination Tag - это число, конвертируем в строку
+                    memo = str(destination_tag)
+                
+                # Если Destination Tag отсутствует, проверяем Memos (для обратной совместимости)
+                if not memo:
+                    memos = tx.get('Memos', [])
+                    if memos:
+                        memo_data = memos[0].get('Memo', {})
+                        memo_hex = memo_data.get('MemoData', '')
+                        if memo_hex:
+                            try:
+                                memo = bytes.fromhex(memo_hex).decode('utf-8')
+                            except:
+                                memo = memo_hex
                 
                 # Проверяем успешность транзакции
                 if meta.get('TransactionResult') != 'tesSUCCESS':
                     continue
                 
                 transactions.append({
-                    'transaction_id': tx.get('hash'),
+                    'transaction_id': tx.get('hash') or tx_data.get('hash'),
                     'value': amount_drops,
                     'memo': memo,
                     'block_height': tx_data.get('ledger_index'),
@@ -166,14 +174,25 @@ class XRPService(BaseBlockchainService):
             amount_drops = xrp_to_drops(amount)
             
             # Создаем транзакцию
+            # Для XRP используем Destination Tag (числовое поле), а не Memo
+            destination_tag = None
+            if memo:
+                try:
+                    # Пытаемся преобразовать memo в число (Destination Tag)
+                    destination_tag = int(memo)
+                except ValueError:
+                    # Если не число, используем как есть (для обратной совместимости)
+                    pass
+            
             payment = Payment(
                 account=wallet.classic_address,
                 destination=to_address,
-                amount=str(amount_drops)
+                amount=str(amount_drops),
+                destination_tag=destination_tag if destination_tag is not None else None
             )
             
-            # Добавляем memo если есть
-            if memo:
+            # Если memo не является числом, добавляем его как Memo (для обратной совместимости)
+            if memo and destination_tag is None:
                 memo_hex = memo.encode('utf-8').hex().upper()
                 payment.memos = [{
                     "Memo": {
@@ -230,4 +249,31 @@ class XRPService(BaseBlockchainService):
             return is_valid_classic_address(address)
         except Exception as e:
             logger.error(f"Error validating XRP address {address}: {e}")
+            return False
+
+    def is_transaction_confirmed(self, tx_hash: str) -> bool:
+        """Проверяет, подтверждена ли транзакция в XRPL."""
+        if not XRPL_AVAILABLE or not self.client:
+            logger.warning("XRP confirmation check unavailable: xrpl-py library not available")
+            return False
+
+        try:
+            tx_request = Tx(transaction=tx_hash, binary=False)
+            response = self.client.request(tx_request)
+
+            if not response.is_successful():
+                logger.warning(f"Failed to fetch XRP tx {tx_hash}: {response}")
+                return False
+
+            result = response.result
+            meta = result.get('meta', {})
+            validated = result.get('validated', False)
+
+            if validated and meta.get('TransactionResult') == 'tesSUCCESS':
+                return True
+
+            logger.info(f"XRP tx {tx_hash} not yet validated. validated={validated}, result={meta.get('TransactionResult')}")
+            return False
+        except Exception as e:
+            logger.error(f"Error checking XRP transaction {tx_hash}: {e}")
             return False

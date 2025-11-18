@@ -1,3 +1,4 @@
+
 """Service for interacting with the Ethereum blockchain (ETH and ERC-20 tokens)."""
 from __future__ import annotations
 
@@ -341,12 +342,10 @@ class EthereumService(BaseBlockchainService):
         """Send ETH transaction."""
         nonce = self.w3.eth.get_transaction_count(account.address)
         gas_price = self._estimate_gas_price()
+        chain_id = self.w3.eth.chain_id
         
         # Convert ETH to Wei
         value_wei = Web3.to_wei(amount, 'ether')
-        
-        # Get chain_id for EIP-155 replay protection
-        chain_id = self.w3.eth.chain_id
         
         transaction = {
             'to': to_address,
@@ -354,13 +353,11 @@ class EthereumService(BaseBlockchainService):
             'gas': self.gas_limit_eth,
             'gasPrice': gas_price,
             'nonce': nonce,
-            'chainId': chain_id,  # EIP-155: Required for replay protection
+            'chainId': chain_id,
         }
         
         signed_txn = self.w3.eth.account.sign_transaction(transaction, account.key)
-        # Используем raw_transaction (snake_case) для совместимости с новыми версиями web3.py
-        raw_tx = signed_txn.raw_transaction if hasattr(signed_txn, 'raw_transaction') else signed_txn.rawTransaction
-        tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         
         logger.info(f"Sent {amount} ETH from {account.address} to {to_address}, tx: {tx_hash.hex()}")
         return tx_hash.hex()
@@ -377,8 +374,6 @@ class EthereumService(BaseBlockchainService):
         
         nonce = self.w3.eth.get_transaction_count(account.address)
         gas_price = self._estimate_gas_price()
-        
-        # Get chain_id for EIP-155 replay protection
         chain_id = self.w3.eth.chain_id
         
         # Build transaction
@@ -387,13 +382,11 @@ class EthereumService(BaseBlockchainService):
             'gas': self.gas_limit_erc20,
             'gasPrice': gas_price,
             'nonce': nonce,
-            'chainId': chain_id,  # EIP-155: Required for replay protection
+            'chainId': chain_id,
         })
         
         signed_txn = self.w3.eth.account.sign_transaction(transaction, account.key)
-        # Используем raw_transaction (snake_case) для совместимости с новыми версиями web3.py
-        raw_tx = signed_txn.raw_transaction if hasattr(signed_txn, 'raw_transaction') else signed_txn.rawTransaction
-        tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         
         logger.info(f"Sent {amount} tokens from {account.address} to {to_address}, tx: {tx_hash.hex()}")
         return tx_hash.hex()
@@ -464,132 +457,6 @@ class EthereumService(BaseBlockchainService):
             logger.error(f"Error getting transaction receipt for {tx_hash}: {e}")
             return None
 
-    def is_transaction_confirmed(self, tx_hash: str, required_confirmations: int = None) -> bool:
-        """
-        Check if transaction is confirmed with required number of confirmations.
-        
-        :param tx_hash: Transaction hash
-        :param required_confirmations: Number of required confirmations (None = auto-detect based on network)
-        :return: True if confirmed
-        """
-        try:
-            receipt = self.w3.eth.get_transaction_receipt(tx_hash)
-            if receipt is None:
-                return False
-            
-            # Проверяем статус транзакции (1 = success, 0 = failed)
-            if receipt.status == 0:
-                logger.warning(f"Transaction {tx_hash} failed (status=0)")
-                return False
-            
-            # Автоматически определяем количество подтверждений в зависимости от сети
-            if required_confirmations is None:
-                # Для testnet (Sepolia, Goerli) достаточно 3 подтверждений
-                # Для mainnet требуется 12 подтверждений для безопасности
-                if self.network in ['sepolia', 'goerli']:
-                    required_confirmations = 3
-                else:
-                    required_confirmations = 12
-            
-            current_block = self.w3.eth.block_number
-            confirmations = current_block - receipt.blockNumber
-            
-            is_confirmed = confirmations >= required_confirmations
-            logger.debug(f"Transaction {tx_hash}: {confirmations} confirmations (required: {required_confirmations} for {self.network})")
-            
-            return is_confirmed
-            
-        except Exception as e:
-            logger.warning(f"Failed to check transaction confirmation for {tx_hash}: {e}")
-            return False
-
-    def estimate_gas_cost(self, from_address: str, to_address: str, amount_wei: int) -> Decimal:
-        """
-        Оценивает стоимость газа для ETH транзакции с учетом реальной оценки через RPC.
-        
-        :param from_address: Адрес отправителя
-        :param to_address: Адрес получателя
-        :param amount_wei: Сумма в Wei
-        :return: Стоимость газа в ETH
-        """
-        try:
-            # Получаем текущую цену газа
-            gas_price = self._estimate_gas_price()
-            
-            # Оцениваем количество газа для транзакции через RPC
-            gas_estimate = self.w3.eth.estimate_gas({
-                'from': to_checksum_address(from_address),
-                'to': to_checksum_address(to_address),
-                'value': amount_wei
-            })
-            
-            # Рассчитываем общую стоимость газа в wei
-            gas_cost_wei = gas_price * gas_estimate
-            
-            # Применяем коэффициент безопасности 1.1
-            # gas_cost_wei - это int, поэтому умножаем как int и приводим к int
-            gas_cost_wei_with_buffer = int(Decimal(gas_cost_wei) * Decimal('1.1'))
-            
-            # Конвертируем в ETH
-            gas_cost_eth = Web3.from_wei(gas_cost_wei_with_buffer, 'ether')
-            
-            logger.info(f"Gas estimation: price={gas_price}, estimate={gas_estimate}, cost={gas_cost_eth} ETH (with 1.1x buffer)")
-            
-            return Decimal(str(gas_cost_eth))
-            
-        except Exception as e:
-            logger.error(f"Failed to estimate gas cost: {e}")
-            # Fallback к фиксированному значению
-            return Decimal('0.005')
-    
-    def get_max_sendable_amount(self, address: str, to_address: str) -> Decimal:
-        """
-        Рассчитывает максимальную сумму ETH, которую можно отправить с адреса (баланс - газ).
-        
-        ⚠️ ВАЖНО: Для ETH газ вычитается из того же баланса ETH, поэтому нужно точно рассчитать,
-        чтобы на адресе осталось достаточно для оплаты газа.
-        
-        :param address: Адрес отправителя
-        :param to_address: Адрес получателя
-        :return: Максимальная сумма для отправки в ETH
-        """
-        try:
-            balance = self.get_balance(address)
-            if balance <= 0:
-                return Decimal('0')
-            
-            # Конвертируем баланс в wei для оценки газа
-            balance_wei = Web3.to_wei(balance, 'ether')
-            
-            # Оцениваем стоимость газа для отправки всего баланса
-            # Важно: gas будет вычитаться из того же баланса, поэтому нужно итеративно найти оптимальную сумму
-            gas_cost = self.estimate_gas_cost(address, to_address, balance_wei)
-            
-            # Максимальная отправляемая сумма = баланс - газ
-            max_sendable = balance - gas_cost
-            
-            # Если после вычитания газа сумма слишком мала или отрицательная
-            if max_sendable <= 0:
-                logger.warning(f"Cannot send from {address}: balance {balance} ETH, gas cost {gas_cost} ETH")
-                return Decimal('0')
-            
-            # Дополнительная проверка: уточняем оценку газа для полученной суммы
-            # (газ может немного отличаться для меньшей суммы)
-            max_sendable_wei = Web3.to_wei(max_sendable, 'ether')
-            refined_gas_cost = self.estimate_gas_cost(address, to_address, max_sendable_wei)
-            refined_max_sendable = balance - refined_gas_cost
-            
-            if refined_max_sendable <= 0:
-                logger.warning(f"Refined calculation: balance {balance} ETH, refined gas {refined_gas_cost} ETH")
-                return Decimal('0')
-            
-            logger.info(f"Max sendable from {address}: {refined_max_sendable} ETH (balance: {balance}, gas: {refined_gas_cost})")
-            return refined_max_sendable
-            
-        except Exception as e:
-            logger.error(f"Failed to calculate max sendable amount: {e}")
-            return Decimal('0')
-    
     def estimate_gas_fee(self, to_address: str, amount: Decimal, contract_address: str = None) -> Dict[str, Decimal]:
         """
         Estimate gas fee for a transaction.
@@ -622,3 +489,44 @@ class EthereumService(BaseBlockchainService):
                 'gas_fee_eth': Decimal('0.0042'),
                 'gas_fee_usd': Decimal('0.0')
             }
+    
+    def is_transaction_confirmed(self, tx_hash: str, required_confirmations: int = 12) -> bool:
+        """
+        Check if transaction is confirmed with required number of confirmations.
+        
+        :param tx_hash: Transaction hash
+        :param required_confirmations: Number of required confirmations (default: 12)
+        :return: True if confirmed
+        """
+        try:
+            # Получаем квитанцию транзакции
+            receipt = self.w3.eth.get_transaction_receipt(tx_hash)
+            if receipt is None:
+                logger.debug(f"Transaction {tx_hash} not found in blockchain")
+                return False
+            
+            # Проверяем статус транзакции (0 = failed, 1 = success)
+            if receipt.get('status') == 0:
+                logger.warning(f"Transaction {tx_hash} failed in blockchain")
+                return False
+            
+            # Получаем текущий блок
+            current_block = self.w3.eth.block_number
+            tx_block = receipt.get('blockNumber')
+            
+            if tx_block is None:
+                logger.debug(f"Transaction {tx_hash} not yet mined")
+                return False
+            
+            # Вычисляем количество подтверждений
+            confirmations = current_block - tx_block
+            
+            is_confirmed = confirmations >= required_confirmations
+            logger.debug(f"Transaction {tx_hash}: {confirmations} confirmations (required: {required_confirmations})")
+            
+            return is_confirmed
+            
+        except Exception as e:
+            logger.warning(f"Failed to check transaction confirmation for {tx_hash}: {e}")
+            return False
+
