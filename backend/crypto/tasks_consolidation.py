@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import time
 from decimal import Decimal
+from datetime import timedelta
 from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.utils import timezone
@@ -532,13 +533,34 @@ def consolidate_user_deposits():
                         status="pending"
                     )
                     
+                    # Дополнительная проверка: если есть совсем свежие депозиты (менее 5 секунд), ждем немного
+                    # Это защита от race condition, когда депозит только что создан
+                    if pending_deposits.count() == 0:
+                        very_recent_deposits = Transaction.objects.filter(
+                            user=user_wallet.user,
+                            crypto=currency,
+                            type="deposit",
+                            timestamp__gte=timezone.now() - timedelta(seconds=5)
+                        ).exists()
+                        
+                        if very_recent_deposits:
+                            logger.info(f"\033[94m⏳ Very recent deposit found (<5s), waiting 3 seconds to ensure DB commit...\033[0m")
+                            time.sleep(3)
+                            
+                            # Проверяем еще раз после задержки
+                            pending_deposits = Transaction.objects.filter(
+                                user=user_wallet.user,
+                                crypto=currency,
+                                type="deposit",
+                                status="pending"
+                            )
+                    
                     if pending_deposits.count() == 0:
                         # Нет pending депозитов - проверяем, есть ли свежие транзакции в блокчейне
                         # Это может быть пропущенный сканированием депозит
                         logger.info(f"\033[94m🔍 No pending deposits for user {user_wallet.user.id}, checking blockchain for recent transactions...\033[0m")
                         
                         try:
-                            from datetime import timedelta
                             # Проверяем транзакции за последние 10 минут
                             recent_window = int((timezone.now() - timedelta(minutes=10)).timestamp() * 1000)
                             
