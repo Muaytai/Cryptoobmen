@@ -1,13 +1,14 @@
 from decimal import Decimal
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union, Optional
 import logging
 import os
-
 import json
 import base58
-from typing import Union
 
+from requests.exceptions import Timeout, ConnectionError
 from solana.rpc.api import Client
+from solana.rpc.core import RPCException
+from solana.rpc.types import TxOpts
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.transaction import Transaction
@@ -31,11 +32,6 @@ RPC_ENDPOINTS = {
     "testnet": "https://api.testnet.solana.com",
     "devnet": f"https://devnet.helius-rpc.com/?api-key={HELIUS_API_KEY}",
 }
-
-from solana.rpc.types import TxOpts
-from typing import Optional
-from requests.exceptions import Timeout, ConnectionError
-from solana.rpc.core import RPCException
 
 class SolanaService(BaseBlockchainService):
     def __init__(self, network: str = "devnet"):

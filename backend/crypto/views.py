@@ -1,24 +1,19 @@
-from django.shortcuts import render, get_object_or_404
-from rest_framework import viewsets, permissions, status, generics, filters
-from rest_framework.decorators import api_view, permission_classes, action
+from django.shortcuts import get_object_or_404
+from rest_framework import viewsets, status, generics
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
-from django.db.models import Q, F, Sum, OuterRef, Subquery
 from decimal import Decimal
-import requests
-from datetime import datetime
-from django.conf import settings
-from django.utils import timezone
 from rest_framework.views import APIView
 from django.db import transaction
 from .models import (
     Cryptocurrency, CryptoPrice, ExchangePair, UserWallet, ExchangeOrder, CommissionWallet
 )
 from transactions.models import Transfer
-from transactions.models import Transaction as TX, Exchange as TransactionExchange, Deposit, Withdrawal, Review
+from transactions.models import Transaction as TX, Exchange as TransactionExchange
 from .serializers import (
     CryptocurrencySerializer, CryptoPriceSerializer, ExchangePairSerializer,
-    UserWalletSerializer, ExchangeCalculatorSerializer, PerformExchangeSerializer,
+    UserWalletSerializer, ExchangeCalculatorSerializer,
     TransferSerializer, ExchangeOrderSerializer, CommissionWalletSerializer
 )
 from .services import get_exchange_rates
@@ -35,7 +30,6 @@ class CryptocurrencyViewSet(viewsets.ModelViewSet):
         """Определяем права доступа в зависимости от действия"""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             # Разрешаем site-admin и staff управлять криптовалютами
-            from accounts.decorators import site_admin_or_staff_required
             from rest_framework.permissions import IsAuthenticated
             return [IsAuthenticated]
         return [AllowAny()]
