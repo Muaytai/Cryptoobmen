@@ -75,3 +75,11 @@ docker-compose.local.yml
 .env.dev
 .env.prod
 .cursorignore
+
+# Скрипты бэкапа и восстановления БД
+backend/backup_db.py
+backend/restore_db.py
+
+# Директория с бэкапами БД
+backend/backups/
+backend/**/*.json.gz
