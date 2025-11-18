@@ -47,15 +47,27 @@ class DepositConsumer(AsyncWebsocketConsumer):
 
 class DepositAddressConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         self.address = self.scope['url_route']['kwargs']['address']
-        self.group_name = f'deposit_address_{self.address}'
+        # Приводим адрес к нижнему регистру для единообразия
+        address_lower = self.address.lower()
+        self.group_name = f'deposit_address_{address_lower}'
+        
+        logger.info(f"DepositAddressConsumer: Attempting to connect for address {self.address} (normalized: {address_lower}), group: {self.group_name}")
 
-        # Присоединяемся к группе
-        await self.channel_layer.group_add(
-            self.group_name,
-            self.channel_name
-        )
-        await self.accept()
+        try:
+            # Присоединяемся к группе
+            await self.channel_layer.group_add(
+                self.group_name,
+                self.channel_name
+            )
+            await self.accept()
+            logger.info(f"DepositAddressConsumer: Successfully connected for address {self.address}")
+        except Exception as e:
+            logger.error(f"DepositAddressConsumer: Error connecting for address {self.address}: {e}", exc_info=True)
+            raise
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(
@@ -65,4 +77,8 @@ class DepositAddressConsumer(AsyncWebsocketConsumer):
 
     async def deposit_status_update(self, event):
         # Отправляем событие клиенту
-        await self.send(text_data=json.dumps(event['data'])) 
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"DepositAddressConsumer: Received deposit_status_update for address {self.address}, group {self.group_name}, data: {event['data']}")
+        await self.send(text_data=json.dumps(event['data']))
+        logger.info(f"DepositAddressConsumer: Message sent to WebSocket client for {self.address}") 

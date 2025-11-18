@@ -675,12 +675,27 @@ export const DepositPage: React.FC = () => {
 
         ws.onmessage = (event) => {
           try {
-            console.log('Получено WebSocket сообщение:', event.data);
+            console.log('DepositPage: Получено WebSocket сообщение:', event.data);
             const data = JSON.parse(event.data);
+            console.log('DepositPage: Распарсенные данные WebSocket:', data);
+            console.log('DepositPage: Текущий depositInfo:', {
+              memo: depositInfo.memo,
+              address: depositInfo.address
+            });
+            
+            // Получаем актуальные данные из состояния
+            const currentDepositInfo = depositInfo;
+            
+            // Проверяем статусы, которые означают успешное пополнение
+            const successStatuses = ['used', 'completed', 'confirmed', 'pending'];
+            const isSuccessStatus = data.status && successStatuses.includes(data.status);
+            
             // Для memo
-            if (depositInfo.memo && data.memo === depositInfo.memo && data.status) {
-              if (data.status === 'used') {
-                console.log('DepositPage: Депозит подтвержден через memo, устанавливаем статус completed');
+            if (currentDepositInfo.memo && data.memo) {
+              console.log('DepositPage: Проверка memo - получено:', data.memo, 'ожидается:', currentDepositInfo.memo);
+              if (String(data.memo) === String(currentDepositInfo.memo) && isSuccessStatus) {
+                console.log('DepositPage: Memo совпадает, статус:', data.status);
+                console.log('DepositPage: Депозит обнаружен через memo, устанавливаем статус completed');
                 setStatus('completed');
                 localStorage.removeItem(DEPOSIT_INFO_KEY);
                 toast.success('Пополнение успешно зачислено!', {
@@ -691,12 +706,39 @@ export const DepositPage: React.FC = () => {
                   wsRef.current.close();
                   wsRef.current = null;
                 }
+                return;
               }
             }
+            
             // Для адреса
-            if (depositInfo.address && data.address === depositInfo.address && data.status) {
-              if (data.status === 'used') {
-                console.log('DepositPage: Депозит подтвержден через address, устанавливаем статус completed');
+            if (currentDepositInfo.address && data.address) {
+              console.log('DepositPage: Проверка address - получено:', data.address, 'ожидается:', currentDepositInfo.address);
+              if (String(data.address).toLowerCase() === String(currentDepositInfo.address).toLowerCase() && isSuccessStatus) {
+                console.log('DepositPage: Address совпадает, статус:', data.status);
+                console.log('DepositPage: Депозит обнаружен через address, устанавливаем статус completed');
+                setStatus('completed');
+                localStorage.removeItem(DEPOSIT_INFO_KEY);
+                toast.success('Пополнение успешно зачислено!', {
+                  duration: 5000,
+                  position: 'top-center',
+                });
+                if (wsRef.current) {
+                  wsRef.current.close();
+                  wsRef.current = null;
+                }
+                return;
+              }
+            }
+            
+            // Дополнительная проверка: если в данных есть общий статус подтверждения
+            if (isSuccessStatus) {
+              console.log('DepositPage: Получен статус подтверждения без точного совпадения memo/address:', data);
+              // Проверяем, есть ли хотя бы частичное совпадение
+              const hasMemoMatch = currentDepositInfo.memo && data.memo && String(data.memo) === String(currentDepositInfo.memo);
+              const hasAddressMatch = currentDepositInfo.address && data.address && String(data.address).toLowerCase() === String(currentDepositInfo.address).toLowerCase();
+              
+              if (hasMemoMatch || hasAddressMatch) {
+                console.log('DepositPage: Найдено частичное совпадение, устанавливаем статус completed');
                 setStatus('completed');
                 localStorage.removeItem(DEPOSIT_INFO_KEY);
                 toast.success('Пополнение успешно зачислено!', {
@@ -710,7 +752,7 @@ export const DepositPage: React.FC = () => {
               }
             }
           } catch (error) {
-            console.error('Ошибка при обработке сообщения WebSocket:', error);
+            console.error('DepositPage: Ошибка при обработке сообщения WebSocket:', error);
           }
         };
 
@@ -795,6 +837,7 @@ export const DepositPage: React.FC = () => {
   }
   
   const renderContent = () => {
+    console.log('DepositPage: renderContent вызван со статусом:', status);
     switch (status) {
       case 'loading':
         return (
@@ -957,6 +1000,7 @@ export const DepositPage: React.FC = () => {
         );
         
       case 'completed':
+        console.log('DepositPage: Рендерим блок completed - пополнение успешно!');
         return (
           <div className="text-center p-8 bg-green-900 bg-opacity-20 rounded-lg">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-green-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

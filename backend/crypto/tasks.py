@@ -151,6 +151,12 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
                 from_block = max(current_block - 500, 1)
                 params = {'from_block': from_block, 'to_block': current_block}
 
+            elif currency.symbol == 'ETH' and not currency.contract_address:
+                # Для нативного ETH используем блоки, как для POL
+                current_block = service.w3.eth.block_number
+                from_block = max(current_block - 500, 1)
+                params = {'from_block': from_block, 'to_block': current_block, 'min_timestamp': min_ts}
+
             elif currency.network and currency.network.upper() in ('ERC20', 'TRC20'):
                 params = {'min_timestamp': min_ts, 'contract_address': currency.contract_address}
             else:
@@ -182,10 +188,25 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
 
     results = {}
     if transaction_params:
-        if currency.symbol == 'POL' and hasattr(service, 'optimized_scanner') and service.optimized_scanner:
-            logger.info(f"[BATCH][POL] Using optimized scanner for {len(active_addresses)} addresses")
+        # Используем оптимизированный сканер для POL и ETH (нативные токены)
+        use_optimized = (
+            (currency.symbol == 'POL' or (currency.symbol == 'ETH' and not currency.contract_address))
+            and hasattr(service, 'optimized_scanner') 
+            and service.optimized_scanner
+        )
+        
+        if use_optimized:
+            currency_name = currency.symbol
+            logger.info(f"[BATCH][{currency_name}] Using optimized scanner for {len(active_addresses)} addresses")
             current_block = service.w3.eth.block_number
             from_block = max(current_block - 500, 1)
+            
+            # Создаем словарь min_timestamp для каждого адреса для фильтрации
+            address_min_timestamps = {}
+            for addr, params in transaction_params:
+                min_ts = params.get('min_timestamp', 0)
+                address_min_timestamps[addr.lower()] = min_ts
+            
             try:
                 all_transactions = service.optimized_scanner.scan_optimized(active_addresses, from_block, current_block)
 
@@ -193,29 +214,34 @@ def process_addresses_batch(currency, user_wallets, service) -> Dict[str, Tuple[
                 for tx in all_transactions:
                     to_addr = tx.get('to_address', '').lower()
                     if to_addr in [addr.lower() for addr in active_addresses]:
+                        # Конвертируем timestamp из секунд в миллисекунды если нужно
+                        tx_timestamp = tx.get('timestamp', 0)
+                        if tx_timestamp > 0 and tx_timestamp < 10000000000:
+                            tx_timestamp = tx_timestamp * 1000
+                            tx['timestamp'] = tx_timestamp
+                        
+                        # Фильтруем по min_timestamp для ETH
+                        min_ts = address_min_timestamps.get(to_addr, 0)
+                        if min_ts > 0 and tx_timestamp < min_ts:
+                            continue
+                        
                         if to_addr not in transactions_by_address:
                             transactions_by_address[to_addr] = []
                         transactions_by_address[to_addr].append(tx)
-
 
                 for address in active_addresses:
                     addr_lower = address.lower()
                     txs = transactions_by_address.get(addr_lower, [])
                     results[address] = (txs, True)
-
                     
             except Exception as e:
-                logger.error(f"[BATCH][POL] Optimized scanner failed: {e}, falling back to batch RPC")
+                logger.error(f"[BATCH][{currency_name}] Optimized scanner failed: {e}, falling back to batch RPC")
                 # Fallback к обычному батч-процессору
-
-            except Exception as e:
-                logger.error(f"[BATCH][POL] Optimized scanner failed: {e}, falling back to batch RPC")
-
                 all_transactions = cached_batch_processor.batch_get_transactions(service, transaction_params)
                 for address, txs in all_transactions.items():
                     results[address] = (txs, True)
         else:
-
+            # Для ERC-20 токенов и других используем обычный батч-процессор
             all_transactions = cached_batch_processor.batch_get_transactions(service, transaction_params)
             for address, txs in all_transactions.items():
                 results[address] = (txs, True)
@@ -363,30 +389,7 @@ def check_blockchain_deposits():
                         if existing_tx.status == 'completed':
                             continue
                         elif existing_tx.status == 'pending':
-                            # Обновляем существующий pending депозит, если amount был 0 (заглушка)
-                            if existing_tx.amount == 0:
-                                try:
-                                    if '.' in amount_str and Decimal(amount_str) < Decimal('1000') and currency.symbol == 'POL':
-                                        amount = Decimal(amount_str)
-                                    elif currency.network and currency.network.upper() == 'ERC20':
-                                        if currency.symbol == 'ETH':
-                                            amount = Decimal(amount_str) / Decimal(10**18)
-                                        else:
-                                            amount = Decimal(amount_str) / Decimal(10**currency.decimals)
-                                    else:
-                                        amount = Decimal(amount_str) / Decimal(10**currency.decimals)
-                                    
-                                    deposit_info = calculate_net_deposit_amount(currency=currency, deposit_amount=amount, user_address=address)
-                                    net_amount = deposit_info['net_amount']
-                                    gas_cost = deposit_info['gas_cost']
-                                    
-                                    existing_tx.amount = net_amount
-                                    existing_tx.fee = gas_cost
-                                    existing_tx.save()
-                                    processed += 1
-                                    logger.info(f"[BATCH] Updated pending deposit {tx_hash} with amount {net_amount} (was 0)")
-                                except Exception as e:
-                                    logger.error(f"[BATCH] Error updating deposit {tx_hash}: {e}")
+                            processed += 1
                             continue
                         else:
                             continue
@@ -413,66 +416,66 @@ def check_blockchain_deposits():
                         net_amount = deposit_info['net_amount']
                         gas_cost = deposit_info['gas_cost']
 
-
-                    # Проверяем, есть ли депозит без tx_hash (заглушка) для обновления
-                    stub_deposit = Transaction.objects.filter(
-                        user=user_wallet.user,
-                        crypto=currency,
-                        type="deposit",
-                        status__in=['pending', 'awaiting_confirmation'],
-                        tx_hash__isnull=True
-                    ).first()
-                    
-                    if stub_deposit:
-                        # Обновляем заглушку реальными данными
-                        stub_deposit.tx_hash = tx_hash
-                        stub_deposit.amount = net_amount
-                        stub_deposit.fee = gas_cost
-                        stub_deposit.status = deposit_status
-                        stub_deposit.save()
-                        processed += 1
-                        logger.info(f"[BATCH] Updated stub deposit {stub_deposit.transaction_id} with tx_hash {tx_hash} and amount {net_amount}")
-                    else:
-                        # Создаем новую транзакцию
-                        with transaction.atomic():
-                            Transaction.objects.create(
-                                user=user_wallet.user,
-                                crypto=currency,
-                                amount=net_amount,
-                                fee=gas_cost,
-                                tx_hash=tx_hash,
-                                type="deposit",
-                                status=deposit_status,
-                                timestamp=timezone.now()
+                    # Отправляем WebSocket уведомление СРАЗУ при обнаружении депозита, ДО создания транзакции в БД
+                    # ⚠️ ВАЖНО: Отправляем при любом статусе, чтобы фронтенд получил уведомление как можно быстрее
+                    try:
+                        from channels.layers import get_channel_layer
+                        from asgiref.sync import async_to_sync
+                        
+                        channel_layer = get_channel_layer()
+                        logger.info(f"[BATCH] DEBUG: channel_layer={channel_layer}, address={address}")
+                        if channel_layer:
+                            # Приводим адрес к нижнему регистру для единообразия с consumer
+                            address_lower = address.lower()
+                            group_name = f"deposit_address_{address_lower}"
+                            logger.info(f"[BATCH] Sending WebSocket notification IMMEDIATELY after deposit detection to group: {group_name} for address: {address}")
+                            logger.info(f"[BATCH] WebSocket data: status={deposit_status}, amount={net_amount}, currency={currency.symbol}, network={currency.network}, tx_hash={tx_hash}")
+                            async_to_sync(channel_layer.group_send)(
+                                group_name,
+                                {"type": "deposit_status_update", "data": {
+                                    "address": address,
+                                    "currency": currency.symbol,
+                                    "network": currency.network,
+                                    "status": deposit_status,  # Отправляем реальный статус депозита
+                                    "amount": str(net_amount),
+                                    "tx_hash": tx_hash,
+                                    "message": f"Deposit detected: {deposit_status}",
+                                }}
                             )
+                            logger.info(f"[BATCH] WebSocket notification sent successfully to {group_name} (BEFORE DB transaction)")
+                        else:
+                            logger.warning(f"[BATCH] Cannot send WebSocket notification: channel_layer is None for address {address}")
+                    except Exception as e:
+                        logger.error(f"[BATCH] WS error for {address}: {e}", exc_info=True)
+
+                    with transaction.atomic():
+                        deposit_transaction = Transaction.objects.create(
+                            user=user_wallet.user,
+                            crypto=currency,
+                            amount=net_amount,
+                            fee=gas_cost,
+                            tx_hash=tx_hash,
+                            type="deposit",
+                            status=deposit_status,
+                            timestamp=timezone.now()
+                        )
+
                         processed += 1
                         logger.info(f"[BATCH] Deposit recorded with status '{deposit_status}': {user_wallet.user} {currency.symbol} {amount} (balance NOT credited for no-MEMO currencies)")
-                    
-                    # Немедленная попытка консолидации для pending депозитов
-                    # ⚠️ ВАЖНО: Консолидация работает с балансом блокчейна, а НЕ с балансом в БД!
-                    # Используем countdown=3 чтобы дать время транзакции БД коммититься (предотвращаем race condition)
-                    if deposit_status == "pending":
-                        logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash} (with 3s delay to avoid race condition)")
-                        from .tasks_consolidation import consolidate_user_deposits
-                        consolidate_user_deposits.apply_async(countdown=3)
-
-
-
-                    try:
-                        channel_layer = get_channel_layer()
-                        async_to_sync(channel_layer.group_send)(
-                            f"deposit_address_{address}",
-
-                            {"type": "deposit_status_update", "data": {
-                                "address": address,
-                                "currency": currency.symbol,
-                                "network": currency.network,
-                                "status": "used",
-                                "amount": str(amount),
-                            }}
-                        )
-                    except Exception as e:
-                        logger.error(f"[BATCH] WS error for {address}: {e}")
+                        
+                        # Немедленная попытка консолидации для pending депозитов
+                        # ⚠️ ВАЖНО: Консолидация работает с балансом блокчейна, а НЕ с балансом в БД!
+                        # ⚠️ КРИТИЧЕСКИ ВАЖНО: Запускаем консолидацию ТОЛЬКО после коммита транзакции БД!
+                        # Используем transaction.on_commit() чтобы гарантировать, что депозит уже в БД
+                        if deposit_status == "pending":
+                            def trigger_consolidation():
+                                logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for pending deposit {tx_hash} (after DB commit)")
+                                from .tasks_consolidation import consolidate_user_deposits
+                                # Используем countdown=2 для небольшой дополнительной задержки после коммита
+                                consolidate_user_deposits.apply_async(countdown=2)
+                            
+                            # Запускаем консолидацию только после успешного коммита транзакции
+                            transaction.on_commit(trigger_consolidation)
 
         except Exception as e:
             logger.error(f"[BATCH] Error processing {currency.symbol}: {e}")
@@ -736,9 +739,6 @@ def process_consolidation_for_wallet(args: Tuple) -> Tuple[bool, str, Decimal, D
                 to_address=system_wallet_address,
                 amount=amount_to_send,
             )
-        if not tx_hash:
-            logger.warning(f"[CONSOLIDATION] No tx_hash returned for wallet {user_wallet.deposit_address}, skipping.")
-            return (False, user_wallet.deposit_address, Decimal('0'), Decimal('0'))
         return (True, tx_hash, amount_to_send, gas_cost)
     except Exception as e:
         logger.error(f"[CONSOLIDATION] Error: {e}")
@@ -775,30 +775,33 @@ def process_pending_deposits():
                 ).exists()
                 if has_recent:
                     args_list.append((currency, w, service, system_addr, min_threshold))
-            max_workers = min(5, len(args_list))
-            with ThreadPoolExecutor(max_workers=max_workers) as exe:
-                futures = {exe.submit(process_consolidation_for_wallet, a): a[1] for a in args_list}
-                for future in as_completed(futures):
-                    wallet = futures[future]
-                    try:
-                        success, tx_hash, amount_sent, gas_cost = future.result(timeout=120)
-                        if success and tx_hash and not Transaction.objects.filter(tx_hash=tx_hash).exists():
-                            with transaction.atomic():
-                                Transaction.objects.create(
-                                    user=wallet.user,
-                                    crypto=currency,
-                                    amount=amount_sent,
+            if args_list:
+                max_workers = min(5, len(args_list))
+                # Убеждаемся, что max_workers >= 1
+                max_workers = max(1, max_workers)
+                with ThreadPoolExecutor(max_workers=max_workers) as exe:
+                    futures = {exe.submit(process_consolidation_for_wallet, a): a[1] for a in args_list}
+                    for future in as_completed(futures):
+                        wallet = futures[future]
+                        try:
+                            success, tx_hash, amount_sent, gas_cost = future.result(timeout=120)
+                            if success and not Transaction.objects.filter(tx_hash=tx_hash).exists():
+                                with transaction.atomic():
+                                    Transaction.objects.create(
+                                        user=wallet.user,
+                                        crypto=currency,
+                                        amount=amount_sent,
 
-                                    type="consolidation",
-                                    status="pending",
-                                    tx_hash=tx_hash,
-                                    timestamp=timezone.now(),
+                                        type="consolidation",
+                                        status="pending",
+                                        tx_hash=tx_hash,
+                                        timestamp=timezone.now(),
 
-                                    fee=gas_cost
-                                )
-                                consolidated_count += 1
-                    except Exception as e:
-                        logger.error(f"[CONSOLIDATION] Error: {e}")
+                                        fee=gas_cost
+                                    )
+                                    consolidated_count += 1
+                        except Exception as e:
+                            logger.error(f"[CONSOLIDATION] Error: {e}")
         except Exception as e:
             logger.error(f"Error processing {currency.symbol}: {e}")
     logger.info(f"🏁 Consolidation completed: {consolidated_count} transactions")
@@ -1068,10 +1071,6 @@ def consolidate_funds():
                         amount=amount_to_send,
                     )
 
-                
-                if not tx_hash:
-                    logger.warning(f"[CONSOLIDATE] No tx_hash returned for user {u_wallet.user.id}, skipping transaction creation.")
-                    continue
                 
                 logger.info(f"[CONSOLIDATE] Consolidation transaction sent for user {u_wallet.user.id}. Tx hash: {tx_hash}")
 

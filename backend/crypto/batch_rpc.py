@@ -89,10 +89,15 @@ class BatchRPCProcessor:
                 for future in as_completed(future_to_address):
                     address = future_to_address[future]
                     try:
-                        txs = future.result(timeout=60)
+                        start_time = time.time()
+                        txs = future.result(timeout=30)  # Уменьшен таймаут с 60 до 30 секунд
+                        elapsed = time.time() - start_time
+                        if elapsed > 10:  # Логируем долгие запросы
+                            logger.warning(f"[BATCH] Slow transaction fetch for {address}: {elapsed:.2f}s")
                         transactions[address] = txs
                     except Exception as e:
-                        logger.error(f"[BATCH] Error getting transactions for {address}: {e}")
+                        elapsed = time.time() - start_time if 'start_time' in locals() else 0
+                        logger.error(f"[BATCH] Error getting transactions for {address} (after {elapsed:.2f}s): {type(e).__name__}: {e}")
                         transactions[address] = []
             
             # Пауза между батчами
