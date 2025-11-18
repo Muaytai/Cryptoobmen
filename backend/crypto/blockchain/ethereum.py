@@ -16,6 +16,7 @@ from hexbytes import HexBytes
 from django.conf import settings
 
 from .base import BaseBlockchainService
+from .optimized_scanner import OptimizedBlockchainScanner, OptimizedScanConfig
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,17 @@ class EthereumService(BaseBlockchainService):
         self.max_gas_price = Web3.to_wei(settings.ETHEREUM_MAX_GAS_PRICE, 'gwei')
         self.gas_limit_eth = settings.ETHEREUM_GAS_LIMIT_ETH
         self.gas_limit_erc20 = settings.ETHEREUM_GAS_LIMIT_ERC20
+        
+        # Инициализируем оптимизированный сканер для параллельного сканирования блоков
+        scan_config = OptimizedScanConfig(
+            max_workers=10,      # Количество параллельных потоков
+            batch_size=50,       # Размер батча блоков
+            max_blocks_per_scan=500,  # Максимум блоков за одно сканирование
+            cache_duration=300,  # 5 минут кэширования
+            retry_attempts=3,
+            timeout_per_block=30.0  # Таймаут на блок
+        )
+        self.optimized_scanner = OptimizedBlockchainScanner(self, scan_config)
 
     def _initialize_web3(self) -> Web3:
         """Initialize Web3 connection with fallback RPC."""
@@ -96,7 +108,14 @@ class EthereumService(BaseBlockchainService):
         backup_rpc_url = settings.ETHEREUM_BACKUP_RPC_URL
 
         try:
-            w3 = Web3(Web3.HTTPProvider(rpc_url))
+            # Добавляем таймауты для HTTP запросов
+            from web3.providers import HTTPProvider
+            
+            # Таймауты: connect=10s, read=30s
+            request_kwargs = {
+                'timeout': (10, 30)  # (connect timeout, read timeout)
+            }
+            w3 = Web3(HTTPProvider(rpc_url, request_kwargs=request_kwargs))
             
             # Add PoA middleware for testnets like Goerli
             if self.network in ['goerli', 'sepolia']:
@@ -113,7 +132,11 @@ class EthereumService(BaseBlockchainService):
             
             if backup_rpc_url:
                 try:
-                    w3 = Web3(Web3.HTTPProvider(backup_rpc_url))
+                    # Таймауты для backup RPC
+                    backup_request_kwargs = {
+                        'timeout': (10, 30)  # (connect timeout, read timeout)
+                    }
+                    w3 = Web3(HTTPProvider(backup_rpc_url, request_kwargs=backup_request_kwargs))
                     if self.network in ['goerli', 'sepolia']:
                         w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
                     
@@ -167,19 +190,53 @@ class EthereumService(BaseBlockchainService):
             
             # Calculate starting block from timestamp (approximate)
             # Ethereum block time is ~12-15 seconds
-            blocks_to_scan = min(1000, latest_block)  # Limit scan range
+            # Ограничиваем диапазон сканирования для производительности
+            if min_timestamp > 0:
+                # Если есть timestamp, вычисляем примерное количество блоков
+                from django.utils import timezone as django_timezone
+                current_time = django_timezone.now().timestamp() * 1000
+                hours_back = max(1, (current_time - min_timestamp) / (1000 * 3600))
+                # Ethereum: ~240 блоков в час (блок каждые ~15 секунд)
+                estimated_blocks = min(500, int(hours_back * 240) + 50)  # +50 блоков запаса
+                blocks_to_scan = max(100, min(estimated_blocks, latest_block))
+            else:
+                blocks_to_scan = min(500, latest_block)  # Уменьшено с 1000 до 500 по умолчанию
+            
             start_block = max(0, latest_block - blocks_to_scan)
 
             if contract_address:
-                # Scan for ERC-20 token transfers
+                # Scan for ERC-20 token transfers (используем события, оптимизированный сканер не подходит)
                 transactions = self._scan_erc20_transfers(
                     checksum_address, contract_address, start_block, latest_block, min_timestamp
                 )
             else:
-                # Scan for ETH transfers
-                transactions = self._scan_eth_transfers(
-                    checksum_address, start_block, latest_block, min_timestamp
-                )
+                # Scan for ETH transfers - используем оптимизированный сканер для параллельного сканирования
+                if hasattr(self, 'optimized_scanner') and self.optimized_scanner:
+                    logger.info(f"[ETH] Using optimized scanner for blocks {start_block} to {latest_block}")
+                    all_txs = self.optimized_scanner.scan_optimized([checksum_address], start_block, latest_block)
+                    # Фильтруем по timestamp и форматируем
+                    # OptimizedScanner возвращает timestamp в секундах, нужно конвертировать в миллисекунды
+                    for tx in all_txs:
+                        tx_timestamp = tx.get('timestamp', 0)
+                        # Если timestamp в секундах, конвертируем в миллисекунды
+                        if tx_timestamp > 0 and tx_timestamp < 10000000000:  # Если меньше 10^10, значит в секундах
+                            tx_timestamp = tx_timestamp * 1000
+                        
+                        if tx_timestamp >= min_timestamp:
+                            transactions.append({
+                                'transaction_id': tx.get('transaction_id') or tx.get('hash', ''),
+                                'from_address': tx.get('from_address') or tx.get('from', ''),
+                                'to_address': tx.get('to_address') or tx.get('to', ''),
+                                'value': str(tx.get('value', 0)),
+                                'block_number': tx.get('block_number', 0),
+                                'timestamp': tx_timestamp,
+                                'memo': None
+                            })
+                else:
+                    # Fallback к последовательному сканированию
+                    transactions = self._scan_eth_transfers(
+                        checksum_address, start_block, latest_block, min_timestamp
+                    )
 
         except Exception as e:
             logger.error(f"Error scanning transactions for {address}: {e}")
