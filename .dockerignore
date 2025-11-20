@@ -46,3 +46,6 @@ frontend/.next/
 frontend/node_modules/
 frontend/out/
 frontend/dist/
+
+# Backend local environments
+backend/venv/
