@@ -823,8 +823,38 @@ def check_withdrawal_confirmation(self, withdrawal_id: int):
             withdrawal.transaction.notes = "Missing tx_hash."
             withdrawal.transaction.save()
             return "error:missing_tx_hash"
-        service = get_blockchain_service(withdrawal.transaction.crypto.network)
-        is_confirmed = service.is_transaction_confirmed(tx_hash)
+        
+        # Получаем сервис блокчейна с fallback на symbol, если network не указан
+        crypto = withdrawal.transaction.crypto
+        network = crypto.network or crypto.symbol
+        logger.info(f"[WITHDRAWAL_CONFIRM] Checking withdrawal {withdrawal_id}: tx_hash={tx_hash}, network={network}, crypto={crypto.symbol}")
+        
+        try:
+            service = get_blockchain_service(network)
+        except Exception as e:
+            logger.error(f"[WITHDRAWAL_CONFIRM] Failed to get blockchain service for network '{network}': {e}")
+            # Повторяем попытку позже
+            if self.request.retries >= self.max_retries:
+                withdrawal.transaction.status = 'failed'
+                withdrawal.transaction.notes = f"Failed to get blockchain service: {str(e)}"
+                withdrawal.transaction.save()
+                return f"error:blockchain_service_failed"
+            retry_countdown = 60 * (self.request.retries + 1)
+            raise self.retry(countdown=retry_countdown, exc=e, max_retries=self.max_retries)
+        
+        try:
+            is_confirmed = service.is_transaction_confirmed(tx_hash)
+            logger.info(f"[WITHDRAWAL_CONFIRM] Transaction {tx_hash} confirmation status: {is_confirmed}")
+        except Exception as e:
+            logger.error(f"[WITHDRAWAL_CONFIRM] Error checking confirmation for tx {tx_hash}: {e}", exc_info=True)
+            # Если ошибка при проверке подтверждения, повторяем попытку позже
+            if self.request.retries >= self.max_retries:
+                withdrawal.transaction.status = 'failed'
+                withdrawal.transaction.notes = f"Error checking confirmation: {str(e)}"
+                withdrawal.transaction.save()
+                return f"error:confirmation_check_failed"
+            retry_countdown = 60 * (self.request.retries + 1)
+            raise self.retry(countdown=retry_countdown, exc=e, max_retries=self.max_retries)
         if is_confirmed:
 
             gas_cost = calculate_withdrawal_gas_cost(
