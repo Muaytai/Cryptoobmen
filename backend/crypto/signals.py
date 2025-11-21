@@ -219,27 +219,74 @@ def handle_transaction_status_change(sender, instance, **kwargs):
 def handle_withdrawal_status_change(sender, instance, **kwargs):
     """
     Дополнительный сигнал для обработки изменений в модели Withdrawal
+    ⚠️ ВАЖНО: Возвращает полную сумму (amount + fee + gas_cost), если средства были заблокированы
     """
     if hasattr(instance, '_state') and instance._state.adding:
         # Это новый объект, ничего не делаем
         return
         
     # Проверяем статус связанной транзакции
+    # ⚠️ ВАЖНО: Проверяем refunded и locked_balance, чтобы избежать двойного возврата
     if (instance.transaction.status in ['cancelled', 'failed'] and 
         not instance.refunded and 
         instance.wallet):
         
-        # Возвращаем средства на баланс пользователя
-        instance.wallet.balance += instance.transaction.amount
-        instance.wallet.available_balance += instance.transaction.amount
-        instance.wallet.save(update_fields=['balance', 'available_balance'])
-        
-        # Отмечаем, что средства возвращены
-        instance.refunded = True
-        instance.save(update_fields=['refunded'])
-        
-        logger.info(
-            f"Возвращены средства пользователю {instance.user.email}: "
-            f"{instance.transaction.amount} {instance.transaction.crypto.symbol} "
-            f"(вывод {instance.id})"
-        )
+        with transaction.atomic():
+            # Блокируем кошелек для обновления
+            wallet = UserWallet.objects.select_for_update().get(id=instance.wallet.id)
+            
+            # ⚠️ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Если нет заблокированных средств, значит уже возвращены
+            if wallet.locked_balance <= 0:
+                logger.info(
+                    f"Skipping refund for withdrawal {instance.id}: "
+                    f"no locked balance (already refunded or never locked)"
+                )
+                # Отмечаем как возвращенные, чтобы не проверять снова
+                instance.refunded = True
+                instance.save(update_fields=['refunded'])
+                return
+            
+            # ⚠️ ВАЖНО: Рассчитываем полную сумму для возврата (включая gas_cost)
+            # Это должно совпадать с total_amount, который был списан в process_withdrawal
+            from .gas_calculation import calculate_withdrawal_gas_cost
+            amount_to_send = instance.transaction.amount
+            platform_fee = instance.transaction.fee
+            gas_cost = calculate_withdrawal_gas_cost(
+                currency=instance.transaction.crypto,
+                withdrawal_amount=amount_to_send,
+                destination_address=instance.destination_address
+            )
+            total_amount_to_refund = amount_to_send + platform_fee + gas_cost
+            
+            # Проверяем, что есть заблокированные средства для возврата
+            # Если locked_balance >= total_amount, возвращаем полную сумму
+            # Если locked_balance < total_amount, возвращаем то, что есть
+            if wallet.locked_balance >= total_amount_to_refund:
+                wallet.locked_balance -= total_amount_to_refund
+                wallet.balance += total_amount_to_refund
+                refunded_amount = total_amount_to_refund
+            elif wallet.locked_balance > 0:
+                # Частичный возврат
+                refunded_amount = wallet.locked_balance
+                wallet.balance += refunded_amount
+                wallet.locked_balance = Decimal('0')
+            else:
+                # Нет заблокированных средств, возможно уже возвращены
+                logger.warning(
+                    f"No locked balance to refund for withdrawal {instance.id}. "
+                    f"Locked: {wallet.locked_balance}, Required: {total_amount_to_refund}"
+                )
+                refunded_amount = Decimal('0')
+            
+            wallet.save(update_fields=['balance', 'locked_balance'])
+            
+            # Отмечаем, что средства возвращены
+            instance.refunded = True
+            instance.save(update_fields=['refunded'])
+            
+            if refunded_amount > 0:
+                logger.info(
+                    f"Возвращены средства пользователю {instance.user.email}: "
+                    f"{refunded_amount} {instance.transaction.crypto.symbol} "
+                    f"(amount: {amount_to_send}, fee: {platform_fee}, gas: {gas_cost}, withdrawal {instance.id})"
+                )

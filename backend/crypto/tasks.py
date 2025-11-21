@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import logging
 import traceback
+import hashlib
 from decimal import Decimal
 from celery import shared_task
 from celery.utils.log import get_task_logger
@@ -78,6 +79,16 @@ def process_single_address(args: Tuple) -> Tuple[str, List[Dict[str, Any]], bool
                 raw_transactions = service.optimized_scanner.scan_optimized([address], from_block, current_block)
             else:
                 raw_transactions = service.get_transactions(address=address, from_block=from_block, to_block=current_block)
+
+        elif currency.symbol == 'ETH' and not currency.contract_address:
+            # Для нативного ETH используем optimized_scanner, как для POL
+            current_block = service.w3.eth.block_number
+            from_block = max(current_block - 500, 1)
+            logger.info(f"[PARALLEL][ETH] Optimized scan: blocks {from_block} to {current_block} for {address}")
+            if hasattr(service, 'optimized_scanner') and service.optimized_scanner:
+                raw_transactions = service.optimized_scanner.scan_optimized([address], from_block, current_block)
+            else:
+                raw_transactions = service.get_transactions(address=address, min_timestamp=last_tx_timestamp)
 
         elif currency.network and currency.network.upper() == 'ERC20':
             raw_transactions = service.get_transactions(
@@ -373,6 +384,143 @@ def check_blockchain_deposits():
             continue
         try:
             service = get_blockchain_service(currency.network or currency.symbol)
+            
+            # ⚠️ ВАЖНО: Для баланс-основанных валют (ETH, POL) используем упрощенную логику
+            # Проверяем баланс и создаем депозит на его основе, без сканирования транзакций
+            is_balance_based = (
+                currency.symbol == 'POL' or 
+                (currency.symbol == 'ETH' and not currency.contract_address) or
+                currency.symbol == 'BTC'
+            )
+            
+            if is_balance_based:
+                # Баланс-основанная логика: проверяем баланс и создаем депозит без сканирования транзакций
+                logger.info(f"[BATCH][{currency.symbol}] Using balance-based deposit detection (no transaction scanning)")
+                
+                contract_address = currency.contract_address if currency.network and currency.network.upper() == 'TRC20' else None
+                
+                for user_wallet in user_wallets:
+                    try:
+                        # Получаем баланс на блокчейне
+                        if contract_address:
+                            blockchain_balance = service.get_balance(user_wallet.deposit_address, contract_address=contract_address)
+                        else:
+                            blockchain_balance = service.get_balance(user_wallet.deposit_address)
+                        
+                        if blockchain_balance <= 0:
+                            continue
+                        
+                        logger.info(f"[BATCH][{currency.symbol}] Address {user_wallet.deposit_address[:10]}... has balance {blockchain_balance} {currency.symbol}")
+                        
+                        # Проверяем, есть ли уже pending депозит для этого адреса
+                        has_pending_deposit = Transaction.objects.filter(
+                            user=user_wallet.user,
+                            crypto=currency,
+                            type="deposit",
+                            status="pending"
+                        ).exists()
+                        
+                        if has_pending_deposit:
+                            logger.info(f"[BATCH][{currency.symbol}] User {user_wallet.user.id} already has pending deposit, skipping")
+                            continue
+                        
+                        # Проверяем минимальный порог для консолидации
+                        from .tasks_consolidation import get_min_consolidation_amount
+                        min_consolidation = get_min_consolidation_amount(currency)
+                        
+                        if blockchain_balance < min_consolidation:
+                            logger.info(f"[BATCH][{currency.symbol}] Balance {blockchain_balance} below threshold {min_consolidation}, skipping")
+                            continue
+                        
+                        # Рассчитываем net_amount и gas_cost на основе баланса
+                        from .gas_calculation import calculate_net_deposit_amount
+                        deposit_info = calculate_net_deposit_amount(
+                            currency=currency,
+                            deposit_amount=blockchain_balance,
+                            user_address=user_wallet.deposit_address
+                        )
+                        net_amount = deposit_info['net_amount']
+                        gas_cost = deposit_info['gas_cost']
+                        
+                        # Генерируем уникальный tx_hash на основе адреса и баланса
+                        # Используем формат: BALANCE_<address>_<timestamp> для баланс-основанных депозитов
+                        tx_hash_data = f"BALANCE_{user_wallet.deposit_address}_{blockchain_balance}_{timezone.now().timestamp()}"
+                        tx_hash = hashlib.sha256(tx_hash_data.encode()).hexdigest()[:64]  # Ограничиваем длину до 64 символов
+                        
+                        # Проверяем, нет ли уже такого депозита
+                        if Transaction.objects.filter(tx_hash=tx_hash, user=user_wallet.user).exists():
+                            continue
+                        
+                        deposit_status = "pending"
+                        
+                        # Отправляем WebSocket уведомление
+                        try:
+                            from channels.layers import get_channel_layer
+                            from asgiref.sync import async_to_sync
+                            
+                            channel_layer = get_channel_layer()
+                            if channel_layer:
+                                address_lower = user_wallet.deposit_address.lower()
+                                group_name = f"deposit_address_{address_lower}"
+                                logger.info(f"[BATCH] Sending WebSocket notification for balance-based deposit to {group_name}")
+                                async_to_sync(channel_layer.group_send)(
+                                    group_name,
+                                    {"type": "deposit_status_update", "data": {
+                                        "address": user_wallet.deposit_address,
+                                        "currency": currency.symbol,
+                                        "network": currency.network,
+                                        "status": deposit_status,
+                                        "amount": str(net_amount),
+                                        "tx_hash": tx_hash,
+                                        "message": f"Deposit detected: {deposit_status}",
+                                    }}
+                                )
+                        except Exception as e:
+                            logger.error(f"[BATCH] WS error: {e}", exc_info=True)
+                        
+                        # Создаем депозит в БД
+                        with transaction.atomic():
+                            deposit_transaction = Transaction.objects.create(
+                                user=user_wallet.user,
+                                crypto=currency,
+                                amount=net_amount,
+                                fee=gas_cost,
+                                tx_hash=tx_hash,
+                                type="deposit",
+                                status=deposit_status,
+                                timestamp=timezone.now(),
+                                notes=f"Balance-based deposit: {blockchain_balance} {currency.symbol} on address"
+                            )
+                            
+                            processed += 1
+                            logger.info(f"[BATCH] Balance-based deposit created: user {user_wallet.user.id}, {net_amount} {currency.symbol} (balance: {blockchain_balance}, gas: {gas_cost})")
+                            
+                            # Запускаем консолидацию после коммита транзакции
+                            if deposit_status == "pending":
+                                def trigger_consolidation():
+                                    logger.info(f"🚀 [IMMEDIATE] Triggering immediate consolidation for balance-based deposit {tx_hash} (after DB commit)")
+                                    from .tasks_consolidation import consolidate_user_deposits
+                                    consolidate_user_deposits.apply_async(countdown=2)
+                                
+                                transaction.on_commit(trigger_consolidation)
+                    
+                    except Exception as e:
+                        logger.error(f"[BATCH] Error processing balance-based deposit for {user_wallet.deposit_address}: {e}")
+                        continue
+                
+                continue  # Пропускаем сканирование транзакций для баланс-основанных валют
+            
+            # Для остальных валют (ERC-20 токены и т.д.) используем сканирование транзакций
+            logger.info(f"[BATCH] Using transaction-based deposit detection for {currency.symbol}")
+            
+            # ⚠️ ВАЖНО: Определяем, используется ли optimized_scanner для этой валюты
+            # Это нужно для правильной обработки значений (optimized_scanner уже конвертирует wei в ETH/POL)
+            use_optimized = (
+                (currency.symbol == 'POL' or (currency.symbol == 'ETH' and not currency.contract_address))
+                and hasattr(service, 'optimized_scanner') 
+                and service.optimized_scanner
+            )
+            
             batch_results = process_addresses_batch(currency, user_wallets, service)
             address_to_wallet = {w.deposit_address: w for w in user_wallets}
             for address, (raw_txs, success) in batch_results.items():
@@ -395,10 +543,21 @@ def check_blockchain_deposits():
                             continue
 
                     try:
-                        if '.' in amount_str and Decimal(amount_str) < Decimal('1000') and currency.symbol == 'POL':
+                        # ⚠️ ВАЖНО: Проверяем, откуда пришло значение
+                        # optimized_scanner уже конвертирует wei в ETH/POL, поэтому значение уже в основных единицах
+                        # Обычный сканер возвращает значение в wei/наименьших единицах
+                        
+                        if use_optimized:
+                            # optimized_scanner уже конвертировал wei в ETH/POL
+                            # Значение уже в основных единицах, просто используем его
+                            amount = Decimal(amount_str)
+                            logger.debug(f"[BATCH] Using optimized scanner value (already converted): {amount} {currency.symbol}")
+                        elif '.' in amount_str and Decimal(amount_str) < Decimal('1000') and currency.symbol == 'POL':
+                            # Для POL: если есть точка и значение < 1000, значит уже конвертировано
                             amount = Decimal(amount_str)
                         elif currency.network and currency.network.upper() == 'ERC20':
                             if currency.symbol == 'ETH':
+                                # Для ETH из обычного сканера: значение в wei, нужно конвертировать
                                 amount = Decimal(amount_str) / Decimal(10**18)
                             else:
                                 amount = Decimal(amount_str) / Decimal(10**currency.decimals)
@@ -652,16 +811,41 @@ def process_withdrawal(self, withdrawal_id: int) -> str:
             with transaction.atomic():
                 withdrawal_to_fail = Withdrawal.objects.select_for_update().get(id=withdrawal_id)
                 user_wallet_to_refund = UserWallet.objects.select_for_update().get(id=withdrawal_to_fail.wallet.id)
-                amount_to_refund = withdrawal_to_fail.transaction.amount + withdrawal_to_fail.transaction.fee
+                
+                # ⚠️ ВАЖНО: Рассчитываем полную сумму для возврата (включая gas_cost)
+                # Это должно совпадать с total_amount, который был списан в строке 744
+                amount_to_send = withdrawal_to_fail.transaction.amount
+                platform_fee = withdrawal_to_fail.transaction.fee
+                gas_cost = calculate_withdrawal_gas_cost(
+                    currency=withdrawal_to_fail.transaction.crypto,
+                    withdrawal_amount=amount_to_send,
+                    destination_address=withdrawal_to_fail.destination_address
+                )
+                total_amount_to_refund = amount_to_send + platform_fee + gas_cost
+                
+                logger.info(f"Refunding withdrawal {withdrawal_id}: total_amount={total_amount_to_refund} (amount={amount_to_send}, fee={platform_fee}, gas={gas_cost}), locked_balance={user_wallet_to_refund.locked_balance}")
 
-                if user_wallet_to_refund.locked_balance >= amount_to_refund:
-                    user_wallet_to_refund.locked_balance -= amount_to_refund
-                    user_wallet_to_refund.balance += amount_to_refund
+                # Проверяем, что заблокированный баланс достаточен для возврата
+                if user_wallet_to_refund.locked_balance >= total_amount_to_refund:
+                    user_wallet_to_refund.locked_balance -= total_amount_to_refund
+                    user_wallet_to_refund.balance += total_amount_to_refund
                     user_wallet_to_refund.save()
+                    logger.info(f"Successfully refunded {total_amount_to_refund} to user {withdrawal_to_fail.user.id}")
+                else:
+                    # Если заблокированный баланс меньше, возвращаем то, что есть
+                    actual_locked = user_wallet_to_refund.locked_balance
+                    if actual_locked > 0:
+                        user_wallet_to_refund.locked_balance = Decimal('0')
+                        user_wallet_to_refund.balance += actual_locked
+                        user_wallet_to_refund.save()
+                        logger.warning(f"Partial refund: returned {actual_locked} instead of {total_amount_to_refund} (locked balance was insufficient)")
 
+                # ⚠️ КРИТИЧЕСКИ ВАЖНО: Устанавливаем refunded = True, чтобы сигнал не возвращал средства повторно
+                withdrawal_to_fail.refunded = True
                 withdrawal_to_fail.transaction.status = 'failed'
-                withdrawal_to_fail.transaction.notes = f"Transaction error: {str(e)}. Funds refunded."
+                withdrawal_to_fail.transaction.notes = f"Transaction error: {str(e)}. Funds refunded: {total_amount_to_refund} (amount: {amount_to_send}, fee: {platform_fee}, gas: {gas_cost})."
                 withdrawal_to_fail.transaction.save()
+                withdrawal_to_fail.save(update_fields=['refunded'])
         return f"error:transaction_failed - {str(e)}"
 
 @shared_task

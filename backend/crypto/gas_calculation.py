@@ -37,22 +37,35 @@ def calculate_estimated_gas_cost(currency: Cryptocurrency, deposit_amount: Decim
         if hasattr(blockchain_service, 'get_max_sendable_amount') and user_address:
             try:
                 system_wallet_address = get_system_wallet_address(currency)
-                max_sendable = blockchain_service.get_max_sendable_amount(user_address, system_wallet_address)
                 
-                if max_sendable > 0:
-                    # Получаем текущий баланс
-                    current_balance = blockchain_service.get_balance(user_address)
+                # Получаем текущий баланс
+                current_balance = blockchain_service.get_balance(user_address)
+                
+                # ⚠️ ВАЖНО: Для ETH и других нативных валют газ не зависит от суммы транзакции
+                # Используем текущий баланс для расчета максимальной отправляемой суммы
+                # Это дает точную оценку газа, которая будет использована при консолидации
+                if current_balance > 0:
+                    max_sendable = blockchain_service.get_max_sendable_amount(user_address, system_wallet_address)
                     gas_cost = current_balance - max_sendable
                     
-                    # Если депозит увеличит баланс, пересчитываем газ
-                    if deposit_amount > 0:
-                        new_balance = current_balance + deposit_amount
-                        # Оцениваем новый газ на основе увеличенного баланса
-                        # Используем пропорциональный расчет
-                        gas_cost = gas_cost * (new_balance / current_balance) if current_balance > 0 else gas_cost
-                    
-                    logger.info(f"Smart gas calculation for {currency.symbol}: {gas_cost}")
+                    logger.info(f"Smart gas calculation for {currency.symbol}: balance={current_balance}, max_sendable={max_sendable}, gas_cost={gas_cost}")
                     return max(Decimal('0'), gas_cost)
+                else:
+                    # Если баланс 0, используем оценку газа для будущего депозита
+                    # Для ETH газ фиксированный (~21000 gas units), не зависит от суммы
+                    # Используем estimate_gas_cost с нулевой суммой для оценки базового газа
+                    if hasattr(blockchain_service, 'estimate_gas_cost'):
+                        try:
+                            gas_cost = blockchain_service.estimate_gas_cost(user_address, system_wallet_address, 0)
+                            logger.info(f"Gas estimation for {currency.symbol} with zero balance: {gas_cost}")
+                            return max(Decimal('0'), gas_cost)
+                        except Exception:
+                            pass
+                    
+                    # Fallback: используем резерв газа
+                    gas_reserve = get_gas_reserve(currency)
+                    logger.info(f"Using gas reserve for {currency.symbol} (zero balance): {gas_reserve}")
+                    return gas_reserve
             except Exception as e:
                 logger.warning(f"Smart gas calculation failed for {currency.symbol}: {e}")
         
@@ -229,7 +242,12 @@ def calculate_withdrawal_gas_cost(currency: Cryptocurrency, withdrawal_amount: D
 
 def calculate_max_withdrawal_amount(currency: Cryptocurrency, user_balance: Decimal, destination_address: str = None) -> Dict[str, Any]:
     """
-    Рассчитывает максимальную сумму вывода с учетом газа.
+    Рассчитывает максимальную сумму вывода с учетом газа и комиссии платформы.
+    
+    ⚠️ ВАЖНО: Учитывает:
+    - Стоимость газа
+    - Комиссию платформы (fee_percentage)
+    - Общая сумма должна укладываться в баланс пользователя
     
     Args:
         currency: Криптовалюта
@@ -240,29 +258,87 @@ def calculate_max_withdrawal_amount(currency: Cryptocurrency, user_balance: Deci
         Словарь с информацией о максимальном выводе:
         - max_withdrawal: Максимальная сумма для вывода
         - gas_cost: Стоимость газа
-        - total_required: Общая сумма (вывод + газ)
+        - platform_fee: Комиссия платформы
+        - total_required: Общая сумма (вывод + газ + комиссия)
     """
     try:
         # Для валют с мемо газ не нужен
         if currency.requires_memo:
+            # Для валют с мемо все еще может быть комиссия платформы
+            fee_percentage = getattr(currency, 'fee_percentage', Decimal('0'))
+            if fee_percentage > 0:
+                # max_withdrawal * (1 + fee_percentage / 100) <= user_balance
+                max_withdrawal = user_balance / (Decimal('1') + fee_percentage / Decimal('100'))
+                platform_fee = max_withdrawal * fee_percentage / Decimal('100')
+            else:
+                max_withdrawal = user_balance
+                platform_fee = Decimal('0')
+            
             return {
-                'max_withdrawal': user_balance,
+                'max_withdrawal': max_withdrawal,
                 'gas_cost': Decimal('0'),
-                'total_required': user_balance,
+                'platform_fee': platform_fee,
+                'total_required': max_withdrawal + platform_fee,
                 'calculation_method': 'no_gas_needed'
             }
         
-        # Рассчитываем стоимость газа
-        gas_cost = calculate_withdrawal_gas_cost(currency, user_balance, destination_address)
+        # Получаем процент комиссии платформы
+        fee_percentage = getattr(currency, 'fee_percentage', Decimal('0'))
         
-        # Максимальная сумма вывода = баланс - газ
-        max_withdrawal = max(Decimal('0'), user_balance - gas_cost)
+        # ⚠️ ВАЖНО: Используем итеративный подход для точного расчета
+        # Газ может зависеть от суммы вывода, поэтому нужно найти правильный баланс
+        # Уравнение: max_withdrawal + gas_cost + platform_fee <= user_balance
+        # где platform_fee = max_withdrawal * fee_percentage / 100
+        
+        # Начальное приближение: предполагаем, что газ фиксированный
+        # Используем оценку газа на основе баланса
+        estimated_gas = calculate_withdrawal_gas_cost(currency, user_balance, destination_address)
+        
+        # Первое приближение: max_withdrawal = (user_balance - gas) / (1 + fee_percentage / 100)
+        if fee_percentage > 0:
+            max_withdrawal = (user_balance - estimated_gas) / (Decimal('1') + fee_percentage / Decimal('100'))
+        else:
+            max_withdrawal = user_balance - estimated_gas
+        
+        max_withdrawal = max(Decimal('0'), max_withdrawal)
+        
+        # Уточняем расчет газа на основе полученной суммы
+        if max_withdrawal > 0:
+            gas_cost = calculate_withdrawal_gas_cost(currency, max_withdrawal, destination_address)
+            
+            # Пересчитываем с учетом реального газа
+            if fee_percentage > 0:
+                max_withdrawal = (user_balance - gas_cost) / (Decimal('1') + fee_percentage / Decimal('100'))
+            else:
+                max_withdrawal = user_balance - gas_cost
+            
+            max_withdrawal = max(Decimal('0'), max_withdrawal)
+        
+        # Рассчитываем комиссию платформы
+        platform_fee = max_withdrawal * fee_percentage / Decimal('100') if fee_percentage > 0 else Decimal('0')
+        
+        # Общая требуемая сумма
+        total_required = max_withdrawal + gas_cost + platform_fee
+        
+        # Проверяем, что все укладывается в баланс
+        if total_required > user_balance:
+            # Если не укладывается, уменьшаем сумму вывода
+            if fee_percentage > 0:
+                max_withdrawal = (user_balance - gas_cost) / (Decimal('1') + fee_percentage / Decimal('100'))
+            else:
+                max_withdrawal = user_balance - gas_cost
+            max_withdrawal = max(Decimal('0'), max_withdrawal)
+            platform_fee = max_withdrawal * fee_percentage / Decimal('100') if fee_percentage > 0 else Decimal('0')
+            total_required = max_withdrawal + gas_cost + platform_fee
+        
+        logger.info(f"Max withdrawal calculation for {currency.symbol}: balance={user_balance}, max_withdrawal={max_withdrawal}, gas={gas_cost}, fee={platform_fee}, total={total_required}")
         
         return {
             'max_withdrawal': max_withdrawal,
             'gas_cost': gas_cost,
-            'total_required': max_withdrawal + gas_cost,
-            'calculation_method': 'gas_deducted'
+            'platform_fee': platform_fee,
+            'total_required': total_required,
+            'calculation_method': 'gas_and_fee_deducted'
         }
         
     except Exception as e:
@@ -271,6 +347,7 @@ def calculate_max_withdrawal_amount(currency: Cryptocurrency, user_balance: Deci
         return {
             'max_withdrawal': user_balance,
             'gas_cost': Decimal('0'),
+            'platform_fee': Decimal('0'),
             'total_required': user_balance,
             'calculation_method': 'error_fallback'
         }
