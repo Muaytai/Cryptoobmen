@@ -71,11 +71,15 @@ def get_min_consolidation_amount(currency: Cryptocurrency) -> Decimal:
     return minimums.get(currency.symbol, Decimal('0.001'))
 
 def get_gas_reserve(currency: Cryptocurrency) -> Decimal:
-    """Резерв для покрытия комиссии газа в зависимости от валюты"""
+    """
+    Резерв для покрытия комиссии газа в зависимости от валюты.
+    ⚠️ ВАЖНО: Это fallback значение, которое используется только если динамический расчет не сработал.
+    Для ETH теперь используется динамический расчет через estimate_gas_cost.
+    """
     reserves = {
         'POL': Decimal('0.01'),    # Снижено после введения динамического расчёта
         'BTC': Decimal('0.00005'), 
-        'ETH': Decimal('0.005'),
+        'ETH': Decimal('0.0005'),  # Снижено с 0.005 до более реалистичного значения (fallback)
         'TRX': Decimal('1'),
         # USDT (TRC20) - газ платится в TRX, не в USDT!
         'USDT': Decimal('0'),  # Для USDT газ не нужен
@@ -220,21 +224,26 @@ def check_consolidation_confirmations():
                             
                             channel_layer = get_channel_layer()
                             if channel_layer and old_deposit_address:
-                                logger.info(f"\033[94m📡 Sending WebSocket notification for address {old_deposit_address}\033[0m")
+                                # ⚠️ ВАЖНО: Приводим адрес к нижнему регистру для единообразия с consumer
+                                address_lower = old_deposit_address.lower()
+                                group_name = f"deposit_address_{address_lower}"
+                                logger.info(f"\033[94m📡 Sending WebSocket notification for address {old_deposit_address} (normalized: {address_lower}, group: {group_name})\033[0m")
                                 async_to_sync(channel_layer.group_send)(
-                                    f"deposit_address_{old_deposit_address}",
+                                    group_name,
                                     {
                                         "type": "deposit_status_update",
                                         "data": {
                                             'address': old_deposit_address,
-                                            'status': 'used',
-                                            'message': 'Deposit completed',
+                                            'status': 'completed',  # Изменено с 'used' на 'completed' для ясности
+                                            'message': 'Deposit completed and credited',
                                             'amount': str(consolidation_amount),
-                                            'currency': tx.crypto.symbol
+                                            'currency': tx.crypto.symbol,
+                                            'network': tx.crypto.network,
+                                            'tx_hash': tx.tx_hash
                                         }
                                     }
                                 )
-                                logger.info(f"\033[92m✅ WebSocket notification sent to {old_deposit_address}\033[0m")
+                                logger.info(f"\033[92m✅ WebSocket notification sent to {group_name}\033[0m")
                         except Exception as ws_error:
                             logger.error(f"\033[91m❌ Failed to send WebSocket notification: {ws_error}\033[0m")
                     else:
@@ -597,7 +606,71 @@ def consolidate_user_deposits():
                                         found_missed = True
                                         break
                                 
-                                if not found_missed:
+                                if found_missed:
+                                    # ⚠️ КРИТИЧЕСКИ ВАЖНО: Найден пропущенный депозит в блокчейне, которого нет в БД
+                                    # Для баланс-основанной логики (POL/ETH) создаем депозит прямо здесь,
+                                    # так как основной сканер теперь не сканирует транзакции, а только проверяет баланс
+                                    logger.warning(f"\033[93m⚠️ Found missed deposit transaction on blockchain! Creating deposit record...\033[0m")
+                                    
+                                    # Создаем депозит для пропущенной транзакции
+                                    try:
+                                        # Transaction уже импортирован в начале файла
+                                        from .gas_calculation import calculate_net_deposit_amount
+                                        
+                                        # Берем первую пропущенную транзакцию
+                                        missed_tx = recent_txs[0]
+                                        tx_hash_missed = missed_tx.get('transaction_id')
+                                        amount_str = missed_tx.get('value', '0')
+                                        
+                                        # Конвертируем amount
+                                        if currency.symbol == 'ETH' and not currency.contract_address:
+                                            amount = Decimal(amount_str) / Decimal(10**18)
+                                        else:
+                                            amount = Decimal(amount_str) / Decimal(10**currency.decimals)
+                                        
+                                        # Рассчитываем net_amount и gas_cost
+                                        deposit_info = calculate_net_deposit_amount(
+                                            currency=currency,
+                                            deposit_amount=amount,
+                                            user_address=user_wallet.deposit_address
+                                        )
+                                        net_amount = deposit_info['net_amount']
+                                        gas_cost = deposit_info['gas_cost']
+                                        
+                                        # Создаем депозит в БД
+                                        from django.db import transaction as db_transaction
+                                        with db_transaction.atomic():
+                                            deposit_transaction = Transaction.objects.create(
+                                                user=user_wallet.user,
+                                                crypto=currency,
+                                                amount=net_amount,
+                                                fee=gas_cost,
+                                                tx_hash=tx_hash_missed,
+                                                type="deposit",
+                                                status="pending",
+                                                timestamp=timezone.now(),
+                                                notes="Missed deposit found during consolidation check"
+                                            )
+                                            logger.info(f"\033[94m✅ Created missed deposit record: {tx_hash_missed}, amount: {net_amount} {currency.symbol}\033[0m")
+                                        
+                                        # После создания депозита обновляем pending_deposits и продолжаем с консолидацией
+                                        logger.info(f"\033[94m🔄 Proceeding with consolidation after creating missed deposit...\033[0m")
+                                        # Обновляем pending_deposits после создания депозита
+                                        pending_deposits = Transaction.objects.filter(
+                                            user=user_wallet.user,
+                                            crypto=currency,
+                                            type="deposit",
+                                            status="pending"
+                                        )
+                                        # Продолжаем выполнение - выходим из блока проверки транзакций и переходим к консолидации
+                                        logger.info(f"\033[94m✅ Found {pending_deposits.count()} pending deposits after creating missed deposit, proceeding with consolidation\033[0m")
+                                    except Exception as e:
+                                        logger.error(f"\033[91m❌ Error creating missed deposit: {e}\033[0m")
+                                        # Если не удалось создать депозит, пропускаем консолидацию
+                                        logger.info(f"\033[93m⏭️  Skipping consolidation: failed to create missed deposit record.\033[0m")
+                                        continue
+                                
+                                elif not found_missed:
                                     # Все транзакции найдены в БД, но нет pending - возможно они уже обработаны
                                     # Это может быть race condition или транзакции уже были консолидированы
                                     logger.info(f"\033[94m✅ All recent transactions are in DB. Checking if this is a race condition...\033[0m")
@@ -626,9 +699,22 @@ def consolidate_user_deposits():
                                             logger.info(f"\033[93m⏭️  Still no pending deposits after delay, skipping to avoid race condition\033[0m")
                                             continue
                                     else:
-                                        # Нет совсем свежих депозитов, но есть баланс - это может быть пропущенный депозит
+                                        # ⚠️ ВАЖНО: Проверяем, что есть хотя бы один депозит в БД перед консолидацией
+                                        # Консолидация не должна создаваться без депозита
+                                        has_any_deposit = Transaction.objects.filter(
+                                            user=user_wallet.user,
+                                            crypto=currency,
+                                            type="deposit"
+                                        ).exists()
+                                        
+                                        if not has_any_deposit:
+                                            logger.info(f"\033[93m⏭️  No deposits found in DB for user {user_wallet.user.id}. Skipping consolidation to prevent creating consolidation before deposit.\033[0m")
+                                            continue
+                                        
+                                        # Нет совсем свежих депозитов, но есть баланс и есть депозиты в БД
+                                        # Это может быть старый баланс от уже обработанных депозитов
                                         # Консолидируем, чтобы средства не оставались на адресе
-                                        logger.info(f"\033[94m💡 No very recent deposits, but balance exists. Consolidating to prevent stuck funds.\033[0m")
+                                        logger.info(f"\033[94m💡 No very recent deposits, but balance exists and deposits are in DB. Consolidating to prevent stuck funds.\033[0m")
                             else:
                                 # Нет свежих транзакций в блокчейне - это старый баланс, возможно от предыдущей консолидации
                                 logger.info(f"\033[93m⏭️  No recent blockchain transactions and no pending deposits. Skipping consolidation.\033[0m")
@@ -695,6 +781,19 @@ def consolidate_user_deposits():
                         logger.warning(f"\033[93m⚠️ Amount to send {amount_to_send} {currency.symbol} is zero or negative\033[0m")
                         continue
                     
+                    # ⚠️ КРИТИЧЕСКИ ВАЖНО: Финальная проверка наличия депозита перед созданием консолидации
+                    # Это защита от race condition, когда консолидация запускается до того, как депозит закоммичен в БД
+                    has_deposit_final = Transaction.objects.filter(
+                        user=user_wallet.user,
+                        crypto=currency,
+                        type="deposit"
+                    ).exists()
+                    
+                    if not has_deposit_final:
+                        logger.warning(f"\033[93m⏭️  FINAL CHECK: No deposit found in DB for user {user_wallet.user.id} and currency {currency.symbol}. Skipping consolidation to prevent creating consolidation before deposit.\033[0m")
+                        continue
+                    
+                    logger.info(f"\033[94m✅ FINAL CHECK: Deposit exists in DB, proceeding with consolidation\033[0m")
                     logger.info(f"\033[94m🚀 Consolidating {amount_to_send} {currency.symbol} from {user_wallet.deposit_address} to system wallet\033[0m")
                     
                     # Выполняем перевод с retry логикой

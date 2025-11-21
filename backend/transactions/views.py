@@ -11,6 +11,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.decorators import api_view, permission_classes as dec_permission_classes
 from rest_framework import serializers
 from .services import WithdrawalService
+from decimal import Decimal
 import uuid
 
 from crypto.models import Cryptocurrency, UserWallet
@@ -210,6 +211,7 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
             return Response({
                 'max_withdrawal': str(max_withdrawal_info['max_withdrawal']),
                 'gas_cost': str(max_withdrawal_info['gas_cost']),
+                'platform_fee': str(max_withdrawal_info.get('platform_fee', Decimal('0'))),
                 'total_required': str(max_withdrawal_info['total_required']),
                 'calculation_method': max_withdrawal_info['calculation_method'],
                 'currency_symbol': crypto.symbol,

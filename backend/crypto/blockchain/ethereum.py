@@ -93,10 +93,10 @@ class EthereumService(BaseBlockchainService):
         
         # Инициализируем оптимизированный сканер для параллельного сканирования блоков
         scan_config = OptimizedScanConfig(
-            max_workers=10,      # Количество параллельных потоков
-            batch_size=50,       # Размер батча блоков
+            max_workers=2,       # Сильно уменьшено для снижения rate limiting (было 5, теперь 2)
+            batch_size=50,        # Размер батча блоков
             max_blocks_per_scan=500,  # Максимум блоков за одно сканирование
-            cache_duration=300,  # 5 минут кэширования
+            cache_duration=300,   # 5 минут кэширования
             retry_attempts=3,
             timeout_per_block=30.0  # Таймаут на блок
         )
@@ -489,6 +489,88 @@ class EthereumService(BaseBlockchainService):
                 'gas_fee_eth': Decimal('0.0042'),
                 'gas_fee_usd': Decimal('0.0')
             }
+    
+    def estimate_gas_cost(self, from_address: str, to_address: str, amount_wei: int) -> Decimal:
+        """
+        Оценивает стоимость газа для транзакции в ETH.
+        Используется для расчета газа при депозитах и выводах.
+        
+        :param from_address: Адрес отправителя
+        :param to_address: Адрес получателя
+        :param amount_wei: Сумма в wei (для ETH) или в атомарных единицах (для токенов)
+        :return: Стоимость газа в ETH
+        """
+        try:
+            from_address_checksum = to_checksum_address(from_address)
+            to_address_checksum = to_checksum_address(to_address)
+            
+            # Пытаемся оценить реальное количество газа через Web3
+            try:
+                # Оцениваем газ для простой транзакции ETH
+                gas_estimate = self.w3.eth.estimate_gas({
+                    'from': from_address_checksum,
+                    'to': to_address_checksum,
+                    'value': amount_wei
+                })
+                logger.debug(f"Web3 gas estimate: {gas_estimate}")
+            except Exception as e:
+                logger.warning(f"Failed to estimate gas via Web3: {e}, using standard limit")
+                # Если не удалось оценить, используем стандартный лимит
+                gas_estimate = self.gas_limit_eth
+            
+            # Получаем текущую цену газа
+            gas_price = self._estimate_gas_price()
+            
+            # Рассчитываем стоимость газа в wei
+            gas_cost_wei = gas_price * gas_estimate
+            
+            # Конвертируем в ETH
+            gas_cost_eth = Web3.from_wei(gas_cost_wei, 'ether')
+            
+            # Добавляем небольшой запас (10%) для надежности
+            gas_cost_eth_with_buffer = gas_cost_eth * Decimal('1.1')
+            
+            logger.info(f"Gas estimation for ETH: price={Web3.from_wei(gas_price, 'gwei')} gwei, limit={gas_estimate}, cost={gas_cost_eth_with_buffer} ETH (with 1.1x buffer)")
+            
+            return Decimal(str(gas_cost_eth_with_buffer))
+            
+        except Exception as e:
+            logger.error(f"Failed to estimate gas cost: {e}")
+            # Fallback к фиксированному значению (но меньше, чем было)
+            # Используем более реалистичное значение на основе текущих цен газа
+            # При цене газа ~20 gwei и лимите 21000: 20 * 21000 = 420000 gwei = 0.00042 ETH
+            # С запасом 1.1x: ~0.0005 ETH
+            return Decimal('0.0005')  # Более реалистичное значение вместо 0.005
+    
+    def get_max_sendable_amount(self, address: str, to_address: str) -> Decimal:
+        """
+        Рассчитывает максимальную сумму ETH, которую можно отправить с адреса (баланс - газ).
+        Аналогично PolygonService, но для Ethereum.
+        """
+        try:
+            balance = self.get_balance(address)
+            if balance <= 0:
+                return Decimal('0')
+            
+            # Конвертируем баланс в wei для оценки газа
+            balance_wei = Web3.to_wei(balance, 'ether')
+            
+            # Оцениваем стоимость газа для отправки всего баланса
+            gas_cost = self.estimate_gas_cost(address, to_address, balance_wei)
+            
+            # Максимальная отправляемая сумма = баланс - газ
+            max_sendable = balance - gas_cost
+            
+            if max_sendable <= 0:
+                logger.warning(f"Cannot send from {address}: balance {balance} ETH, gas cost {gas_cost} ETH")
+                return Decimal('0')
+            
+            logger.info(f"Max sendable from {address}: {max_sendable} ETH (balance: {balance}, gas: {gas_cost})")
+            return max_sendable
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate max sendable amount: {e}")
+            return Decimal('0')
     
     def is_transaction_confirmed(self, tx_hash: str, required_confirmations: int = 12) -> bool:
         """
