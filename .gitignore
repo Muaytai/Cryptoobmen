@@ -44,6 +44,7 @@ db.sqlite3
 db.sqlite3-journal
 media/
 static/
+staticfiles/
 
 # Celery
 celerybeat-schedule*
@@ -83,3 +84,7 @@ backend/restore_db.py
 # Директория с бэкапами БД
 backend/backups/
 backend/**/*.json.gz
+
+# Backend специфичные файлы
+backend/*.dat
+backend/get_private_key_from_seed.py
