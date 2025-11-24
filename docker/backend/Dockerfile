@@ -31,7 +31,6 @@ COPY backend/.env.backend /app/.env.backend
 
 # Копирование entrypoint
 COPY docker/backend/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
 
 # Копирование исходного кода
 COPY backend/ .
@@ -40,7 +39,8 @@ COPY backend/ .
 RUN mkdir -p /app/static /app/media && \
     mkdir -p /app/logs && \
     touch /app/logs/django.log && \
-    chown -R app:app /app
+    chown -R app:app /app && \
+    chmod +x /app/entrypoint.sh
 
 # Переключение на непривилегированного пользователя
 USER app
