@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     musl-dev \
     gettext \
+    dos2unix \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,7 +38,11 @@ COPY backend/ .
 
 # Настройка разрешений и создание директорий
 # Конвертируем Windows line endings (CRLF -> LF) и устанавливаем права
-RUN sed -i 's/\r$//' /app/entrypoint.sh && \
+RUN if command -v dos2unix >/dev/null 2>&1; then \
+        dos2unix /app/entrypoint.sh; \
+    else \
+        sed -i 's/\r$//' /app/entrypoint.sh; \
+    fi && \
     mkdir -p /app/static /app/media && \
     mkdir -p /app/logs && \
     touch /app/logs/django.log && \
