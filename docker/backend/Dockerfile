@@ -36,7 +36,9 @@ COPY docker/backend/entrypoint.sh /app/entrypoint.sh
 COPY backend/ .
 
 # Настройка разрешений и создание директорий
-RUN mkdir -p /app/static /app/media && \
+# Конвертируем Windows line endings (CRLF -> LF) и устанавливаем права
+RUN sed -i 's/\r$//' /app/entrypoint.sh && \
+    mkdir -p /app/static /app/media && \
     mkdir -p /app/logs && \
     touch /app/logs/django.log && \
     chown -R app:app /app && \
