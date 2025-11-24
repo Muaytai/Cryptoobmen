@@ -15,6 +15,7 @@ services:
         condition: service_healthy
       frontend:
         condition: service_healthy
+    mem_limit: 256m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s
@@ -38,6 +39,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    mem_limit: 1.5g
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8000)); s.close()"]
       interval: 30s
@@ -56,6 +58,7 @@ services:
     command: npm start
     environment:
       - NODE_OPTIONS=--max-old-space-size=4096
+    mem_limit: 1g
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
@@ -73,6 +76,7 @@ services:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
       - ./backend/.env.backend
+    mem_limit: 1g
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
@@ -84,6 +88,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    mem_limit: 256m
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -106,6 +111,7 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    mem_limit: 1g
     networks:
       - cryptoobmen_network
 
@@ -123,12 +129,14 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    mem_limit: 512m
     networks:
       - cryptoobmen_network
 
 networks:
   cryptoobmen_network:
-    external: true
+    driver: bridge
+    name: cryptoobmen_network
 
 volumes:
   static_volume:
