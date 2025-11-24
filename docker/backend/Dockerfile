@@ -30,24 +30,21 @@ RUN pip install --upgrade pip && \
 # Копирование .env файла для разработки
 COPY backend/.env.backend /app/.env.backend
 
-# Копирование entrypoint
-COPY docker/backend/entrypoint.sh /app/entrypoint.sh
+# Копирование entrypoint с принудительной конвертацией
+COPY docker/backend/entrypoint.sh /tmp/entrypoint.sh
 
 # Копирование исходного кода
 COPY backend/ .
 
 # Настройка разрешений и создание директорий
-# Конвертируем Windows line endings (CRLF -> LF) и устанавливаем права
-RUN if command -v dos2unix >/dev/null 2>&1; then \
-        dos2unix /app/entrypoint.sh; \
-    else \
-        sed -i 's/\r$//' /app/entrypoint.sh; \
-    fi && \
+# Принудительно конвертируем line endings через tr (удаляет все \r) и устанавливаем права
+RUN tr -d '\r' < /tmp/entrypoint.sh > /app/entrypoint.sh && \
+    rm /tmp/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh && \
     mkdir -p /app/static /app/media && \
     mkdir -p /app/logs && \
     touch /app/logs/django.log && \
-    chown -R app:app /app && \
-    chmod +x /app/entrypoint.sh
+    chown -R app:app /app
 
 # Переключение на непривилегированного пользователя
 USER app
