@@ -14,4 +14,12 @@ ARG ADMIN_PASSWORD=admin
 # Создание файла с паролем для базовой аутентификации
 RUN htpasswd -bc /etc/nginx/.htpasswd ${ADMIN_USER} ${ADMIN_PASSWORD}
 
-CMD ["nginx", "-g", "daemon off;"] 
+# Копируем и делаем скрипт исполняемым
+COPY entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Устанавливаем точку входа
+ENTRYPOINT ["/docker-entrypoint.sh"]
+
+# Команда по умолчанию
+CMD ["nginx", "-g", "daemon off;"]
