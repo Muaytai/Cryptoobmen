@@ -15,7 +15,7 @@ ARG ADMIN_PASSWORD=admin
 RUN htpasswd -bc /etc/nginx/.htpasswd ${ADMIN_USER} ${ADMIN_PASSWORD}
 
 # Копируем и делаем скрипт исполняемым
-COPY entrypoint.sh /docker-entrypoint.sh
+COPY ./docker/nginx/entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 # Устанавливаем точку входа
