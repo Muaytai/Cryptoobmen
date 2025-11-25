@@ -1,7 +1,5 @@
 FROM nginx:1.23
 
-USER root
-
 # Установка необходимых пакетов
 RUN apt-get update && apt-get install -y \
     apache2-utils \
