@@ -97,6 +97,8 @@ MIDDLEWARE = [
 # Настройки безопасности
 SECURE_SSL_REDIRECT = not DEBUG
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True  # Позволяем Django доверять заголовку Host от прокси (Cloudflare)
+USE_X_FORWARDED_PORT = True  # Корректно восстанавливаем порт из X-Forwarded-Proto/Port
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_BROWSER_XSS_FILTER = True
