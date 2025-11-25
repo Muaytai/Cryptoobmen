@@ -31,7 +31,7 @@ services:
       dockerfile: docker/backend/Dockerfile
     command: gunicorn core.asgi:application -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
     volumes:
-      - static_volume:/app/static
+      - static_volume:/app/staticfiles
       - media_volume:/app/media
     env_file:
       - ./backend/.env.backend
