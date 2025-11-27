@@ -50,6 +50,30 @@ if echo "$@" | grep -qv "celery"; then
     echo "Running migrations..."
     python manage.py migrate --noinput || echo "Migration failed, continuing..."
     
+    echo "Updating Site configuration..."
+    python manage.py shell << EOF || echo "Site update failed, continuing..."
+from django.contrib.sites.models import Site
+from django.conf import settings
+from urllib.parse import urlparse
+
+# Получаем домен из FRONTEND_URL
+frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+parsed = urlparse(frontend_url)
+domain = parsed.netloc or parsed.path.replace('http://', '').replace('https://', '').strip('/')
+if not domain:
+    domain = 'tkxn.org'
+
+# Обновляем или создаем запись Site с ID=2
+site, created = Site.objects.update_or_create(
+    id=2,
+    defaults={
+        'domain': domain,
+        'name': 'TokenX'
+    }
+)
+print(f"Site {'created' if created else 'updated'}: {site.domain} ({site.name})")
+EOF
+    
     echo "Collecting static files..."
     python manage.py collectstatic --noinput || echo "Collectstatic failed, continuing..."
 fi

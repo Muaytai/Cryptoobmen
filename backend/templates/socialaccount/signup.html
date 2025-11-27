@@ -115,7 +115,15 @@
             
             <div class="form-group">
                 <label for="id_email">Email:</label>
-                <input type="email" name="email" id="id_email" value="{{ form.email.value|default:'' }}" readonly>
+                {% if account.extra_data.email %}
+                    <input type="email" name="email" id="id_email" value="{{ account.extra_data.email }}" readonly required>
+                {% elif form.email.value %}
+                    <input type="email" name="email" id="id_email" value="{{ form.email.value }}" readonly required>
+                {% elif form.initial.email %}
+                    <input type="email" name="email" id="id_email" value="{{ form.initial.email }}" readonly required>
+                {% else %}
+                    <input type="email" name="email" id="id_email" value="" readonly required>
+                {% endif %}
                 {% if form.email.errors %}
                     <div class="error">{{ form.email.errors }}</div>
                 {% endif %}

@@ -60,6 +60,22 @@ class CustomAccountAdapter(DefaultAccountAdapter):
         # Используем стандартную реализацию allauth для генерации URL
         return super().get_email_confirmation_url(request, emailconfirmation)
     
+    def render_mail(self, template_prefix, email, context, headers=None):
+        """Переопределяем рендеринг писем, чтобы добавить site_name и site_domain в контекст"""
+        # Добавляем правильное название сайта в контекст
+        from urllib.parse import urlparse
+        frontend_domain = urlparse(settings.FRONTEND_URL).netloc or urlparse(settings.FRONTEND_URL).path
+        if not frontend_domain:
+            frontend_domain = urlparse(settings.FRONTEND_URL).path.replace('http://', '').replace('https://', '').strip('/')
+        
+        # Убеждаемся, что site_name и site_domain всегда в контексте
+        if 'site_name' not in context:
+            context['site_name'] = "TokenX"  # Название вашего сайта
+        if 'site_domain' not in context:
+            context['site_domain'] = frontend_domain
+        
+        return super().render_mail(template_prefix, email, context, headers)
+    
     def send_confirmation_mail(self, request, emailconfirmation, signup):
         """Отправляет письмо с подтверждением"""
         current_site = get_current_site(request)
