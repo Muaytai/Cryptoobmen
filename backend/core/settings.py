@@ -532,7 +532,7 @@ REST_AUTH = {
 # AllAuth настройки (обновлены для версии 65.11.0)
 ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'http'
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https' if not DEBUG else 'http'
 
 ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
 
