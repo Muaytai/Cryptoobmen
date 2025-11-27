@@ -11,6 +11,8 @@ services:
       - static_volume:/usr/share/nginx/static
       - media_volume:/usr/share/nginx/media
       - /etc/nginx/ssl/cloudflare:/etc/nginx/ssl/cloudflare:ro
+      - letsencrypt_certs:/etc/letsencrypt:ro
+      - letsencrypt_www:/var/www/certbot:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -144,3 +146,15 @@ volumes:
   media_volume:
   postgres_data:
     name: cryptoobmen_postgres_data
+  letsencrypt_certs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /etc/letsencrypt
+  letsencrypt_www:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/www/certbot
