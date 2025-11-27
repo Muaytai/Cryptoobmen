@@ -589,6 +589,13 @@ SOCIALACCOUNT_PROVIDERS = {
             'client_id': os.getenv('YANDEX_CLIENT_ID'),
             'secret': os.getenv('YANDEX_CLIENT_SECRET'),
             'key': ''
+        },
+        'SCOPE': [
+            'login:email',
+            'login:info',
+        ],
+        'AUTH_PARAMS': {
+            'response_type': 'code',
         }
     }
 }
