@@ -7,7 +7,7 @@ import {useAuthStore} from '@/store/useAuthStore';
 import {Input} from '@/components/ui/Input';
 import ReCaptcha from '@/components/ReCaptcha';
 import styles from './Login.module.css';
-import {FaEye, FaEyeSlash, FaGoogle} from 'react-icons/fa';
+import {FaEye, FaEyeSlash, FaGoogle, FaSpinner} from 'react-icons/fa';
 import {TbBrandYandex} from 'react-icons/tb';
 import {useModal} from "@/utils/modalWindows/generalFunctions";
 import WriteAboutError from "@/components/modalWindows/WriteAboutError";
@@ -84,8 +84,10 @@ const LoginFormWithSearchParams = () => {
 
     // Если пользователь уже аутентифицирован (например, вернулись с соц-логина), уводим со страницы логина
     // Важно: проверяем и isAuthenticated, и user, чтобы убедиться, что данные пользователя загружены
+    // Также проверяем isLoading, чтобы не делать редирект во время загрузки
     useEffect(() => {
-        if (isAuthenticated && user) {
+        console.log('[LoginForm] useEffect для редиректа:', { isAuthenticated, user: !!user, isLoading });
+        if (isAuthenticated && user && !isLoading) {
             const redirectParam = searchParams.get('redirect');
             let target = '/';
             if (redirectParam) {
@@ -94,10 +96,13 @@ const LoginFormWithSearchParams = () => {
                 target = decoded.startsWith('/') ? decoded : `/${decoded}`;
             }
             console.log('[LoginForm] Редирект после авторизации на:', target);
-            router.replace(target);
+            // Используем небольшую задержку, чтобы убедиться, что состояние полностью обновлено
+            const timeoutId = setTimeout(() => {
+                router.replace(target);
+            }, 100);
+            return () => clearTimeout(timeoutId);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated, user]);
+    }, [isAuthenticated, user, isLoading, router, searchParams]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -113,8 +118,23 @@ const LoginFormWithSearchParams = () => {
             // Добавляем токен reCAPTCHA к учетным данным
             await login({...credentials, recaptcha_token: recaptchaToken});
             console.log('[LoginForm] Вход выполнен успешно, данные пользователя загружены');
+            
             // Редирект будет выполнен автоматически через useEffect при изменении isAuthenticated и user
-            // Не делаем редирект здесь, чтобы избежать гонки состояний
+            // Добавляем дополнительную проверку через небольшую задержку для надежности
+            setTimeout(() => {
+                // Получаем актуальное состояние из стора
+                const currentState = useAuthStore.getState();
+                if (currentState.isAuthenticated && currentState.user && !currentState.isLoading) {
+                    const redirectParam = searchParams.get('redirect');
+                    let target = '/';
+                    if (redirectParam) {
+                        const decoded = decodeURIComponent(redirectParam);
+                        target = decoded.startsWith('/') ? decoded : `/${decoded}`;
+                    }
+                    console.log('[LoginForm] Дополнительная проверка редиректа после логина на:', target);
+                    router.replace(target);
+                }
+            }, 300);
         } catch (err) {
             console.error('Ошибка входа:', err);
             setLoginAttempted(false);
@@ -194,6 +214,14 @@ const LoginFormWithSearchParams = () => {
                                 Email успешно подтвержден! Теперь вы можете войти в систему.
                             </div>
                         )}
+                        {isLoading && (
+                            <div className={styles.loadingOverlay}>
+                                <div className={styles.loadingMessage}>
+                                    <FaSpinner className={styles.spinner} />
+                                    <span>Выполняется вход в систему...</span>
+                                </div>
+                            </div>
+                        )}
                         <form className={styles.formStyle} onSubmit={handleSubmit}>
                             <Input
                                 type="email"
@@ -243,7 +271,14 @@ const LoginFormWithSearchParams = () => {
                                 className={styles.submitBtn}
                                 disabled={isLoading || !recaptchaToken}
                             >
-                                {isLoading ? 'Загрузка...' : 'Войти'}
+                                {isLoading ? (
+                                    <span className={styles.loadingContent}>
+                                        <FaSpinner className={styles.spinner} />
+                                        <span>Выполняется вход...</span>
+                                    </span>
+                                ) : (
+                                    'Войти'
+                                )}
                             </button>
                             {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
                             <div className="flex items-center my-6">
@@ -257,6 +292,7 @@ const LoginFormWithSearchParams = () => {
                                         type="button" 
                                         className={styles.socialBtn} 
                                         onClick={handleGoogleLogin}
+                                        disabled={isLoading}
                                     >
                                         <FaGoogle/> Google
                                     </button>
@@ -264,6 +300,7 @@ const LoginFormWithSearchParams = () => {
                                         type="button" 
                                         className={styles.socialBtn} 
                                         onClick={handleYandexLogin}
+                                        disabled={isLoading}
                                     >
                                         <TbBrandYandex/> Яндекс 
                                     </button>
