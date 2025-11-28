@@ -155,31 +155,20 @@ export const useAuthStore = create<AuthState>()(
           await api.post('/auth/login/', payload);
           console.log('[AuthStore] login: api.post(/auth/login/) успешно выполнен.');
 
-          // Шаг 2: Сразу после успешного входа обновляем состояние
-          set({
-            isAuthenticated: true,
-            isLoading: false, // Можно установить в false, т.к. основная операция завершена
-            disableAutoLogin: false,
-            error: null
-          });
+          // Шаг 2: Сбрасываем флаг блокировки автовхода
           localStorage.removeItem('disableAutoLogin');
-          console.log('[AuthStore] login: Состояние обновлено, isAuthenticated: true.');
+          set({ disableAutoLogin: false });
+          console.log('[AuthStore] login: Флаг disableAutoLogin сброшен.');
 
-          // Шаг 3: Асинхронно и без блокировки получаем данные пользователя
-          get().checkAuthStatus(true).then(() => {
-            console.log(
-              '[AuthStore] login: checkAuthStatus в then() завершен. Текущее состояние: user: ',
-              get().user,
-              ', isAuthenticated: ',
-              get().isAuthenticated
-            );
-          }).catch(error => {
-            // Если checkAuthStatus не удался, это не отменяет успешный вход,
-            // но логируем ошибку, чтобы понимать, почему данные пользователя не загрузились.
-            console.error('[AuthStore] login: Ошибка в фоновом checkAuthStatus после входа:', error);
-            // Можно установить какое-то некритичное сообщение об ошибке, не сбрасывая аутентификацию
-            // set({ error: 'Не удалось загрузить данные профиля, но вы вошли в систему.' });
-          });
+          // Шаг 3: Загружаем данные пользователя и устанавливаем состояние аутентификации
+          // Важно: дожидаемся завершения checkAuthStatus, чтобы user был загружен перед редиректом
+          await get().checkAuthStatus(true);
+          console.log(
+            '[AuthStore] login: checkAuthStatus завершен. Текущее состояние: user: ',
+            get().user,
+            ', isAuthenticated: ',
+            get().isAuthenticated
+          );
         } catch (error: any) {
           console.error('[useAuthStore login] Ошибка входа:', error);
           clearAuthData(); // Очищаем все данные при ошибке входа
