@@ -596,7 +596,9 @@ SOCIALACCOUNT_PROVIDERS = {
         ],
         'AUTH_PARAMS': {
             'response_type': 'code',
-        }
+        },
+        # Дополнительные настройки для получения email
+        'EMAIL_AUTHENTICATION': True,
     }
 }
 

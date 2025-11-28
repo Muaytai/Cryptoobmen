@@ -46,10 +46,17 @@
             background-color: #2a2a3e;
             color: #fff;
             box-sizing: border-box;
+            font-size: 14px;
         }
         input[type="text"]:focus, input[type="email"]:focus {
             border-color: #4a4ae9;
             outline: none;
+            background-color: #2f2f4f;
+        }
+        input[type="text"]:disabled, input[type="email"]:disabled,
+        input[type="text"][readonly], input[type="email"][readonly] {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
         button {
             background-color: #4a4ae9;
@@ -116,14 +123,15 @@
             <div class="form-group">
                 <label for="id_email">Email:</label>
                 {% if account.extra_data.email %}
-                    <input type="email" name="email" id="id_email" value="{{ account.extra_data.email }}" readonly required>
+                    <input type="email" name="email" id="id_email" value="{{ account.extra_data.email }}" required>
                 {% elif form.email.value %}
-                    <input type="email" name="email" id="id_email" value="{{ form.email.value }}" readonly required>
+                    <input type="email" name="email" id="id_email" value="{{ form.email.value }}" required>
                 {% elif form.initial.email %}
-                    <input type="email" name="email" id="id_email" value="{{ form.initial.email }}" readonly required>
+                    <input type="email" name="email" id="id_email" value="{{ form.initial.email }}" required>
                 {% else %}
-                    <input type="email" name="email" id="id_email" value="" readonly required>
+                    <input type="email" name="email" id="id_email" value="" required>
                 {% endif %}
+                <small style="color: #888; font-size: 12px; display: block; margin-top: 5px;">Вы можете изменить email при необходимости</small>
                 {% if form.email.errors %}
                     <div class="error">{{ form.email.errors }}</div>
                 {% endif %}

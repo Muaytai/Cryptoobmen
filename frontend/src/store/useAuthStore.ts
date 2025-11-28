@@ -163,12 +163,21 @@ export const useAuthStore = create<AuthState>()(
           // Шаг 3: Загружаем данные пользователя и устанавливаем состояние аутентификации
           // Важно: дожидаемся завершения checkAuthStatus, чтобы user был загружен перед редиректом
           await get().checkAuthStatus(true);
+          const finalState = get();
           console.log(
             '[AuthStore] login: checkAuthStatus завершен. Текущее состояние: user: ',
-            get().user,
+            finalState.user,
             ', isAuthenticated: ',
-            get().isAuthenticated
+            finalState.isAuthenticated,
+            ', isLoading: ',
+            finalState.isLoading
           );
+          
+          // Убеждаемся, что isLoading установлен в false после успешного логина
+          if (finalState.isAuthenticated && finalState.user && finalState.isLoading) {
+            console.log('[AuthStore] login: Принудительно устанавливаем isLoading в false');
+            set({ isLoading: false });
+          }
         } catch (error: any) {
           console.error('[useAuthStore login] Ошибка входа:', error);
           clearAuthData(); // Очищаем все данные при ошибке входа
