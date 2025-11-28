@@ -16,7 +16,7 @@ import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 const LoginFormWithSearchParams = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const {login, isLoading, error, setDisableAutoLogin, setTokens, checkAuthStatus, isAuthenticated} = useAuthStore();
+    const {login, isLoading, error, setDisableAutoLogin, setTokens, checkAuthStatus, isAuthenticated, user} = useAuthStore();
     const [credentials, setCredentials] = useState({email: '', password: ''});
     const [showPassword, setShowPassword] = useState(false);
     const [loginAttempted, setLoginAttempted] = useState(false);
@@ -83,14 +83,21 @@ const LoginFormWithSearchParams = () => {
     }, [searchParams, setDisableAutoLogin]);
 
     // Если пользователь уже аутентифицирован (например, вернулись с соц-логина), уводим со страницы логина
+    // Важно: проверяем и isAuthenticated, и user, чтобы убедиться, что данные пользователя загружены
     useEffect(() => {
-        if (isAuthenticated) {
+        if (isAuthenticated && user) {
             const redirectParam = searchParams.get('redirect');
-            const target = redirectParam ? decodeURIComponent(redirectParam) : '/';
+            let target = '/';
+            if (redirectParam) {
+                const decoded = decodeURIComponent(redirectParam);
+                // Если параметр не начинается с /, добавляем его
+                target = decoded.startsWith('/') ? decoded : `/${decoded}`;
+            }
+            console.log('[LoginForm] Редирект после авторизации на:', target);
             router.replace(target);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated]);
+    }, [isAuthenticated, user]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -105,12 +112,9 @@ const LoginFormWithSearchParams = () => {
             setLoginAttempted(true);
             // Добавляем токен reCAPTCHA к учетным данным
             await login({...credentials, recaptcha_token: recaptchaToken});
-            console.log('Вход выполнен успешно');
-            // Определяем куда редиректить после успешного входа
-            const redirectParam = searchParams.get('redirect');
-            const target = redirectParam ? decodeURIComponent(redirectParam) : '/';
-            // Используем replace, чтобы не оставлять страницу логина в истории
-            router.replace(target);
+            console.log('[LoginForm] Вход выполнен успешно, данные пользователя загружены');
+            // Редирект будет выполнен автоматически через useEffect при изменении isAuthenticated и user
+            // Не делаем редирект здесь, чтобы избежать гонки состояний
         } catch (err) {
             console.error('Ошибка входа:', err);
             setLoginAttempted(false);
