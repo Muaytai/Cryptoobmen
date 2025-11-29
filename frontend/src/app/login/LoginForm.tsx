@@ -16,7 +16,7 @@ import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 const LoginFormWithSearchParams = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const {login, isLoading, error, setDisableAutoLogin, setTokens, checkAuthStatus, isAuthenticated, user} = useAuthStore();
+    const {login, isLoading, error, setDisableAutoLogin, setTokens, checkAuthStatus, isAuthenticated, user, socialLogin} = useAuthStore();
     const [credentials, setCredentials] = useState({email: '', password: ''});
     const [showPassword, setShowPassword] = useState(false);
     const [loginAttempted, setLoginAttempted] = useState(false);
@@ -155,7 +155,7 @@ const LoginFormWithSearchParams = () => {
         const finalNext = `${frontendUrl}/login`;
         const callback = `${backendUrl}/auth/callback/?next=${encodeURIComponent(finalNext)}`;
 
-        clearAllAuthData();
+        socialLogin(); // Используем socialLogin вместо clearAllAuthData
 
         window.location.href = `${backendUrl}/accounts/google/login/?process=login&next=${encodeURIComponent(callback)}`;
     };
@@ -166,7 +166,7 @@ const LoginFormWithSearchParams = () => {
         const finalNext = `${frontendUrl}/login`;
         const callback = `${backendUrl}/auth/callback/?next=${encodeURIComponent(finalNext)}`;
 
-        clearAllAuthData();
+        socialLogin(); // Используем socialLogin вместо clearAllAuthData
 
         window.location.href = `${backendUrl}/accounts/yandex/login/?process=login&next=${encodeURIComponent(callback)}`;
     };
