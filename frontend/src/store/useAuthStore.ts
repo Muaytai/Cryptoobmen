@@ -82,6 +82,7 @@ interface AuthState {
   updateAvatar: (file: File) => Promise<void>;
   getAuthHeaders: () => Record<string, string>;
   setShouldPlayAnimation: (value: boolean) => void; // Функция для установки флага анимации
+  socialLogin: () => void; // Функция для подготовки к социальному логину
 }
 
 const handleApiError = (error: any, defaultMessage: string): string => {
@@ -476,6 +477,14 @@ export const useAuthStore = create<AuthState>()(
 
       setShouldPlayAnimation: (value: boolean) => {
         set({ shouldPlayAnimation: value });
+      },
+      
+      socialLogin: () => {
+        console.log('[AuthStore] socialLogin: Подготовка к социальному входу.');
+        // Сбрасываем флаг, который мог остаться от предыдущего выхода из системы
+        localStorage.removeItem('disableAutoLogin');
+        set({ disableAutoLogin: false });
+        console.log('[AuthStore] socialLogin: Флаг disableAutoLogin сброшен.');
       },
     }),
     {

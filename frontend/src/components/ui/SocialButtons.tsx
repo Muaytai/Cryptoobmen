@@ -32,7 +32,7 @@ export const SocialButtons = () => (
       </svg>
     </a>
     <a
-      href="https://instagram.com/your_profile"
+      href="https://www.instagram.com/edward_homitskiy/"
       target="_blank"
       rel="noopener noreferrer"
       style={{
@@ -55,4 +55,4 @@ export const SocialButtons = () => (
       </svg>
     </a>
   </div>
-); 
+);
