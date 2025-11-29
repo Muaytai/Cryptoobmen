@@ -2,7 +2,7 @@
 <html>
 <head>
     <title>Подтверждение Email</title>
-    <meta http-equiv="refresh" content="0;url={{ request.scheme }}://{{ request.get_host }}{% url 'home' %}">
+    <meta http-equiv="refresh" content="0;url={{ FRONTEND_URL }}">
     <script>
         // Перенаправляем на фронтенд
         window.location.href = "{{ FRONTEND_URL }}";
