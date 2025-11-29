@@ -28,9 +28,9 @@ class CustomAccountAdapter(DefaultAccountAdapter):
 
         if commit:
             user.save()
-            # Create the user profile
+            # Create the user profile if it doesn't exist
             from accounts.models import UserProfile
-            UserProfile.objects.create(user=user)
+            UserProfile.objects.get_or_create(user=user)
 
         return user
     
@@ -314,5 +314,21 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         return callback_url
     
     def is_auto_signup_allowed(self, request, sociallogin):
-        """Всегда разрешаем автоматическую регистрацию"""
-        return True 
+        """
+        Разрешает автоматическую регистрацию, только если пользователь
+        с таким email еще не существует.
+        """
+        # Если email не получен от провайдера, не разрешаем авто-регистрацию
+        if not sociallogin.email_addresses:
+            return False
+            
+        email = sociallogin.email_addresses.email
+        # Проверяем, существует ли пользователь с таким email
+        if User.objects.filter(email__iexact=email).exists():
+            # Если пользователь существует, не разрешаем авто-регистрацию.
+            # Логика в pre_social_login должна была уже связать аккаунты,
+            # после чего allauth должен перейти к логину существующего пользователя.
+            return False
+        
+        # Если пользователь не существует, разрешаем авто-регистрацию
+        return True
