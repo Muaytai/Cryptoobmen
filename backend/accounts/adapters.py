@@ -97,39 +97,55 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
     """Пользовательский адаптер для социальной аутентификации"""
     
     def pre_social_login(self, request, sociallogin):
-        """Обработка перед социальной авторизацией"""
+        """
+        Перехватывает социальный логин. Если пользователь с таким email уже существует,
+        автоматически связывает аккаунты и выполняет вход, прерывая стандартный
+        поток allauth, чтобы избежать страницы регистрации.
+        """
         logger = logging.getLogger(__name__)
         
-        # Получаем данные от провайдера
-        # В pre_social_login account может быть еще не создан, используем token
+        # Если у sociallogin уже есть pk, значит это существующий пользователь, ничего не делаем
+        if sociallogin.user.pk:
+            return
+
+        # Ищем email пользователя из разных источников
+        email = sociallogin.user.email
+        if not email and sociallogin.email_addresses:
+            email = sociallogin.email_addresses.email
+        if not email:
+            email = sociallogin.account.extra_data.get('email') or sociallogin.account.extra_data.get('default_email')
+        
+        if not email:
+            logger.warning("Не удалось получить email от социального провайдера в pre_social_login.")
+            return
+
         try:
-            if hasattr(sociallogin, 'account') and sociallogin.account:
-                extra_data = sociallogin.account.extra_data or {}
-            elif hasattr(sociallogin, 'token') and sociallogin.token:
-                # Пытаемся получить данные из token
-                extra_data = sociallogin.token.app.extra_data if hasattr(sociallogin.token, 'app') else {}
-            else:
-                extra_data = {}
+            user = User.objects.get(email__iexact=email)
             
-            # Для Yandex email может быть в разных полях
-            email = extra_data.get('email') or extra_data.get('default_email')
-            # Если email в массиве emails, берем первый
-            if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
-                email = extra_data['emails'][0]
+            # Если пользователь найден, связываем соц. аккаунт и логиним
+            from allauth.exceptions import ImmediateHttpResponse
+            from allauth.account.utils import perform_login
+            from django.shortcuts import redirect
+
+            logger.info(f"Найден существующий пользователь ('{email}') для социального входа. Связываем аккаунты и выполняем вход.")
             
-            if email:
-                try:
-                    # Ищем пользователя без учета регистра email
-                    user = User.objects.get(email__iexact=email)
-                    if not sociallogin.is_existing:
-                        # Привязываем существующего пользователя к соцаккаунту
-                        sociallogin.connect(request, user)
-                except User.DoesNotExist:
-                    # Если пользователь не найден, позволяем allauth создать нового
-                    pass
+            # Связываем социальный аккаунт с найденным пользователем
+            sociallogin.connect(request, user)
+            
+            # Выполняем логин
+            perform_login(request, user, email_verification='optional')
+            
+            # Прерываем стандартный поток и делаем редирект
+            redirect_url = self.get_login_redirect_url(request)
+            raise ImmediateHttpResponse(redirect(redirect_url))
+
+        except User.DoesNotExist:
+            # Пользователь не найден, продолжаем стандартный процесс регистрации
+            logger.info(f"Пользователь с email '{email}' не найден. Продолжаем стандартную регистрацию через соцсеть.")
+            pass
         except Exception as e:
-            # Логируем неожиданные ошибки с полным traceback
-            logger.error("Неожиданная ошибка в pre_social_login", exc_info=True)
+            # Добавим логгирование самой ошибки
+            logger.error(f"Неожиданная ошибка в pre_social_login: {e}", exc_info=True)
 
     def populate_user(self, request, sociallogin, data):
         """Заполняет данные пользователя из социальной сети"""
@@ -168,10 +184,10 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         email = extra_data.get('email') or extra_data.get('default_email') or (user.email if user.email else None)
         # Если email в массиве emails, берем первый
         if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
-            email = extra_data['emails'][0]
+            email = extra_data['emails']
         
         if email:
-            base_username = email.split('@')[0]
+            base_username = email.split('@')
             # Если base_username пустой, используем часть email до @
             if not base_username:
                 base_username = 'user'
@@ -248,7 +264,7 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
                 if not user.email:
                     email = extra_data.get('email') or extra_data.get('default_email')
                     if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
-                        email = extra_data['emails'][0]
+                        email = extra_data['emails']
                     if email:
                         user.email = email
                         logger.info(f"Yandex email установлен: {email}")
@@ -314,21 +330,5 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         return callback_url
     
     def is_auto_signup_allowed(self, request, sociallogin):
-        """
-        Разрешает автоматическую регистрацию, только если пользователь
-        с таким email еще не существует.
-        """
-        # Если email не получен от провайдера, не разрешаем авто-регистрацию
-        if not sociallogin.email_addresses:
-            return False
-            
-        email = sociallogin.email_addresses.email
-        # Проверяем, существует ли пользователь с таким email
-        if User.objects.filter(email__iexact=email).exists():
-            # Если пользователь существует, не разрешаем авто-регистрацию.
-            # Логика в pre_social_login должна была уже связать аккаунты,
-            # после чего allauth должен перейти к логину существующего пользователя.
-            return False
-        
-        # Если пользователь не существует, разрешаем авто-регистрацию
+        """Всегда разрешаем автоматическую регистрацию, т.к. pre_social_login обрабатывает случай существующего пользователя."""
         return True
