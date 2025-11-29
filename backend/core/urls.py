@@ -13,6 +13,8 @@ from django.http import HttpResponseRedirect
 import logging
 from urllib.parse import urlencode
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from django.views import View
+from django.shortcuts import render
 
 # Создаем главный роутер
 router = DefaultRouter()
@@ -29,6 +31,25 @@ def auth_callback(request):
     logger.info(f"auth_callback: redirecting to {redirect_url}")
     return HttpResponseRedirect(redirect_url)
 
+class EmailVerificationSentView(View):
+    """Кастомный view для страницы отправки письма с подтверждением email"""
+    def get(self, request):
+        # Если пользователь авторизован через соцсеть, перенаправляем сразу на callback
+        if request.user.is_authenticated:
+            # Проверяем, есть ли у пользователя социальные аккаунты
+            from allauth.socialaccount.models import SocialAccount
+            if SocialAccount.objects.filter(user=request.user).exists():
+                # Пользователь авторизован через соцсеть, перенаправляем на callback
+                next_param = request.GET.get('next', f"{settings.FRONTEND_URL}/profile")
+                query = urlencode({'next': next_param})
+                redirect_url = f"/api/accounts/social/callback/?{query}"
+                return HttpResponseRedirect(redirect_url)
+        
+        # Иначе показываем шаблон с FRONTEND_URL в контексте
+        return render(request, 'account/email_verification_sent.html', {
+            'FRONTEND_URL': settings.FRONTEND_URL
+        })
+
 # Кастомные URL-адреса для регистрации dj_rest_auth
 dj_rest_auth_custom_registration_urls = [
     path('', RegisterView.as_view(permission_classes=(permissions.AllowAny,)), name='rest_register'),
@@ -36,7 +57,7 @@ dj_rest_auth_custom_registration_urls = [
     path('resend-email/', ResendEmailVerificationView.as_view(), name="rest_resend_email"),
     # Путь для страницы "письмо отправлено"
     path('account-email-verification-sent/', 
-         TemplateView.as_view(template_name="account/email_verification_sent.html"),
+         EmailVerificationSentView.as_view(),
          name='account_email_verification_sent'),
 ]
 

@@ -98,35 +98,74 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
     
     def pre_social_login(self, request, sociallogin):
         """Обработка перед социальной авторизацией"""
-        # Для Yandex email может быть в разных полях
-        extra_data = sociallogin.account.extra_data
-        email = extra_data.get('email') or extra_data.get('default_email')
-        # Если email в массиве emails, берем первый
-        if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
-            email = extra_data['emails'][0]
+        logger = logging.getLogger(__name__)
         
-        if email:
-            try:
-                user = User.objects.get(email=email)
-                if not sociallogin.is_existing:
-                    # Привязываем существующего пользователя к соцаккаунту
-                    sociallogin.connect(request, user)
-            except User.DoesNotExist:
-                pass
+        # Получаем данные от провайдера
+        # В pre_social_login account может быть еще не создан, используем token
+        try:
+            if hasattr(sociallogin, 'account') and sociallogin.account:
+                extra_data = sociallogin.account.extra_data or {}
+            elif hasattr(sociallogin, 'token') and sociallogin.token:
+                # Пытаемся получить данные из token
+                extra_data = sociallogin.token.app.extra_data if hasattr(sociallogin.token, 'app') else {}
+            else:
+                extra_data = {}
+            
+            # Для Yandex email может быть в разных полях
+            email = extra_data.get('email') or extra_data.get('default_email')
+            # Если email в массиве emails, берем первый
+            if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
+                email = extra_data['emails'][0]
+            
+            if email:
+                try:
+                    # Ищем пользователя без учета регистра email
+                    user = User.objects.get(email__iexact=email)
+                    if not sociallogin.is_existing:
+                        # Привязываем существующего пользователя к соцаккаунту
+                        sociallogin.connect(request, user)
+                except User.DoesNotExist:
+                    # Если пользователь не найден, позволяем allauth создать нового
+                    pass
+        except Exception as e:
+            # Логируем неожиданные ошибки с полным traceback
+            logger.error("Неожиданная ошибка в pre_social_login", exc_info=True)
 
     def populate_user(self, request, sociallogin, data):
         """Заполняет данные пользователя из социальной сети"""
-        user = super().populate_user(request, sociallogin, data)
+        logger = logging.getLogger(__name__)
+        
+        try:
+            user = super().populate_user(request, sociallogin, data)
+        except Exception as e:
+            logger.error(f"Ошибка в super().populate_user: {str(e)}")
+            raise
         
         # Автоматически верифицируем пользователей из соцсетей
         user.is_verified = True
         
         # Получаем данные из соцсети
-        extra_data = sociallogin.account.extra_data
+        # В populate_user account уже должен быть создан
+        try:
+            if hasattr(sociallogin, 'account') and sociallogin.account:
+                extra_data = sociallogin.account.extra_data
+                # Убеждаемся, что extra_data - это словарь
+                if not isinstance(extra_data, dict):
+                    logger.warning(f"extra_data не является словарем: {type(extra_data)}")
+                    extra_data = {}
+                provider = sociallogin.account.provider
+            else:
+                logger.warning("sociallogin.account не найден в populate_user")
+                extra_data = {}
+                provider = None
+        except Exception as e:
+            logger.error(f"Ошибка при получении данных account: {str(e)}")
+            extra_data = {}
+            provider = None
         
         # Устанавливаем username до сохранения пользователя
         # Для Yandex email может быть в разных полях
-        email = extra_data.get('email') or extra_data.get('default_email')
+        email = extra_data.get('email') or extra_data.get('default_email') or (user.email if user.email else None)
         # Если email в массиве emails, берем первый
         if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
             email = extra_data['emails'][0]
@@ -148,71 +187,76 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
             user.username = f"user_{str(uuid.uuid4())[:8]}"
         
         # Заполняем дополнительные поля в зависимости от провайдера
-        if sociallogin.account.provider == 'google':
-            if 'picture' in extra_data:
-                try:
-                    from django.core.files.base import ContentFile
-                    from urllib.request import urlopen
-                    avatar_url = extra_data['picture']
-                    response = urlopen(avatar_url)
-                    user.avatar.save(
-                        f'google_{sociallogin.account.uid}.jpg',
-                        ContentFile(response.read()),
-                        save=False
-                    )
-                except Exception as e:
-                    print(f"Error saving avatar: {str(e)}")
-                    
-            if 'name' in extra_data:
-                user.full_name = extra_data['name']
-            if 'given_name' in extra_data:
-                user.first_name = extra_data['given_name']
-            if 'family_name' in extra_data:
-                user.last_name = extra_data['family_name']
-            
-        elif sociallogin.account.provider == 'yandex':
-            # Логируем данные от Yandex для отладки
-            logger = logging.getLogger(__name__)
-            logger.info(f"Yandex extra_data keys: {list(extra_data.keys())}")
-            logger.info(f"Yandex extra_data: {extra_data}")
-            
-            # Обработка имени
-            if 'real_name' in extra_data:
-                user.full_name = extra_data['real_name']
-            elif 'display_name' in extra_data:
-                user.full_name = extra_data['display_name']
-            
-            if 'first_name' in extra_data:
-                user.first_name = extra_data['first_name']
-            if 'last_name' in extra_data:
-                user.last_name = extra_data['last_name']
-            
-            # Обработка аватара для Yandex
-            if 'default_avatar_id' in extra_data:
-                try:
-                    from django.core.files.base import ContentFile
-                    from urllib.request import urlopen
-                    # Формируем URL аватара Yandex
-                    avatar_url = f"https://avatars.yandex.net/get-yapic/{extra_data['default_avatar_id']}/islands-200"
-                    response = urlopen(avatar_url)
-                    user.avatar.save(
-                        f'yandex_{sociallogin.account.uid}.jpg',
-                        ContentFile(response.read()),
-                        save=False
-                    )
-                except Exception as e:
-                    logger.warning(f"Error saving Yandex avatar: {str(e)}")
-            
-            # Убеждаемся, что email установлен
-            if not user.email:
-                email = extra_data.get('email') or extra_data.get('default_email')
-                if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
-                    email = extra_data['emails'][0]
-                if email:
-                    user.email = email
-                    logger.info(f"Yandex email установлен: {email}")
-                else:
-                    logger.warning("Yandex email не найден в extra_data")
+        try:
+            if provider == 'google':
+                if 'picture' in extra_data:
+                    try:
+                        from django.core.files.base import ContentFile
+                        from urllib.request import urlopen
+                        avatar_url = extra_data['picture']
+                        response = urlopen(avatar_url)
+                        uid = sociallogin.account.uid if hasattr(sociallogin, 'account') and sociallogin.account else str(uuid.uuid4())
+                        user.avatar.save(
+                            f'google_{uid}.jpg',
+                            ContentFile(response.read()),
+                            save=False
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error saving Google avatar: {str(e)}")
+                        
+                if 'name' in extra_data:
+                    user.full_name = extra_data['name']
+                if 'given_name' in extra_data:
+                    user.first_name = extra_data['given_name']
+                if 'family_name' in extra_data:
+                    user.last_name = extra_data['family_name']
+                
+            elif provider == 'yandex':
+                # Логируем данные от Yandex для отладки
+                logger.info(f"Yandex extra_data keys: {list(extra_data.keys()) if isinstance(extra_data, dict) else 'not dict'}")
+                logger.info(f"Yandex extra_data: {extra_data}")
+                
+                # Обработка имени
+                if 'real_name' in extra_data:
+                    user.full_name = extra_data['real_name']
+                elif 'display_name' in extra_data:
+                    user.full_name = extra_data['display_name']
+                
+                if 'first_name' in extra_data:
+                    user.first_name = extra_data['first_name']
+                if 'last_name' in extra_data:
+                    user.last_name = extra_data['last_name']
+                
+                # Обработка аватара для Yandex
+                if 'default_avatar_id' in extra_data:
+                    try:
+                        from django.core.files.base import ContentFile
+                        from urllib.request import urlopen
+                        # Формируем URL аватара Yandex
+                        avatar_url = f"https://avatars.yandex.net/get-yapic/{extra_data['default_avatar_id']}/islands-200"
+                        response = urlopen(avatar_url)
+                        uid = sociallogin.account.uid if hasattr(sociallogin, 'account') and sociallogin.account else str(uuid.uuid4())
+                        user.avatar.save(
+                            f'yandex_{uid}.jpg',
+                            ContentFile(response.read()),
+                            save=False
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error saving Yandex avatar: {str(e)}")
+                
+                # Убеждаемся, что email установлен
+                if not user.email:
+                    email = extra_data.get('email') or extra_data.get('default_email')
+                    if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
+                        email = extra_data['emails'][0]
+                    if email:
+                        user.email = email
+                        logger.info(f"Yandex email установлен: {email}")
+                    else:
+                        logger.warning("Yandex email не найден в extra_data")
+        except Exception as e:
+            logger.error(f"Ошибка при обработке данных провайдера {provider}: {str(e)}")
+            # Не прерываем выполнение, продолжаем с базовыми данными
         
         return user
 
@@ -224,6 +268,19 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         from accounts.models import UserProfile
         UserProfile.objects.get_or_create(user=user)
         
+        # Автоматически подтверждаем email для соцсетей
+        from allauth.account.models import EmailAddress
+        if user.email:
+            email_address, created = EmailAddress.objects.get_or_create(
+                user=user,
+                email=user.email,
+                defaults={'verified': True, 'primary': True}
+            )
+            if not created:
+                email_address.verified = True
+                email_address.primary = True
+                email_address.save()
+        
         # Генерируем JWT токены
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
@@ -234,6 +291,12 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         request.session['refresh_token'] = refresh_token
         
         return user
+    
+    def send_confirmation_mail(self, request, emailconfirmation, signup):
+        """Не отправляем письма с подтверждением для соцсетей"""
+        # Для соцсетей не отправляем письма с подтверждением
+        # Email уже подтвержден провайдером
+        pass
     
     def get_connect_redirect_url(self, request, socialaccount):
         """Перенаправляет после успешного подключения аккаунта соцсети"""
