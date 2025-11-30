@@ -90,7 +90,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
-    'core.middleware.CsrfCookieMiddleware',   
+    'core.middleware.CsrfCookieMiddleware',
+    'core.middleware.CloseDBConnectionsMiddleware',  # Закрывает соединения после каждого запроса
     # 'axes.middleware.AxesMiddleware',  # Должен быть последним - временно отключено
 ]
 
@@ -232,6 +233,9 @@ WSGI_APPLICATION = 'core.wsgi.application'
 ASGI_APPLICATION = 'core.asgi.application'
 
 # Database
+# Для ASGI приложений CONN_MAX_AGE должен быть 0, так как асинхронные приложения
+# не могут безопасно переиспользовать соединения между запросами
+# В продакшене это предотвращает накопление соединений и ошибку "too many clients"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -242,8 +246,16 @@ DATABASES = {
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
         'OPTIONS': {
             'client_encoding': 'UTF8',
+            # Ограничиваем время подключения для предотвращения зависаний
+            'connect_timeout': 10,
+            # Дополнительные настройки для продакшена
+            'options': '-c statement_timeout=30000',  # 30 секунд таймаут для запросов
         },
-        'CONN_MAX_AGE': 60,
+        # Для ASGI устанавливаем 0, чтобы соединения закрывались после каждого запроса
+        # Это критично для продакшена, чтобы избежать накопления соединений
+        'CONN_MAX_AGE': 0,
+        # Отключаем атомарные запросы для лучшей производительности
+        'ATOMIC_REQUESTS': False,
     }
 }
 

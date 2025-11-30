@@ -3,8 +3,9 @@ import os
 import logging
 from pathlib import Path
 from celery import Celery
-from celery.signals import worker_process_init
+from celery.signals import worker_process_init, task_postrun
 from celery.utils.log import get_task_logger
+from django.db import connections
 
 
 
@@ -138,4 +139,15 @@ app.autodiscover_tasks(['crypto'], related_name='tasks_consolidation')
 def debug_task(self):
     """Простейшая задача для проверки работоспособности Celery."""
     print(f"Request: {self.request!r}")
+
+
+@task_postrun.connect
+def close_db_connections(**kwargs):
+    """
+    Закрывает соединения с БД после выполнения каждой задачи Celery.
+    Предотвращает накопление соединений и ошибку 'too many clients already'.
+    """
+    # Закрываем все соединения с БД после выполнения задачи
+    for conn in connections.all():
+        conn.close()
 

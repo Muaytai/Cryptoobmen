@@ -1,6 +1,7 @@
 from django.utils.deprecation import MiddlewareMixin
 from django.middleware.csrf import get_token
 from django.conf import settings
+from django.db import connections
 import re
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
@@ -161,4 +162,22 @@ class CorsMiddleware:
                 response["Access-Control-Allow-Credentials"] = "true"
                 response["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
                 response["Access-Control-Allow-Headers"] = "Content-Type, X-CSRFToken, Authorization"
+        return response
+
+
+class CloseDBConnectionsMiddleware:
+    """
+    Middleware для закрытия соединений с БД после каждого запроса.
+    Необходимо для ASGI приложений, где CONN_MAX_AGE=0.
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        try:
+            response = self.get_response(request)
+        finally:
+            # Закрываем все соединения с БД после обработки запроса
+            for conn in connections.all():
+                conn.close()
         return response 
