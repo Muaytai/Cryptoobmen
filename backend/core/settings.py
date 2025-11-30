@@ -603,11 +603,12 @@ SOCIALACCOUNT_PROVIDERS = {
             'key': ''
         },
         'SCOPE': [
-            'login:email',
-            'login:info',
+            'login:email',  # Запрашиваем доступ к email
+            'login:info',   # Запрашиваем базовую информацию
         ],
         'AUTH_PARAMS': {
             'response_type': 'code',
+            'force_confirm': 'yes',  # Запрашиваем подтверждение доступа к email
         },
         # Дополнительные настройки для получения email
         'EMAIL_AUTHENTICATION': True,

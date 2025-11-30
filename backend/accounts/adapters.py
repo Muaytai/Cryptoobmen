@@ -111,9 +111,26 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         # Ищем email пользователя из разных источников
         email = sociallogin.user.email
         if not email and sociallogin.email_addresses:
-            email = sociallogin.email_addresses.email
-        if not email:
-            email = sociallogin.account.extra_data.get('email') or sociallogin.account.extra_data.get('default_email')
+            # email_addresses может быть списком или объектом
+            if isinstance(sociallogin.email_addresses, list) and len(sociallogin.email_addresses) > 0:
+                email = sociallogin.email_addresses[0].email
+            elif hasattr(sociallogin.email_addresses, 'email'):
+                email = sociallogin.email_addresses.email
+        
+        # Если email не найден, ищем в extra_data
+        if not email and hasattr(sociallogin, 'account') and sociallogin.account:
+            extra_data = sociallogin.account.extra_data
+            if isinstance(extra_data, dict):
+                # Для Yandex email может быть в разных полях
+                email = (
+                    extra_data.get('email') or 
+                    extra_data.get('default_email') or
+                    (extra_data.get('emails')[0] if isinstance(extra_data.get('emails'), list) and len(extra_data.get('emails', [])) > 0 else None)
+                )
+                # Логируем для отладки
+                if not email:
+                    logger.warning(f"Email не найден в extra_data. Доступные ключи: {list(extra_data.keys())}")
+                    logger.debug(f"extra_data содержимое: {extra_data}")
         
         if not email:
             logger.warning("Не удалось получить email от социального провайдера в pre_social_login.")
@@ -263,13 +280,20 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
                 # Убеждаемся, что email установлен
                 if not user.email:
                     email = extra_data.get('email') or extra_data.get('default_email')
-                    if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
-                        email = extra_data['emails']
+                    # Если email в массиве emails, берем первый элемент
+                    if not email and 'emails' in extra_data:
+                        if isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
+                            email = extra_data['emails'][0] if isinstance(extra_data['emails'][0], str) else extra_data['emails'][0].get('value', '')
+                        elif isinstance(extra_data['emails'], str):
+                            email = extra_data['emails']
+                    
                     if email:
                         user.email = email
                         logger.info(f"Yandex email установлен: {email}")
                     else:
                         logger.warning("Yandex email не найден в extra_data")
+                        logger.warning(f"Доступные ключи в extra_data: {list(extra_data.keys())}")
+                        logger.debug(f"Полное содержимое extra_data: {extra_data}")
         except Exception as e:
             logger.error(f"Ошибка при обработке данных провайдера {provider}: {str(e)}")
             # Не прерываем выполнение, продолжаем с базовыми данными
