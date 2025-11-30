@@ -31,7 +31,10 @@ services:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
-    command: gunicorn core.asgi:application -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+    # Количество воркеров: (2 * CPU cores) + 1
+    # Для продакшена можно настроить через переменную окружения GUNICORN_WORKERS
+    # По умолчанию 4 воркера, каждый может создать несколько соединений к БД
+    command: gunicorn core.asgi:application -w ${GUNICORN_WORKERS:-4} -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 --timeout 120 --keep-alive 5
     volumes:
       - static_volume:/app/staticfiles
       - media_volume:/app/media
@@ -79,6 +82,25 @@ services:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
       - ./backend/.env.backend
+    environment:
+      # Увеличиваем лимит соединений до 200 (по умолчанию 100)
+      # Расчет: 4 воркера * ~10 соединений + worker + beat + запас = ~200
+      - POSTGRES_INITDB_ARGS=-c max_connections=200
+    # Оптимизированные настройки для продакшена
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
     mem_limit: 1g
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
