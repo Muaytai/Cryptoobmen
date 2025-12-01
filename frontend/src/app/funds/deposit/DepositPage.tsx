@@ -646,13 +646,33 @@ export const DepositPage: React.FC = () => {
     }
 
     const connect = () => {
-      // Используем базовый адрес из env или по умолчанию
-      const wsBase = process.env.NEXT_PUBLIC_WS_URL || `ws://${window.location.hostname}:8000`;
+      // Используем базовый адрес из env или определяем автоматически
+      let wsBase = process.env.NEXT_PUBLIC_WS_URL;
+      
+      // Если переменная не установлена, определяем автоматически на основе текущего протокола
+      if (!wsBase) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host; // включает порт если есть
+        // В prod используем тот же домен через nginx, в dev - прямой порт 8000
+        if (host.includes('localhost') || host.includes('127.0.0.1')) {
+          wsBase = `${protocol}//${window.location.hostname}:8000`;
+        } else {
+          // В prod используем тот же домен и порт через nginx
+          wsBase = `${protocol}//${host}/ws`;
+        }
+      }
+      
       let wsUrl = '';
+      // Нормализуем wsBase: убираем завершающий слэш и добавляем /ws если его нет
+      let normalizedBase = wsBase.replace(/\/$/, ''); // убираем завершающий слэш
+      if (!normalizedBase.endsWith('/ws')) {
+        normalizedBase = normalizedBase.endsWith('/') ? `${normalizedBase}ws` : `${normalizedBase}/ws`;
+      }
+      
       if (depositInfo.memo) {
-        wsUrl = `${wsBase}/ws/deposit_status/${depositInfo.memo}/`;
+        wsUrl = `${normalizedBase}/deposit_status/${depositInfo.memo}/`;
       } else if (depositInfo.address) {
-        wsUrl = `${wsBase}/ws/deposit_status/address/${depositInfo.address}/`;
+        wsUrl = `${normalizedBase}/deposit_status/address/${depositInfo.address}/`;
       } else {
         return;
       }
