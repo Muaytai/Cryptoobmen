@@ -27,7 +27,13 @@ const hydrationFadeInStyle = `
 
 export const metadata: Metadata = {
   title: "Cryptoobmen - Обмен криптовалют",
-  description: "Надежная платформа для обмена криптовалют с лучшими курсами"
+  description: "Надежная платформа для обмена криптовалют с лучшими курсами",
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 5,
+    userScalable: true,
+  },
 };
 
 export default function RootLayout({

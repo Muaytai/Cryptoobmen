@@ -22,13 +22,14 @@ const EmailConfirmedModal = ({ onClose }: { onClose: () => void }) => {
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
       backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', 
-      alignItems: 'center', justifyContent: 'center', zIndex: 1000
+      alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+      padding: '20px'
     }}>
       <div style={{
-        backgroundColor: '#2d2c3a', // Темный фон для модалки
+        backgroundColor: '#2d2c3a',
         color: 'white', 
         padding: '30px', borderRadius: '12px', textAlign: 'center', 
-        maxWidth: '400px', width: '90%'
+        maxWidth: '400px', width: '100%'
       }}>
         <h2 style={{ fontSize: '24px', marginBottom: '15px' }}>Регистрация успешна!</h2>
         <p style={{ marginBottom: '10px' }}>
@@ -52,7 +53,6 @@ const EmailConfirmedModal = ({ onClose }: { onClose: () => void }) => {
 // Компонент с использованием useSearchParams
 const HomePageContent = () => {
   const searchParams = useSearchParams();
-  // Используем отдельные селекторы useAuthStore, чтобы не возвращать новый объект на каждом рендере
   const showEmailConfirmedModal = useAuthStore((state) => state.showEmailConfirmedModal);
   const setShowEmailConfirmedModal = useAuthStore((state) => state.setShowEmailConfirmedModal);
   const checkAuthStatus = useAuthStore((state) => state.checkAuthStatus);
@@ -74,13 +74,14 @@ const HomePageContent = () => {
         display: 'flex',
         flexDirection: isMobile ? 'column' as const : 'row' as const,
         justifyContent: 'flex-start',
-        alignItems: 'flex-start',
+        alignItems: isMobile ? 'center' : 'flex-start',
         gap: isMobile ? 20 : 40,
         marginBottom: isMobile ? 15 : 20,
-        minHeight: isMobile ? 400 : 500,
-        height: isMobile ? 400 : 500,
+        minHeight: isMobile ? 'auto' : isTablet ? 400 : 500,
+        height: isMobile ? 'auto' : isTablet ? 400 : 500,
         width: '100%',
-        position: 'relative' as const
+        position: 'relative' as const,
+        padding: isMobile ? '0 16px' : 0
       } as CSSProperties,
 
       textContainer: {
@@ -88,52 +89,51 @@ const HomePageContent = () => {
         zIndex: 2,
         position: 'relative' as const,
         textAlign: isMobile ? 'center' as const : 'left' as const,
-        marginBottom: isMobile ? '30px' : 0,
+        marginBottom: isMobile ? '20px' : 0,
         marginLeft: 0,
-        padding: isMobile ? '0 15px' : '0 20px',
-        width: '100%',
+        padding: isMobile ? '0' : '0 20px',
+        width: isMobile ? '100%' : isTablet ? '55%' : '50%',
         overflowWrap: 'break-word' as const,
         wordWrap: 'break-word' as const,
-        minHeight: isMobile ? 200 : isTablet ? 240 : 300
+        minHeight: isMobile ? 'auto' : isTablet ? 240 : 300
       } as CSSProperties,
 
       imageContainer: {
         position: 'relative' as const,
-        width: isMobile ? '100%' : isTablet ? 400 : 520,
-        height: isSmallMobile ? 250 : isMobile ? 300 : isTablet ? 400 : 520,
+        width: isMobile ? '100%' : isTablet ? '45%' : '50%',
+        height: isSmallMobile ? 200 : isMobile ? 250 : isTablet ? 350 : 450,
         marginRight: isMobile ? 0 : isTablet ? 10 : 24,
         marginLeft: isMobile ? 0 : isTablet ? -20 : -28,
-        marginTop: isMobile ? -20 : isTablet ? -10 : 30,
-        alignSelf: 'flex-end' as const,
-        minHeight: isSmallMobile ? 250 : isMobile ? 300 : isTablet ? 400 : 520,
-        minWidth: isMobile ? '100%' : isTablet ? 400 : 520
+        marginTop: isMobile ? 0 : isTablet ? -10 : 30,
+        alignSelf: isMobile ? 'center' : 'flex-end' as const,
+        minHeight: isSmallMobile ? 200 : isMobile ? 250 : isTablet ? 350 : 450,
+        maxWidth: isMobile ? '100%' : 'none'
       } as CSSProperties,
 
       image: {
         objectFit: 'contain' as const,
         borderRadius: 24,
         transform: isMobile
-          ? 'scale(1.1) translateX(-10px) translateY(10px)'
+          ? 'scale(1)'
           : isTablet
-            ? 'scale(1.18) translateX(-40px) translateY(20px)'
-            : 'scale(1.35) translateX(-60px) translateY(20px)'
+            ? 'scale(1.1) translateX(-20px) translateY(10px)'
+            : 'scale(1.2) translateX(-40px) translateY(20px)'
       } as CSSProperties,
 
       spacer: {
         flex: 0,
-        // Отодвигаем иконки сразу за пределы первого экрана, но без исчезновения
-        height: 'clamp(480px, 82vh, 1200px)'
+        height: isMobile ? '20px' : isTablet ? '60px' : 'clamp(200px, 40vh, 400px)'
       } as CSSProperties,
 
       cryptoIconsContainer: {
         display: 'flex',
         justifyContent: 'center',
         padding: '0 15px',
-        marginTop: 0,
-        marginBottom: isFirefox ? 200 : 140,
+        marginTop: isMobile ? 20 : 40,
+        marginBottom: isFirefox ? 100 : 80,
         overflow: 'hidden',
-        minHeight: 70,
-        height: 70,
+        minHeight: isMobile ? 50 : 70,
+        height: isMobile ? 50 : 70,
         width: '100%',
         position: 'relative' as const,
         contain: 'layout paint size' as any
@@ -142,35 +142,35 @@ const HomePageContent = () => {
       cryptoIcons: {
         objectFit: 'contain' as const,
         maxWidth: '100%',
-        height: 'auto'
+        height: 'auto',
+        width: isMobile ? '100%' : 'auto'
       } as CSSProperties,
 
-      // Дополнительный нижний отступ перед футером (адаптивный)
       bottomSpacer: {
         width: '100%',
         minHeight: isFirefox
-          ? (isSmallMobile ? 100 : isMobile ? 140 : isTablet ? 180 : 240)
-          : (isSmallMobile ? 40 : isMobile ? 80 : isTablet ? 120 : 160)
+          ? (isSmallMobile ? 60 : isMobile ? 80 : isTablet ? 120 : 160)
+          : (isSmallMobile ? 30 : isMobile ? 50 : isTablet ? 80 : 100)
       } as CSSProperties,
 
       socialButtonsContainer: {
         position: 'fixed' as const,
-        right: isMobile ? -5 : isTablet ? -8 : -10,
-        top: isMobile ? 250 : isTablet ? 230 : 220,
+        right: isMobile ? 8 : isTablet ? 10 : 12,
+        top: isMobile ? 200 : isTablet ? 200 : 220,
         transform: 'none' as const,
         display: 'flex',
         flexDirection: 'column' as const,
-        gap: 15,
+        gap: 12,
         zIndex: 100,
-        width: 48,
-        height: 111
+        width: isMobile ? 40 : 48,
+        height: 'auto'
       } as CSSProperties,
 
       socialButton: {
-        width: 48,
-        height: 48,
-        borderRadius: 12,
-        background: isDark ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)',
+        width: isMobile ? 40 : 48,
+        height: isMobile ? 40 : 48,
+        borderRadius: 10,
+        background: isDark ? 'rgba(38, 38, 38, 0.6)' : 'rgba(230, 230, 230, 0.8)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -180,7 +180,10 @@ const HomePageContent = () => {
         WebkitBackdropFilter: 'blur(5px)' as const
       } as CSSProperties,
 
-      socialButtonImage: { width: 24, height: 24 } as CSSProperties
+      socialButtonImage: { 
+        width: isMobile ? 20 : 24, 
+        height: isMobile ? 20 : 24 
+      } as CSSProperties
     };
   };
 
@@ -199,9 +202,6 @@ const HomePageContent = () => {
     return buildStyles(initialDevice, isDarkMode);
   });
 
-  // Динамическое выравнивание соц-иконок под кнопку "Войти" (устойчиво к любой высоте шапки)
-  // Убрано вычисление socialPos, так как в некоторых средах происходила инициализация до объявления
-
   useEffect(() => {
     checkAuthStatus();
 
@@ -211,11 +211,9 @@ const HomePageContent = () => {
     }
   }, [searchParams, setShowEmailConfirmedModal, checkAuthStatus]);
 
-  // Устанавливаем флаг гидратации для предотвращения скачков
   useEffect(() => {
     setIsHydrated(true);
     
-    // Простой CSS для предотвращения скачков в Firefox
     const preventJumpCSS = `
       html { 
         overflow-y: scroll !important; 
@@ -231,7 +229,6 @@ const HomePageContent = () => {
       }
     `;
     
-    // Инъекция CSS
     const style = document.createElement('style');
     style.textContent = preventJumpCSS;
     style.setAttribute('data-prevent-jump', 'true');
@@ -245,7 +242,6 @@ const HomePageContent = () => {
     };
   }, []);
 
-  // Определяем тип устройства с более точной градацией
   useEffect(() => {
     const checkDevice = () => {
       const width = window.innerWidth;
@@ -259,59 +255,48 @@ const HomePageContent = () => {
       setStyles(buildStyles(nextDevice, isDarkMode));
     };
     
-    // Проверяем при загрузке
     checkDevice();
-    
-    // Проверяем при изменении размера окна
     window.addEventListener('resize', checkDevice);
-    
-    // Очищаем обработчики событий
     return () => window.removeEventListener('resize', checkDevice);
-  }, []);
+  }, [isDarkMode]);
 
-  // Раньше здесь добавлялись динамические стили через <style>, что могло вызывать CLS.
-  // Убрано, чтобы избежать перерасчета макета после первого рендера.
-
-
-  // Используем единственный источник стилей
   const currentStyles = styles;
   const isMobile = deviceType === 'mobile' || deviceType === 'mobile-small';
 
   return (
     <div 
-      className={`relative h-full prevent-layout-shift ${isDarkMode ? 'bg-[#111014]' : 'bg-white'}`} 
+      className={`relative min-h-screen prevent-layout-shift ${isDarkMode ? 'bg-[#111014]' : 'bg-white'}`} 
       style={{ 
         contain: 'layout style', 
-        minHeight: '100vh', 
-        height: '100vh',
         willChange: 'auto',
         position: 'relative',
-        overflow: 'hidden'
+        overflowX: 'hidden'
       }} 
       data-hydrated={isHydrated}
     >
       <main className="stable-container" style={{
-        height: '100%',
-        minHeight: '100vh', // Фиксированная минимальная высота
+        minHeight: '100vh',
         maxWidth: 1400, 
         margin: '0 auto',
-        padding: '20px 32px 80px 0px',
+        padding: isMobile ? '16px 0 60px 0' : '20px 32px 80px 0px',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-start',
         backgroundColor: isDarkMode ? '#111014' : 'white',
         contain: 'layout style',
         color: isDarkMode ? 'white' : '#111827',
-        position: 'relative', // Для позиционирования иконок соцсетей
+        position: 'relative',
         willChange: 'auto'
       } as CSSProperties}>
         {showEmailConfirmedModal && <EmailConfirmedModal onClose={() => setShowEmailConfirmedModal(false)} />}
+        
         <div className="stable-container" style={currentStyles.contentContainer}>
-          {/* Левая колонка */}
+          {/* Левая колонка - текст */}
           <div className="stable-container" style={currentStyles.textContainer}>
             <AnimatedHeroText deviceType={deviceType} />
           </div>
-          {/* Правая колонка */}
+          
+          {/* Правая колонка - изображение */}
           <div className="stable-container" style={currentStyles.imageContainer}>
             <Image
               src={chessImage}
@@ -319,11 +304,12 @@ const HomePageContent = () => {
               fill
               style={currentStyles.image}
               priority
+              sizes="(max-width: 480px) 100vw, (max-width: 768px) 100vw, (max-width: 1024px) 45vw, 50vw"
             />
           </div>
         </div>
         
-        {/* Соц. кнопки вынесены из контейнера изображения - теперь полностью независимы */}
+        {/* Соц. кнопки */}
         <div style={currentStyles.socialButtonsContainer} data-fixed>
           <a 
             href="https://t.me/your_channel" 
@@ -336,7 +322,7 @@ const HomePageContent = () => {
             }}
             onMouseOut={e => {
               const target = e.currentTarget.style as any;
-              target.background = isDarkMode ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)';
+              target.background = isDarkMode ? 'rgba(38, 38, 38, 0.6)' : 'rgba(230, 230, 230, 0.8)';
             }}
           >
             <Image
@@ -358,7 +344,7 @@ const HomePageContent = () => {
             }}
             onMouseOut={e => {
               const target = e.currentTarget.style as any;
-              target.background = isDarkMode ? 'rgba(38, 38, 38, 0.4)' : 'rgba(230, 230, 230, 0.7)';
+              target.background = isDarkMode ? 'rgba(38, 38, 38, 0.6)' : 'rgba(230, 230, 230, 0.8)';
             }}
           >
             <Image
@@ -382,21 +368,32 @@ const HomePageContent = () => {
             width={850}
             height={70}
             style={currentStyles.cryptoIcons}
+            sizes="(max-width: 768px) 100vw, 850px"
           />
         </div>
-        {/* Дополнительный отступ перед футером, чтобы иконки не накладывались */}
-        <div style={currentStyles.bottomSpacer} />
         
-        {/* Соц. кнопки перенесены в контейнер изображения */}
+        {/* Дополнительный отступ перед футером */}
+        <div style={currentStyles.bottomSpacer} />
       </main>
     </div>
   );
 };
 
-// Основной компонент, который оборачивает содержимое в Suspense
+// Основной компонент
 export default function HomePage() {
   return (
-    <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Загрузка...</div>}>
+    <Suspense fallback={
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        backgroundColor: '#111014',
+        color: 'white'
+      }}>
+        Загрузка...
+      </div>
+    }>
       <HomePageContent />
     </Suspense>
   );
