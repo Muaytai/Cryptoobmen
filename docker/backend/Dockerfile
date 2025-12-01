@@ -41,7 +41,7 @@ COPY backend/ .
 RUN tr -d '\r' < /tmp/entrypoint.sh > /app/entrypoint.sh && \
     rm /tmp/entrypoint.sh && \
     chmod +x /app/entrypoint.sh && \
-    mkdir -p /app/static /app/media && \
+    mkdir -p /app/static /app/media/avatars /app/media/crypto_icons && \
     mkdir -p /app/logs/celery && \
     touch /app/logs/django.log && \
     chown -R app:app /app
