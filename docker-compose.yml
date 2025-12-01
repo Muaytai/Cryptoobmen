@@ -64,7 +64,7 @@ services:
     command: npm start
     environment:
       - NODE_OPTIONS=--max-old-space-size=4096
-      - NEXT_PUBLIC_WS_URL=wss://tkxn.org/ws
+      - NEXT_PUBLIC_WS_URL=wss://tkxn.org
     mem_limit: 1g
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
