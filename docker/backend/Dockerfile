@@ -42,7 +42,7 @@ RUN tr -d '\r' < /tmp/entrypoint.sh > /app/entrypoint.sh && \
     rm /tmp/entrypoint.sh && \
     chmod +x /app/entrypoint.sh && \
     mkdir -p /app/static /app/media && \
-    mkdir -p /app/logs && \
+    mkdir -p /app/logs/celery && \
     touch /app/logs/django.log && \
     chown -R app:app /app
 
