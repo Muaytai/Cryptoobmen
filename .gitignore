@@ -88,3 +88,4 @@ backend/**/*.json.gz
 # Backend специфичные файлы
 backend/*.dat
 backend/get_private_key_from_seed.py
+backend/logs
