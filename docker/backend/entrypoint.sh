@@ -44,6 +44,18 @@ while True:
         time.sleep(2)
 "
 
+# Создаем необходимые директории с правильными правами
+echo "Creating required directories..."
+mkdir -p /app/media/avatars
+mkdir -p /app/media/crypto_icons
+mkdir -p /app/logs/celery
+
+# Пытаемся исправить права на директории (если возможно)
+# Это может не сработать, если volume создан с правами root
+chmod -R u+w /app/media/avatars 2>/dev/null || true
+chmod -R u+w /app/media/crypto_icons 2>/dev/null || true
+chmod -R u+w /app/logs/celery 2>/dev/null || true
+
 # Выполняем миграции и сбор статических файлов (только для продакшена)
 # Проверяем, не является ли это командой celery
 if echo "$@" | grep -qv "celery"; then
