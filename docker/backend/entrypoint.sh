@@ -44,17 +44,32 @@ while True:
         time.sleep(2)
 "
 
-# Создаем необходимые директории с правильными правами
+# Создаем необходимые директории с правильными правами через Python
+# Это нужно, так как volume может быть смонтирован с правами root
 echo "Creating required directories..."
-mkdir -p /app/media/avatars
-mkdir -p /app/media/crypto_icons
-mkdir -p /app/logs/celery
+python -c "
+import os
+import stat
 
-# Пытаемся исправить права на директории (если возможно)
-# Это может не сработать, если volume создан с правами root
-chmod -R u+w /app/media/avatars 2>/dev/null || true
-chmod -R u+w /app/media/crypto_icons 2>/dev/null || true
-chmod -R u+w /app/logs/celery 2>/dev/null || true
+dirs = [
+    '/app/media/avatars',
+    '/app/media/crypto_icons',
+    '/app/logs/celery'
+]
+
+for dir_path in dirs:
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+        # Пытаемся установить права на запись для владельца
+        try:
+            os.chmod(dir_path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
+        except PermissionError:
+            pass  # Игнорируем, если нет прав на изменение
+        print(f'Directory {dir_path} ready')
+    except PermissionError as e:
+        print(f'Warning: Cannot create {dir_path}: {e}')
+        print('You may need to fix volume permissions manually')
+" || echo "Directory creation completed (some may have failed)"
 
 # Выполняем миграции и сбор статических файлов (только для продакшена)
 # Проверяем, не является ли это командой celery
