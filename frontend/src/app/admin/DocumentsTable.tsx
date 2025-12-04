@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api from "@/lib/api/fetch";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -27,24 +27,28 @@ export default function DocumentsTable() {
   const [filterStatus, setFilterStatus] = useState("all");
   const getAuthHeaders = useAuthStore((s) => s.getAuthHeaders);
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const headers = getAuthHeaders();
-      const res: any = await api.get("/accounts/documents/", { headers });
-      const data = res?.data ?? res;
+      const res = await api.get<{ results: DocumentRow[] }>("/accounts/documents/", { headers });
+      const data = res.data.results ?? [];
       setDocuments(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setError(e?.message || "Не удалось загрузить документы");
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError("Не удалось загрузить документы");
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [getAuthHeaders]);
 
   useEffect(() => {
     fetchDocuments();
-  }, [getAuthHeaders]);
+  }, [fetchDocuments]);
 
   const filteredDocuments = documents.filter((doc) => {
     const matchesSearch = 
@@ -71,8 +75,12 @@ export default function DocumentsTable() {
         { headers }
       );
       await fetchDocuments();
-    } catch (e: any) {
-      setError(e?.message || "Не удалось обновить статус документа");
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError("Не удалось обновить статус документа");
+      }
     }
   };
 

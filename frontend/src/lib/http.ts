@@ -10,7 +10,7 @@ async function request<T>(url: string, init: RequestInit): Promise<HttpResponse<
   const resp = await fetch(url, init);
   if (!resp.ok) {
     // Try to parse error JSON otherwise throw status text
-    let detail: any = undefined;
+    let detail: unknown;
     try {
       detail = await resp.json();
     } catch {
@@ -28,20 +28,23 @@ async function request<T>(url: string, init: RequestInit): Promise<HttpResponse<
 }
 
 export const http = {
-  get<T = any>(url: string, init: RequestInit = {}) {
+  get<T = unknown>(url: string, init: RequestInit = {}) {
     return request<T>(url, {
       ...init,
       method: 'GET',
       credentials: init.credentials ?? 'include',
     });
   },
-  post<T = any>(url: string, body?: any, init: RequestInit = {}) {
-    const headers = { 'Content-Type': 'application/json', ...(init.headers || {}) } as Record<string, string>;
-    return request<T>(url, {
+  post<TResponse = unknown, TBody = unknown>(url: string, body?: TBody, init: RequestInit = {}) {
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+    const headers: HeadersInit | undefined = isFormData
+      ? init.headers
+      : { 'Content-Type': 'application/json', ...((init.headers as Record<string, string>) || {}) };
+    return request<TResponse>(url, {
       ...init,
       method: 'POST',
       headers,
-      body: JSON.stringify(body ?? {}),
+      body: isFormData ? (body as FormData) : JSON.stringify(body ?? {}),
       credentials: init.credentials ?? 'include',
     });
   },

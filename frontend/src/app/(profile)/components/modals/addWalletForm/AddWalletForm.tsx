@@ -1,13 +1,13 @@
 "use client";
 
-import {useForm} from "react-hook-form";
+import {Controller, useForm} from "react-hook-form";
 import {z} from "zod";
 import {zodResolver} from "@hookform/resolvers/zod";
-import {useEffect} from "react";
 import {Button} from "@/components/ui/Button";
 import styles from "./addWalletForm.module.css";
 import {FormInput} from "../forms/FormInput";
 import FormSelect from "../forms/FormSelect";
+import {OptionType} from "../types/types";
 
 const schema = z.object({
   system: z.string().min(1, "Выберите способ"),
@@ -22,7 +22,7 @@ export const AddWalletForm = () => {
     register,
     handleSubmit,
     formState: {errors},
-    setFocus,
+    control,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -31,10 +31,6 @@ export const AddWalletForm = () => {
       name: "",
     },
   });
-
-  // useEffect(() => {
-  //   setFocus("address");
-  // }, [setFocus]);
 
   const onSubmit = (data: FormData) => {
     console.log("Submitted:", data);
@@ -52,14 +48,22 @@ export const AddWalletForm = () => {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className={styles.form}>
-      <FormSelect
-        label="Способ вывода:"
-        error={errors.system?.message}
-        options={options}
-        {...register("system")}
-      >
-        <option value="USDT (TRC20)">₮ USDT (TRC20)</option>
-      </FormSelect>
+      <Controller
+        control={control}
+        name="system"
+        render={({field}) => (
+          <FormSelect
+            label="Способ вывода:"
+            error={errors.system?.message}
+            options={options}
+            required
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            name={field.name}
+          />
+        )}
+      />
 
       <FormInput
         label="Адрес реквизита"

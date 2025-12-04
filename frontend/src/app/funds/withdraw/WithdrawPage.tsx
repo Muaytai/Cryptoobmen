@@ -1,7 +1,6 @@
-
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
 import api from "@/lib/api/fetch";
@@ -55,12 +54,10 @@ export const WithdrawPage: React.FC = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
   const {
-    tokens,
     user,
     isAuthenticated,
     isLoading: authLoading,
   } = useAuthStore();
-  const token = tokens?.access;
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [prices, setPrices] = useState<CryptoPrice[]>([]);
@@ -100,29 +97,36 @@ export const WithdrawPage: React.FC = () => {
   const [costLoading, setCostLoading] = useState<boolean>(false);
   const [maxAmountLoading, setMaxAmountLoading] = useState<boolean>(false);
 
-  // Функция загрузки кошельков
-  const fetchWallets = async () => {
+  // Гарантируем, что wallets — массив (Мемоизация для устранения warning)
+  const walletsArr = useMemo(() => {
+    return Array.isArray(wallets) ? wallets : [];
+  }, [wallets]);
+
+  // Функция загрузки кошельков (useCallback)
+  const fetchWallets = useCallback(async () => {
     try {
-      const walletsResponse = await api.get("/crypto/wallets/");
+      const walletsResponse = await api.get<any>("/crypto/wallets/");
       console.log("API wallets response:", walletsResponse);
       // Если ответ содержит results (DRF pagination)
-      const walletsArr = Array.isArray(walletsResponse.results)
-        ? walletsResponse.results
-        : Array.isArray(walletsResponse)
-        ? walletsResponse
+      const data = walletsResponse as { results?: Wallet[] } | Wallet[];
+      const resultArr = Array.isArray(data)
+        ? data
+        : Array.isArray(data.results)
+        ? data.results
         : [];
-      setWallets(walletsArr);
-      console.log("walletsArr after set:", walletsArr);
+      setWallets(resultArr);
+      console.log("walletsArr after set:", resultArr);
     } catch (err) {
       setWallets([]);
     }
-  };
-
-  useEffect(() => {
-    fetchWallets();
   }, []);
 
-  // Получение данных кошельков пользователя
+  // Загрузка кошельков при маунте
+  useEffect(() => {
+    fetchWallets();
+  }, [fetchWallets]);
+
+  // Получение данных кошельков пользователя и цен
   useEffect(() => {
     if (authLoading) {
       console.log(
@@ -140,8 +144,9 @@ export const WithdrawPage: React.FC = () => {
       console.log(
         "WithdrawPage: Пользователь НЕ аутентифицирован (после authLoading: false). Перенаправление на /login."
       );
+      const currentParams = searchParams.toString();
       const redirectPath = `/funds/withdraw${
-        searchParams.toString() ? `?${searchParams.toString()}` : ""
+        currentParams ? `?${currentParams}` : ""
       }`;
       router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
       return;
@@ -154,23 +159,23 @@ export const WithdrawPage: React.FC = () => {
       );
       setLoading(true);
       try {
-        // Используем api.get с правильными эндпоинтами
-        const pricesResponse = await api.get("/crypto/prices/latest/");
+        const pricesResponse = await api.get<CryptoPrice[]>("/crypto/prices/latest/");
         setPrices(Array.isArray(pricesResponse) ? pricesResponse : []);
+        
         const walletIdParam = searchParams.get("wallet_id");
-        if (
-          walletIdParam &&
-          wallets.some((w: Wallet) => w.id === parseInt(walletIdParam))
-        ) {
-          setSelectedWalletId(parseInt(walletIdParam));
-        }
+        // Используем fetchWallets, который уже вызван в другом эффекте, но здесь нам нужны актуальные данные
+        // Поэтому проверяем состояние wallets, если оно уже загружено
+        
+        // Логика выбора кошелька перенесена в отдельный useEffect, зависящий от walletsArr
+        
         setError(null);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Не удалось загрузить данные";
         console.error(
           "WithdrawPage: Ошибка при получении данных страницы:",
           err
         );
-        setError(err.message || "Не удалось загрузить данные.");
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -178,9 +183,6 @@ export const WithdrawPage: React.FC = () => {
 
     fetchData();
   }, [authLoading, isAuthenticated, user, router, searchParams]);
-
-  // Гарантируем, что wallets — массив
-  const walletsArr = Array.isArray(wallets) ? wallets : [];
 
   // useEffect для авто-выбора кошелька после загрузки
   useEffect(() => {
@@ -197,68 +199,104 @@ export const WithdrawPage: React.FC = () => {
     }
   }, [walletsArr, selectedWalletId, searchParams]);
 
-  const selectedWallet = walletsArr.find(
-    (w) => w.id === Number(selectedWalletId)
-  );
+  const selectedWallet = useMemo(() => 
+    walletsArr.find((w) => w.id === Number(selectedWalletId)),
+  [walletsArr, selectedWalletId]);
 
   // Безопасный поиск цены для выбранного кошелька
-  let cryptoPrice = null;
-  if (selectedWallet && selectedWallet.currency && Array.isArray(prices)) {
-
-    if (selectedWallet.currency.symbol === 'USDT') {
-      cryptoPrice = prices.find(p => p.symbol === 'USDT');
-    } else {
-      cryptoPrice = prices.find(
-        (p) => p.crypto_id === selectedWallet.currency.id
-      );
+  const cryptoPrice = useMemo(() => {
+    if (selectedWallet && selectedWallet.currency && Array.isArray(prices)) {
+      if (selectedWallet.currency.symbol === 'USDT') {
+        return prices.find(p => p.symbol === 'USDT');
+      } else {
+        return prices.find(
+          (p) => p.crypto_id === selectedWallet.currency.id
+        );
+      }
     }
+    return null;
+  }, [selectedWallet, prices]);
 
-  }
+  // Расчет стоимости вывода с учетом газа и комиссий (useCallback)
+  const calculateWithdrawalCost = useCallback(async (walletId: number, amountStr: string, destAddr: string, memoStr?: string) => {
+    try {
+      setCostLoading(true);
+      console.log('=== РАСЧЕТ СТОИМОСТИ ВЫВОДА ===');
+      console.log('Параметры запроса:', {
+        walletId,
+        amount: amountStr,
+        destAddr,
+        memo: memoStr
+      });
+
+      // Получаем crypto_id из выбранного кошелька
+      // Используем walletsArr из замыкания или прокидываем
+      const wallet = walletsArr.find((w) => w.id === walletId);
+      if (!wallet) {
+        throw new Error('Кошелек не найден');
+      }
+
+      const requestData = {
+        crypto_id: wallet.currency.id,
+        destination_address: destAddr,
+        amount: parseFloat(amountStr)
+      };
+
+      console.log('Данные для отправки:', requestData);
+
+      const response = await api.post<any>('/transactions/withdrawals/calculate-cost/', requestData);
+      
+      if (response) {
+        setWithdrawalCost(response);
+      }
+
+      return response;
+    } catch (error: any) {
+      console.error('Ошибка при расчете стоимости вывода:', error);
+      setWithdrawalCost(null);
+      throw error;
+    } finally {
+      setCostLoading(false);
+    }
+  }, [walletsArr]); // Зависимость от walletsArr
 
   // Обновление расчета комиссии при изменении суммы или кошелька
   useEffect(() => {
     if (selectedWalletId && amount && !isNaN(parseFloat(amount)) && destinationAddress) {
-      const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
-      if (selectedWallet) {
-        // Используем новый API для расчета стоимости
-        calculateWithdrawalCost(
-          selectedWalletId,
-          amount,
-          destinationAddress,
-          requiresMemo ? memo || undefined : undefined
-        );
-      }
+      calculateWithdrawalCost(
+        selectedWalletId,
+        amount,
+        destinationAddress,
+        requiresMemo ? memo || undefined : undefined
+      );
     } else {
       setFee("0");
       setFeeUsd("0");
       setNetAmount("0");
       setWithdrawalCost(null);
     }
-  }, [selectedWalletId, amount, destinationAddress, memo, wallets]);
+  }, [selectedWalletId, amount, destinationAddress, memo, requiresMemo, calculateWithdrawalCost]); // Добавлены зависимости
 
   // Обновление отображения комиссий на основе данных от API
   useEffect(() => {
-    if (withdrawalCost) {
-      const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
-      if (selectedWallet) {
-        // Используем данные от API
-        setFee(withdrawalCost.platform_fee);
-        setNetAmount(withdrawalCost.withdrawal_amount);
-        
-        // Для USD конвертации используем старую логику
-        let cryptoPrice = null;
-        if (selectedWallet.currency.symbol === 'USDT') {
-          cryptoPrice = prices.find(p => p.symbol === 'USDT');
-        } else {
-          cryptoPrice = prices.find(p => p.crypto_id === selectedWallet.currency.id);
-        }
-        
-        if (cryptoPrice) {
-          setFeeUsd((parseFloat(withdrawalCost.platform_fee) * cryptoPrice.prices.usd).toFixed(2));
-        }
+    if (withdrawalCost && selectedWallet) {
+      // Используем данные от API
+      setFee(withdrawalCost.platform_fee);
+      setNetAmount(withdrawalCost.withdrawal_amount);
+      
+      // Для USD конвертации используем старую логику
+      let priceInfo = null;
+      if (selectedWallet.currency.symbol === 'USDT') {
+        priceInfo = prices.find(p => p.symbol === 'USDT');
+      } else {
+        priceInfo = prices.find(p => p.crypto_id === selectedWallet.currency.id);
+      }
+      
+      if (priceInfo) {
+        setFeeUsd((parseFloat(withdrawalCost.platform_fee) * priceInfo.prices.usd).toFixed(2));
       }
     }
-  }, [withdrawalCost, selectedWalletId, wallets, prices]);
+  }, [withdrawalCost, selectedWallet, prices]);
 
   // Обработчики изменения полей формы
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -271,86 +309,19 @@ export const WithdrawPage: React.FC = () => {
 
   // Получение максимально доступной суммы для вывода
   const getMaxAvailableAmount = (): string => {
-    if (!selectedWalletId) return "0";
-
-    const wallet = wallets.find((w) => w.id === selectedWalletId);
-    if (!wallet) return "0";
-
-    return wallet.available_balance;
-  };
-
-  // Расчет стоимости вывода с учетом газа и комиссий
-  const calculateWithdrawalCost = async (walletId: number, amount: string, destinationAddress: string, memo?: string) => {
-    try {
-      setCostLoading(true);
-      console.log('=== РАСЧЕТ СТОИМОСТИ ВЫВОДА ===');
-      console.log('Параметры запроса:', {
-        walletId,
-        amount,
-        destinationAddress,
-        memo
-      });
-
-      // Получаем crypto_id из выбранного кошелька
-      const wallet = wallets.find((w) => w.id === walletId);
-      if (!wallet) {
-        throw new Error('Кошелек не найден');
-      }
-
-      const requestData = {
-        crypto_id: wallet.currency.id,
-        destination_address: destinationAddress,
-        amount: parseFloat(amount)
-      };
-
-      console.log('Найденный кошелек:', wallet);
-      console.log('crypto_id из кошелька:', wallet.currency.id);
-      console.log('amount для расчета:', parseFloat(amount));
-      console.log('Данные для отправки:', requestData);
-
-      const response = await api.post('/transactions/withdrawals/calculate-cost/', requestData);
-      
-      console.log('=== ОТВЕТ ОТ СЕРВЕРА ===');
-      console.log('Полный ответ:', response);
-      console.log('Тип ответа:', typeof response);
-      console.log('Ключи ответа:', Object.keys(response || {}));
-      
-      if (response) {
-        console.log('Структура ответа:');
-        Object.entries(response).forEach(([key, value]) => {
-          console.log(`  ${key}:`, value, `(тип: ${typeof value})`);
-        });
-        
-        // Сохраняем результат в состояние
-        setWithdrawalCost(response);
-      }
-
-      return response;
-    } catch (error) {
-      console.error('Ошибка при расчете стоимости вывода:', error);
-      console.error('Детали ошибки:', {
-        message: error?.message,
-        status: error?.status,
-        response: error?.response
-      });
-      setWithdrawalCost(null);
-      throw error;
-    } finally {
-      setCostLoading(false);
-    }
+    if (!selectedWallet) return "0";
+    return selectedWallet.available_balance;
   };
 
   // Установка максимальной доступной суммы с учетом газа и комиссий
   const setMaxAmount = async () => {
     console.log('=== КНОПКА МАКС НАЖАТА ===');
-    console.log('selectedWalletId:', selectedWalletId);
-    console.log('destinationAddress:', destinationAddress);
     
     if (!selectedWalletId || !destinationAddress) {
       // Если нет выбранного кошелька или адреса, используем старую логику
       console.log('Нет кошелька или адреса, используем старую логику');
-      const maxAmount = getMaxAvailableAmount();
-      setAmount(maxAmount);
+      const maxAmountVal = getMaxAvailableAmount();
+      setAmount(maxAmountVal);
       return;
     }
 
@@ -358,7 +329,7 @@ export const WithdrawPage: React.FC = () => {
     setError(null);
 
     try {
-      const wallet = wallets.find((w) => w.id === selectedWalletId);
+      const wallet = walletsArr.find((w) => w.id === selectedWalletId);
       if (!wallet) return;
 
       const availableBalance = parseFloat(wallet.available_balance);
@@ -368,9 +339,6 @@ export const WithdrawPage: React.FC = () => {
       let right = availableBalance;
       let maxWithdrawable = 0;
       const precision = 0.00000001; // 8 знаков после запятой
-      
-      console.log('=== БИНАРНЫЙ ПОИСК МАКСИМАЛЬНОЙ СУММЫ ===');
-      console.log('Доступный баланс:', availableBalance);
       
       while (right - left > precision) {
         const mid = (left + right) / 2;
@@ -399,29 +367,24 @@ export const WithdrawPage: React.FC = () => {
             right = mid;
           }
         } catch (error) {
-          console.log('Ошибка при тестировании суммы:', testAmount, error);
+          // Если расчет не удался (например, сумма слишком мала), уменьшаем диапазон
           right = mid;
         }
       }
       
-      console.log('=== РЕЗУЛЬТАТ ПОИСКА ===');
-      console.log('Максимально возможная сумма для вывода:', maxWithdrawable);
-      
       if (maxWithdrawable > 0) {
-        const maxAmount = maxWithdrawable.toFixed(8);
-        console.log('Устанавливаем сумму:', maxAmount);
-        setAmount(maxAmount);
+        const maxAmountVal = maxWithdrawable.toFixed(8);
+        setAmount(maxAmountVal);
         setError(null);
       } else {
-        console.log('Недостаточно средств для покрытия комиссий');
         setAmount("0");
         setError("Недостаточно средств для покрытия комиссий и газа");
       }
     } catch (error) {
       console.error('Ошибка при расчете максимальной суммы:', error);
       // Fallback на старую логику
-      const maxAmount = getMaxAvailableAmount();
-      setAmount(maxAmount);
+      const maxAmountVal = getMaxAvailableAmount();
+      setAmount(maxAmountVal);
     } finally {
       setMaxAmountLoading(false);
     }
@@ -437,28 +400,19 @@ export const WithdrawPage: React.FC = () => {
 
       // Для Solana не требуется MEMO, поэтому сразу устанавливаем false
       if (selectedWallet.currency.symbol === "SOL") {
-        console.log("SOL detected, setting requires_memo to false");
         setRequiresMemo(false);
         return;
       }
 
       if (selectedWallet.currency.symbol === "XRP") {
-        console.log("XRP withdrawal detected, memo is not required");
         setRequiresMemo(false);
         setMemo("");
         return;
       }
 
       try {
-        // Отладочная информация
-        console.log("Fetching requires_memo for:", {
-          symbol: selectedWallet.currency.symbol,
-          network: selectedWallet.currency.network,
-        });
-
-        // Запрашиваем у API адрес для пополнения, чтобы узнать requires_memo (используем тот же эндпоинт, что и для депозита)
-        const resp = await api.get(`/crypto/withdraw-info/?currency=${selectedWallet.currency.symbol}&network=${selectedWallet.currency.network}`);
-
+        // Запрашиваем у API адрес для пополнения, чтобы узнать requires_memo
+        const resp = await api.get<any>(`/crypto/withdraw-info/?currency=${selectedWallet.currency.symbol}&network=${selectedWallet.currency.network}`);
         setRequiresMemo(!!resp.requires_memo);
       } catch (error) {
         console.error("Error fetching requires_memo:", error);
@@ -468,11 +422,12 @@ export const WithdrawPage: React.FC = () => {
     fetchRequiresMemo();
   }, [selectedWallet]);
 
+  // Очистка MEMO если он не требуется
   useEffect(() => {
     if (!requiresMemo && memo) {
       setMemo("");
     }
-  }, [requiresMemo]);
+  }, [requiresMemo, memo]); // Добавлена зависимость memo
 
   // Отправка формы
   const handleSubmit = async (e: React.FormEvent) => {
@@ -500,7 +455,7 @@ export const WithdrawPage: React.FC = () => {
       return;
     }
 
-    const wallet = wallets.find((w) => w.id === selectedWalletId);
+    const wallet = walletsArr.find((w) => w.id === selectedWalletId);
     if (!wallet) {
       setError("Выбранный кошелек не найден");
       return;
@@ -529,7 +484,7 @@ export const WithdrawPage: React.FC = () => {
         withdrawalData.memo = memo;
       }
 
-      const response = await api.post(
+      const response = await api.post<{ data: WithdrawalStatus }>(
         "/transactions/withdrawals/",
         withdrawalData
       );
@@ -543,7 +498,7 @@ export const WithdrawPage: React.FC = () => {
       // Очищаем форму
       setAmount("");
       setDestinationAddress("");
-      setMemo(""); // Очищаем MEMO при успешном выводе
+      setMemo("");
     } catch (err: any) {
       console.error("Ошибка при отправке запроса на вывод:", err);
       setError(err.message || "Не удалось создать запрос на вывод средств");
@@ -560,10 +515,12 @@ export const WithdrawPage: React.FC = () => {
       setCancelling(true);
       await api.post(`/transactions/withdrawals/${withdrawalId}/cancel/`, {});
       // Обновляем статус вывода после отмены
-      const updatedWithdrawal = await api.get(
+      const updatedWithdrawal = await api.get<{ data: WithdrawalStatus }>(
         `/transactions/withdrawals/${withdrawalId}/`
       );
-      setWithdrawalStatus(updatedWithdrawal.data);
+      // Здесь предполагаем, что updatedWithdrawal может быть обернут в data
+      const statusData = (updatedWithdrawal as any).data || updatedWithdrawal;
+      setWithdrawalStatus(statusData);
       setSuccess(true);
     } catch (err: any) {
       setError(err.message || "Не удалось отменить вывод средств");
@@ -571,10 +528,6 @@ export const WithdrawPage: React.FC = () => {
       setCancelling(false);
     }
   };
-
-  console.log("wallets:", walletsArr);
-  console.log("selectedWalletId:", selectedWalletId, typeof selectedWalletId);
-  console.log("selectedWallet:", selectedWallet);
 
   if (authLoading || loading) {
     return (
@@ -607,7 +560,6 @@ export const WithdrawPage: React.FC = () => {
           <h2 className="text-2xl font-bold mb-4">Запрос на вывод успешно создан!</h2>
           <p className="mb-6 text-sm text-gray-400">
             зайдите на почту email вашего пользователя для подтверждения транзакции вывода
-
           </p>
           <div className="flex flex-col space-y-3">
             <Link
@@ -629,14 +581,11 @@ export const WithdrawPage: React.FC = () => {
   }
 
   if (!selectedWallet) {
-    return <div className="text-red-500">Выберите кошелек для вывода</div>;
-  }
-
-  // Показываем ошибку только если данные загружены, но цена не найдена
-  if (!loading && prices.length > 0 && !cryptoPrice) {
-    return (
-      <div className="text-red-500">Нет данных о цене для выбранной монеты</div>
-    );
+    // Если кошельки загружены, но ничего не выбрано (значит список пуст)
+    if (walletsArr.length === 0 && !loading) {
+       return <div className="text-center py-8 text-gray-400">У вас пока нет кошельков для вывода.</div>;
+    }
+    return <div className="text-center py-8 text-gray-400">Загрузка кошелька...</div>;
   }
 
   return (
@@ -646,7 +595,7 @@ export const WithdrawPage: React.FC = () => {
           Вывод криптовалюты
         </h1>
 
-        {/* Обучающая панель для новичков */}
+        {/* Обучающая панель */}
         {showInfoTips && (
           <div className="bg-indigo-900 bg-opacity-50 rounded-xl p-6 mb-8 border border-indigo-700">
             <div className="flex justify-between items-start mb-3">
@@ -715,7 +664,7 @@ export const WithdrawPage: React.FC = () => {
               Выберите кошелек для вывода:
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {(Array.isArray(wallets) ? wallets : [])
+              {walletsArr
                 .filter(
                   (wallet) =>
                     wallet.currency.symbol !== "USD" &&
@@ -733,57 +682,34 @@ export const WithdrawPage: React.FC = () => {
                     } transition`}
                   >
                     <div className="flex-shrink-0 mr-3">
-
-                      {wallet.currency.icon && wallet.currency.icon.trim() !== '' ? (() => {
-                        const iconUrl = wallet.currency.icon.startsWith('http') 
-                          ? wallet.currency.icon 
-                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`;
-                        
-                        // Проверяем валидность URL
-                        try {
-                          new URL(iconUrl);
-                          return (
-                            <>
-                              <Image
-                                src={iconUrl}
-                                alt={wallet.currency.symbol}
-                                width={32}
-                                height={32}
-                                className="rounded-full"
-                                unoptimized
-                                onError={(e) => {
-                                  console.error('WithdrawPage: Ошибка загрузки иконки валюты:', iconUrl);
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  const fallback = target.nextElementSibling as HTMLElement;
-                                  if (fallback) fallback.style.display = 'flex';
-                                }}
-                              />
-                              <div 
-                                className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold"
-                                style={{ display: 'none' }}
-                              >
-                                {wallet.currency.symbol.slice(0, 2)}
-                              </div>
-                            </>
-                          );
-                        } catch (error) {
-                          console.error('WithdrawPage: Некорректный URL иконки валюты:', iconUrl, error);
-                          return (
-                            <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
-                              {wallet.currency.symbol.slice(0, 2)}
-                            </div>
-                          );
-                        }
-                      })() : (
-
-                        <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold">
-                          {wallet.currency.symbol.slice(0, 2)}
-                        </div>
-                      )}
+                      {wallet.currency.icon && wallet.currency.icon.trim() !== '' ? (
+                        <Image
+                          src={wallet.currency.icon.startsWith('http') 
+                            ? wallet.currency.icon 
+                            : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${wallet.currency.icon}`
+                          }
+                          alt={wallet.currency.symbol}
+                          width={32}
+                          height={32}
+                          className="rounded-full"
+                          unoptimized
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const fallback = target.nextElementSibling as HTMLElement;
+                            if (fallback) fallback.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div 
+                        className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center font-bold"
+                        style={{ display: wallet.currency.icon ? 'none' : 'flex' }}
+                      >
+                        {wallet.currency.symbol.slice(0, 2)}
+                      </div>
                     </div>
-                    <div className="flex-grow">
-                      <div className="font-medium">{wallet.currency.name}</div>
+                    <div className="flex-grow text-left">
+                      <div className="font-medium text-white">{wallet.currency.name}</div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-400">
                           {wallet.currency.symbol}{" "}
@@ -791,7 +717,7 @@ export const WithdrawPage: React.FC = () => {
                             ? `(${wallet.currency.network})`
                             : ""}
                         </span>
-                        <span className="font-medium">
+                        <span className="font-medium text-white">
                           {parseFloat(wallet.available_balance).toFixed(4)}
                         </span>
                       </div>
@@ -806,16 +732,20 @@ export const WithdrawPage: React.FC = () => {
             <div className="mb-4 p-4 bg-gray-700 rounded-lg flex items-center">
               <div className="mr-4">
                 {selectedWallet.currency.icon && (
-                  <img
-                    src={selectedWallet.currency.icon}
+                  <Image
+                    src={selectedWallet.currency.icon.startsWith('http') 
+                      ? selectedWallet.currency.icon 
+                      : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${selectedWallet.currency.icon}`
+                    }
                     alt={selectedWallet.currency.symbol}
                     width={32}
                     height={32}
+                    unoptimized
                   />
                 )}
               </div>
               <div>
-                <div>
+                <div className="text-white">
                   <b>
                     {selectedWallet.currency.symbol} (
                     {selectedWallet.currency.network})
@@ -850,10 +780,7 @@ export const WithdrawPage: React.FC = () => {
               />
               <button
                 type="button"
-                onClick={(e) => {
-                  console.log('Кнопка МАКС нажата!', e);
-                  setMaxAmount();
-                }}
+                onClick={setMaxAmount}
                 disabled={maxAmountLoading}
                 className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed text-white text-xs py-1 px-2 rounded transition flex items-center gap-1"
               >
@@ -867,13 +794,10 @@ export const WithdrawPage: React.FC = () => {
                 )}
               </button>
             </div>
-            {selectedWalletId && (
+            {selectedWallet && (
               <p className="mt-1 text-sm text-gray-400">
                 Доступно: {getMaxAvailableAmount()}{" "}
-                {
-                  wallets.find((w) => w.id === selectedWalletId)?.currency
-                    .symbol
-                }
+                {selectedWallet.currency.symbol}
               </p>
             )}
           </div>
@@ -942,7 +866,7 @@ export const WithdrawPage: React.FC = () => {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-400">Сумма вывода:</span>
-                      <span>
+                      <span className="text-white">
                         {withdrawalCost.withdrawal_amount}{" "}
                         {withdrawalCost.currency_symbol}
                       </span>
@@ -962,7 +886,7 @@ export const WithdrawPage: React.FC = () => {
                       </span>
                     </div>
                     <div className="flex justify-between font-medium pt-2 border-t border-gray-600">
-                      <span>Общая стоимость:</span>
+                      <span className="text-white">Общая стоимость:</span>
                       <span className="text-red-400">
                         {withdrawalCost.total_cost}{" "}
                         {withdrawalCost.currency_symbol}
@@ -976,10 +900,10 @@ export const WithdrawPage: React.FC = () => {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-400">Сумма вывода:</span>
-                      <span>
+                      <span className="text-white">
                         {amount}{" "}
                         {
-                          wallets.find((w) => w.id === selectedWalletId)?.currency
+                          walletsArr.find((w) => w.id === selectedWalletId)?.currency
                             .symbol
                         }
                       </span>
@@ -989,18 +913,18 @@ export const WithdrawPage: React.FC = () => {
                       <span className="text-yellow-400">
                         {fee}{" "}
                         {
-                          wallets.find((w) => w.id === selectedWalletId)?.currency
+                          walletsArr.find((w) => w.id === selectedWalletId)?.currency
                             .symbol
                         }{" "}
                         (≈${feeUsd})
                       </span>
                     </div>
                     <div className="flex justify-between font-medium pt-2 border-t border-gray-600">
-                      <span>Итого к получению:</span>
+                      <span className="text-white">Итого к получению:</span>
                       <span className="text-green-400">
                         {netAmount}{" "}
                         {
-                          wallets.find((w) => w.id === selectedWalletId)?.currency
+                          walletsArr.find((w) => w.id === selectedWalletId)?.currency
                             .symbol
                         }
                       </span>
@@ -1180,4 +1104,3 @@ export const WithdrawPage: React.FC = () => {
     </div>
   );
 };
-

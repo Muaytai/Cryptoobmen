@@ -1,6 +1,7 @@
 "use client";
 
 import React, { JSX } from "react";
+import Image from "next/image";
 import styles from "./headerProfile.module.css";
 import { Button } from "../me/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "../me/components/ui/avatar";
@@ -21,7 +22,9 @@ export const HeaderProfile = ({ user }: HeaderProfileProps): JSX.Element => {
     <>
       <div className={styles.header}>
         <Button className={styles.actionButton}>
-          <img
+          <Image
+            width={24}
+            height={24}
             className={styles.iconMedium}
             alt="Messages"
             src="/images/profile/vector-7.svg"
@@ -39,7 +42,9 @@ export const HeaderProfile = ({ user }: HeaderProfileProps): JSX.Element => {
         </div>
 
         <Button className={styles.actionButton} onClick={() => router.push("/me/edit")}>
-          <img
+          <Image
+            width={24}
+            height={24}
             className={styles.iconSmall}
             alt="Edit"
             src="/images/profile/settings.svg"

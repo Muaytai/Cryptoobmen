@@ -5,6 +5,20 @@ import { useParams, useRouter } from "next/navigation";
 import api from "@/lib/api/fetch";
 import { useAuthStore } from "@/store/useAuthStore";
 
+type AdminUserDetails = {
+  id: number | string;
+  email: string;
+  username: string;
+  is_site_admin?: boolean;
+};
+
+type AdminUserDocument = {
+  id: number | string;
+  document_type: string;
+  status: string;
+  uploaded_at?: string;
+};
+
 export default function AdminUserDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -14,8 +28,8 @@ export default function AdminUserDetailsPage() {
   const checkAuthStatus = useAuthStore((s) => s.checkAuthStatus);
   const getAuthHeaders = useAuthStore((s) => s.getAuthHeaders);
 
-  const [details, setDetails] = useState<any>(null);
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [details, setDetails] = useState<AdminUserDetails | null>(null);
+  const [documents, setDocuments] = useState<AdminUserDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,12 +52,17 @@ export default function AdminUserDetailsPage() {
       setError(null);
       try {
         const headers = getAuthHeaders();
-        const userRes: any = await api.get(`/accounts/users/${id}/`, { headers });
-        const docsRes: any = await api.get(`/accounts/documents/?user=${id}`, { headers });
-        setDetails(userRes?.data ?? userRes);
-        setDocuments(docsRes?.data ?? docsRes ?? []);
-      } catch (e: any) {
-        setError(e?.message || "Не удалось загрузить данные пользователя");
+        const userRes = await api.get<AdminUserDetails>(`/accounts/users/${id}/`, { headers });
+        const docsRes = await api.get<AdminUserDocument[]>(`/accounts/documents/?user=${id}`, { headers });
+        const userData =
+          (userRes as { data?: AdminUserDetails }).data ?? (userRes as AdminUserDetails);
+        const docsDataRaw =
+          (docsRes as { data?: AdminUserDocument[] }).data ?? (docsRes as AdminUserDocument[]);
+        setDetails(userData);
+        setDocuments(Array.isArray(docsDataRaw) ? docsDataRaw : []);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : null;
+        setError(message || "Не удалось загрузить данные пользователя");
       } finally {
         setLoading(false);
       }

@@ -1,6 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-export async function GET(request: NextRequest) {
+type ReviewApiItem = {
+  id: number;
+  name?: string;
+  rating: number;
+  date?: string;
+  created_at?: string;
+  content?: string;
+  text?: string;
+  is_verified?: boolean;
+  verified?: boolean;
+};
+
+export async function GET() {
   try {
     // Отправляем запрос к бэкенду для получения избранных отзывов
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/transactions/reviews/featured/`, {
@@ -43,19 +55,19 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const data = await response.json();
+    const data: unknown = await response.json();
     
     // Форматируем ответ для фронтенда
     return NextResponse.json({
       success: true,
       results: Array.isArray(data) 
-        ? data.map((review: any) => ({
+        ? (data as ReviewApiItem[]).map((review) => ({
             id: review.id,
             name: review.name || 'Пользователь',
             rating: review.rating,
-            date: review.date || new Date(review.created_at).toLocaleDateString('ru-RU'),
-            text: review.content || review.text,
-            verified: review.is_verified || review.verified || true,
+            date: review.date || (review.created_at ? new Date(review.created_at).toLocaleDateString('ru-RU') : ''),
+            text: review.content || review.text || '',
+            verified: review.is_verified ?? review.verified ?? true,
           }))
         : [],
     });

@@ -1,20 +1,19 @@
-import { InputHTMLAttributes, forwardRef } from "react";
 import Select, {
   components,
   SingleValueProps,
   OptionProps,
-  SingleValue,
-  MultiValue,
-  ActionMeta,
   ClassNamesConfig,
-  GroupBase,
 } from "react-select";
 import styles from "./formField.module.css";
+import { OptionType } from "../types/types";
+import Image from "next/image";
 
 
 const CustomSingleValue = (props: SingleValueProps<OptionType>) => (
   <components.SingleValue {...props} className="flex items-center">
-    <img
+    <Image
+      width={16}
+      height={16}
       src={props.data.icon}
       alt={props.data.label}
       className="w-4 h-4 mr-2"
@@ -26,28 +25,35 @@ const CustomSingleValue = (props: SingleValueProps<OptionType>) => (
 const CustomOption = (props: OptionProps<OptionType>) => (
   <components.Option {...props}>
     <div className="flex items-center gap-2 px-1 py-1">
-      <img src={props.data.icon} alt={props.data.label} className="w-4 h-4" />
+      <Image
+        width={16}
+        height={16}
+        src={props.data.icon}
+        alt={props.data.label}
+        className="w-4 h-4"
+      />
       <span className="text-subcard-text">{props.data.label}</span>
     </div>
   </components.Option>
 );
 
-interface Props extends InputHTMLAttributes<HTMLInputElement> {
+interface Props {
   error?: string;
   label: string;
   required?: boolean;
   options: OptionType[];
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  name?: string;
 }
 
-const FormSelect = ({ label, required, error, options, ...rest }: Props) => {
-  const handleChange = (
-    newValue: SingleValue<OptionType> | MultiValue<OptionType>,
-    _actionMeta: ActionMeta<OptionType>
-  ) => {
-    // Приводим к одиночному значению, так как isMulti: false
-    const selected = newValue as SingleValue<OptionType> | null;
+const FormSelect = ({label, required, error, options, value, onChange, onBlur, name}: Props) => {
+  const selectedOption =
+    options.find((option) => option.value === value) ?? null;
 
-    console.log("Выбрано:", selected);
+  const handleChange = (newValue: OptionType | null) => {
+    onChange(newValue?.value ?? "");
   };
 
   const classNames: ClassNamesConfig<OptionType> = {
@@ -76,14 +82,19 @@ const FormSelect = ({ label, required, error, options, ...rest }: Props) => {
         {label}
       </span>
       <Select
+        inputId={name}
+        name={name}
         options={options}
         components={{ SingleValue: CustomSingleValue, Option: CustomOption }}
         classNames={classNames}
-        onChange={handleChange}
+        value={selectedOption}
+        onChange={(newValue) => handleChange(newValue as OptionType | null)}
+        onBlur={onBlur}
         placeholder="Выберите способ вывода"
         isMulti={false}
         unstyled
       />
+      {error && <span className="text-red-500 text-xs mt-1">{error}</span>}
     </label>
   );
 };

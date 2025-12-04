@@ -1,23 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-type CookieOptions = {
-  path?: string;
-  maxAge?: number;
-  httpOnly?: boolean;
-  secure?: boolean;
-  sameSite?: 'strict' | 'lax' | 'none';
-};
-
-// Определяем настройки cookies в зависимости от окружения
-const getCookieOptions = (): CookieOptions => ({
-  path: '/',
-  maxAge: parseInt(process.env.NEXT_PUBLIC_AUTH_COOKIE_MAX_AGE || '2592000'),
-  httpOnly: true,
-  secure: process.env.NEXT_PUBLIC_SECURE_COOKIE === 'true',
-  sameSite: (process.env.NEXT_PUBLIC_SAME_SITE || 'lax') as 'strict' | 'lax'
-});
-
 export function middleware(request: NextRequest) {
   // Пропускаем запросы для социальной авторизации и API
   if (request.nextUrl.pathname.startsWith('/accounts/') || 

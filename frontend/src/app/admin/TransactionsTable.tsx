@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import api from "@/lib/api/fetch";
 import { useAuthStore } from "@/store/useAuthStore";
 import TransactionDetailsModal from "@/components/TransactionDetailsModal";
@@ -36,9 +36,9 @@ type TransactionRow = {
     network?: string;
     icon?: string;
   };
-  exchange_info?: any;
-  deposit_info?: any;
-  withdrawal_info?: any;
+  exchange_info?: Record<string, unknown>;
+  deposit_info?: Record<string, unknown>;
+  withdrawal_info?: Record<string, unknown>;
 };
 
 type TransactionsResponse = {
@@ -73,7 +73,8 @@ export default function TransactionsTable() {
   const user = useAuthStore((s) => s.user);
   const checkAuthStatus = useAuthStore((s) => s.checkAuthStatus);
 
-  const fetchTransactions = async (page = 1) => {
+  // Обернули в useCallback и добавили все зависимости
+  const fetchTransactions = useCallback(async (page = 1) => {
     setLoading(true);
     setError(null);
     try {
@@ -90,22 +91,34 @@ export default function TransactionsTable() {
       if (dateFrom) params.append('date_from', dateFrom);
       if (dateTo) params.append('date_to', dateTo);
 
-      const res: any = await api.get(`/transactions/transactions/admin_list/?${params}`, { headers });
-      const data: TransactionsResponse = res?.data ?? res;
+      const res = await api.get<TransactionsResponse>(`/transactions/transactions/admin_list/?${params}`, { headers });
+      const data: TransactionsResponse =
+        (res as { data?: TransactionsResponse }).data ?? (res as TransactionsResponse);
       
       setTransactions(data.results || []);
-      setPagination({
+      setPagination((prev) => ({
+        ...prev,
         page: data.page,
         page_size: data.page_size,
         total_pages: data.total_pages,
         count: data.count
-      });
-    } catch (e: any) {
-      setError(e?.message || "Не удалось загрузить транзакции");
+      }));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : null;
+      setError(message || "Не удалось загрузить транзакции");
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    getAuthHeaders,
+    pagination.page_size,
+    searchTerm,
+    filterType,
+    filterStatus,
+    filterCrypto,
+    dateFrom,
+    dateTo
+  ]);
 
   useEffect(() => {
     const initData = async () => {
@@ -129,7 +142,7 @@ export default function TransactionsTable() {
     if (user && !authLoading) {
       fetchTransactions(1);
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, fetchTransactions]);
 
   const openTransactionDetails = (transactionId: number) => {
     setSelectedTransactionId(transactionId);
@@ -315,7 +328,7 @@ export default function TransactionsTable() {
               setFilterCrypto("all");
               setDateFrom("");
               setDateTo("");
-              fetchTransactions(1);
+              // Сброс инициирует обновление через useEffect, так как зависимости fetchTransactions изменятся
             }}
             className="px-6 py-3 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition-all"
           >

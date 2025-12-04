@@ -1,7 +1,6 @@
 import React from "react";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
-import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import styles from "./CryptoCard.module.css";
 import { TimePeriodSelector } from "../TimePeriodSelector/TimePeriodSelector";

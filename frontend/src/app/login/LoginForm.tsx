@@ -1,31 +1,30 @@
 'use client';
 
-import {useState, useEffect, Suspense} from 'react';
-import {useRouter, useSearchParams} from 'next/navigation';
-import Link from 'next/link';
-import {useAuthStore} from '@/store/useAuthStore';
-import {Input} from '@/components/ui/Input';
+import { useState, useEffect, Suspense, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuthStore } from '@/store/useAuthStore';
+import { Input } from '@/components/ui/Input';
 import ReCaptcha from '@/components/ReCaptcha';
 import styles from './Login.module.css';
-import {FaEye, FaEyeSlash, FaGoogle, FaSpinner} from 'react-icons/fa';
-import {TbBrandYandex} from 'react-icons/tb';
-import {useModal} from "@/utils/modalWindows/generalFunctions";
+import { FaEye, FaEyeSlash, FaGoogle, FaSpinner } from 'react-icons/fa';
+import { TbBrandYandex } from 'react-icons/tb';
+import { useModal } from "@/utils/modalWindows/generalFunctions";
 import WriteAboutError from "@/components/modalWindows/WriteAboutError";
 
 // Компонент, использующий useSearchParams
 const LoginFormWithSearchParams = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const {login, isLoading, error, setDisableAutoLogin, setTokens, checkAuthStatus, isAuthenticated, user, socialLogin} = useAuthStore();
-    const [credentials, setCredentials] = useState({email: '', password: ''});
+    const { login, isLoading, error, setDisableAutoLogin, checkAuthStatus, isAuthenticated, user, socialLogin } = useAuthStore();
+    const [credentials, setCredentials] = useState({ email: '', password: '' });
     const [showPassword, setShowPassword] = useState(false);
-    const [loginAttempted, setLoginAttempted] = useState(false);
     const [verificationSuccess, setVerificationSuccess] = useState(false);
     const [recaptchaToken, setRecaptchaToken] = useState('');
     const modalManagerChangePassword = useModal(false);
 
     // Функция для очистки всех данных аутентификации
-    const clearAllAuthData = () => {
+    // Обернули в useCallback, чтобы избежать проблем с зависимостями в useEffect
+    const clearAllAuthData = useCallback(() => {
         // Очищаем НЕ HttpOnly куки, если они есть и управляются фронтом
         const clientSideCookies = [
             // 'access_token', // HttpOnly, управляется бэкендом
@@ -53,7 +52,7 @@ const LoginFormWithSearchParams = () => {
         // Устанавливаем флаг блокировки автовхода
         localStorage.setItem('disableAutoLogin', 'true');
         setDisableAutoLogin(true);
-    };
+    }, [setDisableAutoLogin]);
 
     // При монтировании компонента проверяем force_login, verified и токены
     useEffect(() => {
@@ -80,11 +79,9 @@ const LoginFormWithSearchParams = () => {
         // Запрашиваем профиль без очистки данных, чтобы сразу показать пользователя
         // Обязательно указываем isLoginProcess=true, чтобы обойти disableAutoLogin
         checkAuthStatus(true).catch(() => {});
-    }, [searchParams, setDisableAutoLogin]);
+    }, [searchParams, setDisableAutoLogin, clearAllAuthData, checkAuthStatus]); // Добавлены корректные зависимости
 
     // Если пользователь уже аутентифицирован (например, вернулись с соц-логина), уводим со страницы логина
-    // Важно: проверяем и isAuthenticated, и user, чтобы убедиться, что данные пользователя загружены
-    // Также проверяем isLoading, чтобы не делать редирект во время загрузки
     useEffect(() => {
         console.log('[LoginForm] useEffect для редиректа:', { isAuthenticated, user: !!user, isLoading });
         if (isAuthenticated && user && !isLoading) {
@@ -92,11 +89,10 @@ const LoginFormWithSearchParams = () => {
             let target = '/';
             if (redirectParam) {
                 const decoded = decodeURIComponent(redirectParam);
-                // Если параметр не начинается с /, добавляем его
                 target = decoded.startsWith('/') ? decoded : `/${decoded}`;
             }
             console.log('[LoginForm] Редирект после авторизации на:', target);
-            // Используем небольшую задержку, чтобы убедиться, что состояние полностью обновлено
+            
             const timeoutId = setTimeout(() => {
                 router.replace(target);
             }, 100);
@@ -114,15 +110,12 @@ const LoginFormWithSearchParams = () => {
         }
         
         try {
-            setLoginAttempted(true);
             // Добавляем токен reCAPTCHA к учетным данным
             await login({...credentials, recaptcha_token: recaptchaToken});
             console.log('[LoginForm] Вход выполнен успешно, данные пользователя загружены');
             
-            // Редирект будет выполнен автоматически через useEffect при изменении isAuthenticated и user
             // Добавляем дополнительную проверку через небольшую задержку для надежности
             setTimeout(() => {
-                // Получаем актуальное состояние из стора
                 const currentState = useAuthStore.getState();
                 if (currentState.isAuthenticated && currentState.user && !currentState.isLoading) {
                     const redirectParam = searchParams.get('redirect');
@@ -137,7 +130,6 @@ const LoginFormWithSearchParams = () => {
             }, 300);
         } catch (err) {
             console.error('Ошибка входа:', err);
-            setLoginAttempted(false);
         }
     };
 
@@ -155,7 +147,7 @@ const LoginFormWithSearchParams = () => {
         const finalNext = `${frontendUrl}/login`;
         const callback = `${backendUrl}/auth/callback/?next=${encodeURIComponent(finalNext)}`;
 
-        socialLogin(); // Используем socialLogin вместо clearAllAuthData
+        socialLogin();
 
         window.location.href = `${backendUrl}/accounts/google/login/?process=login&next=${encodeURIComponent(callback)}`;
     };
@@ -166,7 +158,7 @@ const LoginFormWithSearchParams = () => {
         const finalNext = `${frontendUrl}/login`;
         const callback = `${backendUrl}/auth/callback/?next=${encodeURIComponent(finalNext)}`;
 
-        socialLogin(); // Используем socialLogin вместо clearAllAuthData
+        socialLogin();
 
         window.location.href = `${backendUrl}/accounts/yandex/login/?process=login&next=${encodeURIComponent(callback)}`;
     };
@@ -176,10 +168,8 @@ const LoginFormWithSearchParams = () => {
         const error = searchParams.get('error');
         if (error === 'auth_failed') {
             console.error('Ошибка авторизации через соцсеть');
-            // Можно показать сообщение пользователю
         } else if (error === 'server_error') {
             console.error('Ошибка сервера при авторизации');
-            // Можно показать сообщение пользователю
         }
     }, [searchParams]);
 
@@ -195,11 +185,11 @@ const LoginFormWithSearchParams = () => {
             }
             <div className={styles.mainFormWrapper}>
                 <div className={styles.imageWrapper}>
-                    <img className={styles.image} src={"/images/chess_mirror.png"}/>
+                    <img className={styles.image} src={"/images/chess_mirror.png"} alt="Chess Mirror" />
                 </div>
                 <div className={styles.formBox}>
                     <div className={styles.logoWrapper}>
-                        <img className={styles.logo} src={"/images/logo.png"}/>
+                        <img className={styles.logo} src={"/images/logo.png"} alt="Logo" />
                     </div>
 
                     <div className={styles.formBoxWrapper}>

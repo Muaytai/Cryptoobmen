@@ -1,90 +1,107 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useProfileContext } from "@/app/(profile)/context/ProfileContext";
-import { useAuthStore } from "@/store/useAuthStore";
-import { useToast } from "@/components/ui/Toast";
+import {useState, useEffect, useRef, useCallback} from "react";
+import {useProfileContext} from "@/app/(profile)/context/ProfileContext";
+import {useAuthStore} from "@/store/useAuthStore";
+import {useToast} from "@/components/ui/Toast";
+
+type ProfileFormData = {
+  first_name: string;
+  last_name: string;
+  phone_number: string;
+  full_name: string;
+  date_of_birth: string;
+  address: string;
+  profile: {
+    bio: string;
+    website: string;
+  };
+};
+
+type ProfileUpdatePayload = Partial<Omit<ProfileFormData, "profile">> & {
+  profile?: Partial<ProfileFormData["profile"]>;
+};
+
+const isValidDate = (dateString: string): boolean => {
+  if (!dateString) return false;
+  const date = new Date(dateString);
+  return !Number.isNaN(date.getTime());
+};
+
+const isNonEmpty = (value: string): boolean => value.trim().length > 0;
+
+const filterEmptyFields = (formState: ProfileFormData): ProfileUpdatePayload => {
+  const {profile, date_of_birth, ...plainFields} = formState;
+  const filtered: ProfileUpdatePayload = {};
+
+  (Object.entries(plainFields) as Array<
+    [Exclude<keyof ProfileFormData, "profile" | "date_of_birth">, string]
+  >).forEach(([key, value]) => {
+    if (isNonEmpty(value)) {
+      filtered[key] = value;
+    }
+  });
+
+  if (isNonEmpty(date_of_birth) && isValidDate(date_of_birth)) {
+    filtered.date_of_birth = date_of_birth;
+  }
+
+  const profilePayload = Object.entries(profile).reduce<
+    Partial<ProfileFormData["profile"]>
+  >((acc, [key, value]) => {
+    if (isNonEmpty(value)) {
+      acc[key as keyof ProfileFormData["profile"]] = value;
+    }
+    return acc;
+  }, {});
+
+  if (Object.keys(profilePayload).length > 0) {
+    filtered.profile = profilePayload;
+  }
+
+  return filtered;
+};
+
+const BASE_FIELD_KEYS: Array<Exclude<keyof ProfileFormData, "profile">> = [
+  "first_name",
+  "last_name",
+  "phone_number",
+  "full_name",
+  "date_of_birth",
+  "address",
+];
 
 export const useEditProfile = () => {
-  const { user } = useProfileContext();
-  const { updateProfile, updateAvatar, isLoading, error, clearError, checkAuthStatus, shouldPlayAnimation, setShouldPlayAnimation } = useAuthStore();
-  const { showSuccess, showError } = useToast();
-  
-  // Функция для загрузки аватара с сервера
+  const {user} = useProfileContext();
+  const {
+    updateProfile,
+    updateAvatar,
+    isLoading,
+    clearError,
+    checkAuthStatus,
+    shouldPlayAnimation,
+    setShouldPlayAnimation,
+  } = useAuthStore();
+  const {showSuccess, showError} = useToast();
+
   const reloadAvatarFromServer = useCallback(async () => {
-    if (user?.avatar && user.avatar.startsWith('blob:')) {
+    if (user?.avatar && user.avatar.startsWith("blob:")) {
       try {
-        // Загружаем профиль пользователя с сервера для получения актуального аватара
         await checkAuthStatus();
-      } catch (error) {
-        // В случае ошибки просто очищаем недействительный blob URL
-        updateProfile({ avatar: undefined }, true);
+      } catch {
+        updateProfile({avatar: undefined}, true);
       }
     }
   }, [user?.avatar, checkAuthStatus, updateProfile]);
-  
+
   const [localLoading, setLocalLoading] = useState(false);
 
-  // Вспомогательные функции для работы с датами
   const formatDateToYYYYMMDD = (dateString: string): string => {
-    if (!dateString) return '';
+    if (!dateString) return "";
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-    return date.toISOString().split('T')[0];
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toISOString().split("T")[0];
   };
 
-  const validateDate = (dateString: string): boolean => {
-    if (!dateString) return true; // Пустая дата разрешена
-    const date = new Date(dateString);
-    return !isNaN(date.getTime());
-  };
-
-  // Функция для фильтрации данных перед отправкой
-  const filterEmptyFields = (formData: any): any => {
-    const filteredData: any = {};
-    
-    // Список полей, которые НЕ должны отправляться в запросе на редактирование профиля
-    const excludedFields = ['avatar']; // avatar меняется отдельной формой
-    
-    Object.entries(formData).forEach(([key, value]) => {
-      // Пропускаем исключенные поля
-      if (excludedFields.includes(key)) {
-        return;
-      }
-      
-      // Специальная обработка для даты рождения
-      if (key === 'date_of_birth') {
-        if (value && typeof value === 'string' && value.trim() !== '') {
-          // Проверяем, что дата не пустая и корректная
-          if (validateDate(value)) {
-            filteredData[key] = value;
-          }
-        }
-        return; // Пропускаем остальную обработку для даты
-      }
-      
-      // Для вложенного объекта profile
-      if (key === 'profile' && value && typeof value === 'object') {
-        const profileData: any = {};
-        Object.entries(value).forEach(([profileKey, profileValue]) => {
-          if (profileValue && typeof profileValue === 'string' && profileValue.trim() !== '') {
-            profileData[profileKey] = profileValue;
-          }
-        });
-        // Добавляем profile только если есть заполненные поля
-        if (Object.keys(profileData).length > 0) {
-          filteredData[key] = value;
-        }
-      }
-      // Для обычных полей (строки)
-      else if (value && typeof value === 'string' && value.trim() !== '') {
-        filteredData[key] = value;
-      }
-    });
-    
-    return filteredData;
-  };
-  
-  // Объединенное состояние формы
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<ProfileFormData>({
     first_name: user?.first_name || "",
     last_name: user?.last_name || "",
     phone_number: user?.phone_number || "",
@@ -165,27 +182,33 @@ export const useEditProfile = () => {
   }, [showSuccessAnimation, hideAnimation]);
 
   // Обработчик изменения полей формы
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    
-    if (name.includes('.')) {
-      // Для вложенных полей (например, profile.bio)
-      const [parentKey, childKey] = name.split('.');
-      setFormData(prev => ({
-        ...prev,
-        [parentKey]: {
-          ...(prev as any)[parentKey],
-          [childKey]: value
-        }
-      }));
-    } else {
-      // Для обычных полей
-      setFormData(prev => ({
-        ...prev,
-        [name]: value
-      }));
-    }
-  }, []);
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const {name, value} = e.target;
+
+      if (name.startsWith("profile.")) {
+        const [, nestedKey] = name.split(".");
+        setFormData((prev) => ({
+          ...prev,
+          profile: {
+            ...prev.profile,
+            [nestedKey as keyof ProfileFormData["profile"]]: value,
+          },
+        }));
+        return;
+      }
+
+      if (
+        (BASE_FIELD_KEYS as string[]).includes(name)
+      ) {
+        setFormData((prev) => ({
+          ...prev,
+          [name as Exclude<keyof ProfileFormData, "profile">]: value,
+        }));
+      }
+    },
+    []
+  );
 
   // Обработчик отправки формы
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -218,7 +241,14 @@ export const useEditProfile = () => {
     } finally {
       setLocalLoading(false);
     }
-  }, [formData, localLoading, updateProfile, showSuccess, showError, showAnimation, hideAnimation]);
+  }, [
+    formData,
+    localLoading,
+    updateProfile,
+    showSuccess,
+    showError,
+    setShouldPlayAnimation,
+  ]);
 
   // Обработчик загрузки аватара
   const handleAvatarChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -242,7 +272,13 @@ export const useEditProfile = () => {
     } finally {
       setLocalLoading(false);
     }
-  }, [localLoading, updateAvatar, showSuccess, showError, showAnimation, hideAnimation]);
+  }, [
+    localLoading,
+    updateAvatar,
+    showSuccess,
+    showError,
+    setShouldPlayAnimation,
+  ]);
 
   // Обработчик для кнопки "Убрать фото" - устанавливает дефолтную PNG
   const handleRemoveAvatar = useCallback(async () => {
@@ -269,7 +305,13 @@ export const useEditProfile = () => {
     } finally {
       setLocalLoading(false);
     }
-  }, [localLoading, updateAvatar, showSuccess, showError, showAnimation, hideAnimation]);
+  }, [
+    localLoading,
+    updateAvatar,
+    showSuccess,
+    showError,
+    setShouldPlayAnimation,
+  ]);
 
   // Обработчик ошибки загрузки аватара
   const handleAvatarError = useCallback(() => {
@@ -288,26 +330,16 @@ export const useEditProfile = () => {
 
 
   return {
-    // Состояние
     user,
     formData,
     showSuccessAnimation,
     localLoading,
     isLoading,
-    error,
-    
-    // Функции
     handleInputChange,
     handleSubmit,
     handleAvatarChange,
     handleRemoveAvatar,
     handleAvatarError,
-    reloadAvatarFromServer,
-    clearError,
-    showAnimation,
-    hideAnimation,
-    
-    // Утилиты
     formatDateToYYYYMMDD,
   };
 };

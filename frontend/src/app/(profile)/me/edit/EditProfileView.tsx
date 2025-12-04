@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/card";
 import { clsx } from "clsx";
@@ -17,16 +18,12 @@ export const EditProfileView: React.FC = () => {
     showSuccessAnimation,
     localLoading,
     isLoading,
-    error,
     handleInputChange,
     handleSubmit,
     handleAvatarChange,
     handleRemoveAvatar,
     handleAvatarError,
-    clearError,
     formatDateToYYYYMMDD,
-    showAnimation,
-    hideAnimation,
   } = useEditProfile();
   
   const { shouldPlayAnimation } = useAuthStore();
@@ -53,7 +50,9 @@ export const EditProfileView: React.FC = () => {
                 <div className={styles.avatarSection}>
                   <div className={styles.avatarContainer}>
                     {user?.avatar ? (
-                      <img
+                      <Image
+                        width={96}
+                        height={96}
                         src={user.avatar}
                         alt="Avatar"
                         className={styles.avatarImage}

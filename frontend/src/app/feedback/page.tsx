@@ -151,14 +151,16 @@ export default function FeedbackPage() {
         router.push('/reviews');
       }, 2000);
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Ошибка при отправке отзыва:', error);
       
       // Если ошибка не связана с валидацией (уже обработана выше)
       if (!errors.name && !errors.email && !errors.text) {
         setErrors(prev => ({
           ...prev,
-          submit: error.message || 'Произошла ошибка при отправке отзыва. Пожалуйста, попробуйте позже.'
+          submit: error instanceof Error
+            ? error.message
+            : 'Произошла ошибка при отправке отзыва. Пожалуйста, попробуйте позже.'
         }));
       }
     } finally {

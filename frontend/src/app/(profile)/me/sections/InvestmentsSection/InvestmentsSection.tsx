@@ -1,4 +1,5 @@
 import React, { JSX } from "react";
+import Image from "next/image";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 import {
@@ -78,7 +79,9 @@ export const InvestmentsSection = (): JSX.Element => {
             <CardContent className={styles.cardContent}>
               <div className={styles.cardHeader}>
                 <div className={styles.cryptoInfo}>
-                  <img
+                  <Image
+                    width={40}
+                    height={40}
                     className={styles.cryptoImage}
                     alt={crypto.name}
                     src={crypto.image}

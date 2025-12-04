@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/ThemeProvider';
-import Link from 'next/link';
 
 export default function PrivacyPage() {
   const { theme } = useTheme();

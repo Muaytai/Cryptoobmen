@@ -1,4 +1,5 @@
 import React, {JSX, useState} from "react";
+import Image from "next/image";
 import {Button} from "../../components/ui/button";
 import {Card, CardContent} from "../../components/ui/card";
 import styles from "./GiftsSection.module.css";
@@ -80,7 +81,9 @@ export const GiftsSection = (): JSX.Element => {
 
           {/* Right section with gift box */}
           <div className="md:w-[50%] w-full mt-8 md:mt-0 md:top-5 md:right-5 bg-subcard rounded-[15px] p-4 md:p-0">
-            <img
+            <Image
+              width={156}
+              height={169}
               className="w-[100px] md:w-[156px] h-[108px] md:h-[169px] mx-auto mt-4 md:mt-6"
               alt="Gift Box"
               src="/images/profile/vector-1.svg"
@@ -128,7 +131,9 @@ export const GiftsSection = (): JSX.Element => {
             {userWinnings.map((user, index) => (
               <div key={index} className="flex items-center mb-4 md:mb-5">
                 <div className="flex items-center shrink-0 justify-center mr-3 md:mr-4">
-                  <img
+                  <Image
+                    width={30}
+                    height={30}
                     className="w-[30px] h-[30px]"
                     alt="User Icon"
                     src="/images/profile/vector.svg"

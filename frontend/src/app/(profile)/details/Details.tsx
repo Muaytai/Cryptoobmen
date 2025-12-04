@@ -4,7 +4,6 @@ import React, {JSX, useState} from "react";
 import styles from "./details.module.css";
 import {Button} from "@/components/ui/Button";
 import {Card, CardContent} from "@/components/ui/card";
-import {clsx} from "clsx";
 import Image from "next/image";
 import {Modal} from "@/app/(profile)/components/modals/Modal";
 import {AddWalletForm} from "@/app/(profile)/components/modals/addWalletForm/AddWalletForm";

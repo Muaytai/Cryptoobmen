@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -13,27 +13,19 @@ const inter = Inter({
   display: "swap"
 });
 
-// Стили для скрытия контента во время гидратации
-const hydrationFadeInStyle = `
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  
-  .hydration-container {
-    animation: fade-in 0.3s ease-in;
-  }
-`;
+// Отдельный экспорт для настроек вьюпорта (Next.js 14+)
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  // Если у вас был themeColor, его тоже лучше добавить сюда:
+  // themeColor: 'black', 
+};
 
 export const metadata: Metadata = {
   title: "Cryptoobmen - Обмен криптовалют",
   description: "Надежная платформа для обмена криптовалют с лучшими курсами",
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 5,
-    userScalable: true,
-  },
 };
 
 export default function RootLayout({

@@ -19,27 +19,28 @@ type CookieOptions = {
  * @param options Дополнительные параметры
  */
 export function setCookie(name: string, value: string, options: CookieOptions = {}) {
-  const cookieOptions = {
+  const { expires, ...restOptions } = options;
+  const cookieOptions: Record<string, string | number | boolean | undefined> = {
     path: '/',
-    ...options
+    ...restOptions
   };
 
-  if (cookieOptions.expires instanceof Date) {
-    cookieOptions.expires = cookieOptions.expires.toUTCString() as any;
+  if (expires instanceof Date) {
+    cookieOptions.expires = expires.toUTCString();
   }
 
   let updatedCookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
 
-  for (const optionKey in cookieOptions) {
-    if (Object.prototype.hasOwnProperty.call(cookieOptions, optionKey)) {
-      const optionValue = (cookieOptions as any)[optionKey];
-      if (optionValue !== true && optionValue !== undefined) {
-        updatedCookie += `; ${optionKey}=${optionValue}`;
-      } else if (optionValue === true) {
-        updatedCookie += `; ${optionKey}`;
-      }
+  Object.entries(cookieOptions).forEach(([optionKey, optionValue]) => {
+    if (optionValue === undefined) {
+      return;
     }
-  }
+    if (optionValue === true) {
+      updatedCookie += `; ${optionKey}`;
+      return;
+    }
+    updatedCookie += `; ${optionKey}=${optionValue}`;
+  });
 
   document.cookie = updatedCookie;
 }
