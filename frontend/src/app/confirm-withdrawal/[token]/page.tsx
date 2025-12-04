@@ -57,9 +57,9 @@ export default function ConfirmWithdrawalPage() {
                     const errorText = await response.text();
                     try {
                         // Может быть, это все-таки JSON с ошибкой
-                        const errorJson = JSON.parse(errorText);
+                        const errorJson = JSON.parse(errorText) as { error?: string; detail?: string };
                         throw new Error(errorJson.error || errorJson.detail || 'Произошла неизвестная ошибка.');
-                    } catch (jsonError) {
+                    } catch {
                         // Если это не JSON, показываем как текст (может быть HTML)
                         // В реальном приложении здесь лучше показать общую ошибку, а не HTML
                         throw new Error('Ошибка сервера. Пожалуйста, попробуйте позже.');
@@ -69,9 +69,9 @@ export default function ConfirmWithdrawalPage() {
                 const data = await response.json();
                 setMessage(data.message || 'Вывод успешно подтвержден.');
 
-            } catch (err: any) {
-                // Убираем лишний .message, так как мы уже формируем Error
-                setError(err.toString());
+            } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : String(err);
+                setError(message);
             } finally {
                 setIsLoading(false);
             }

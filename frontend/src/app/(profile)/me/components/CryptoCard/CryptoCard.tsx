@@ -1,7 +1,7 @@
 import React from "react";
+import Image from "next/image";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
-import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import styles from "./CryptoCard.module.css";
 import { TimePeriodSelector } from "../TimePeriodSelector/TimePeriodSelector";
@@ -22,7 +22,9 @@ export const CryptoCard: React.FC<CryptoCardProps> = ({ id, name, fullName, imag
       <CardContent className={styles.cardContent}>
         <div className={styles.cardHeader}>
           <div className={styles.cryptoInfo}>
-            <img
+            <Image
+              width={40}
+              height={40}
               className={styles.cryptoImage}
               alt={name}
               src={image}

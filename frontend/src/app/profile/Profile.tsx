@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { useTheme } from "@/lib/ThemeProvider";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRouter } from "next/navigation";
 
 export const Profile = () => {
   const { theme, toggleTheme } = useTheme();
-  const [isExpanded, setIsExpanded] = useState(false);
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const router = useRouter();
 

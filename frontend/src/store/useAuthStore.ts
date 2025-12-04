@@ -85,7 +85,7 @@ interface AuthState {
   socialLogin: () => void; // Функция для подготовки к социальному логину
 }
 
-const handleApiError = (error: any, defaultMessage: string): string => {
+const handleApiError = (error: unknown, defaultMessage: string): string => {
   if (error instanceof Error) {
     return error.message;
   }
@@ -94,6 +94,16 @@ const handleApiError = (error: any, defaultMessage: string): string => {
   }
   return defaultMessage;
 };
+
+const extractApiData = <T>(payload: unknown): T | null => {
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    const withData = payload as { data?: T };
+    return withData.data ?? null;
+  }
+  return (payload as T) ?? null;
+};
+
+type RawUserResponse = User & { pk?: string | number };
 
 const clearAuthData = () => {
   console.log('clearAuthData: Очистка данных аутентификации');
@@ -145,7 +155,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         try {
           // Используем токен reCAPTCHA, переданный из формы
-          let payload: any = { ...credentials };
+          const payload: Credentials = { ...credentials };
           
           // Проверяем, что токен reCAPTCHA присутствует
           if (!payload.recaptcha_token) {
@@ -179,7 +189,7 @@ export const useAuthStore = create<AuthState>()(
             console.log('[AuthStore] login: Принудительно устанавливаем isLoading в false');
             set({ isLoading: false });
           }
-        } catch (error: any) {
+        } catch (error) {
           console.error('[useAuthStore login] Ошибка входа:', error);
           clearAuthData(); // Очищаем все данные при ошибке входа
           set({
@@ -218,8 +228,9 @@ export const useAuthStore = create<AuthState>()(
         try {
           await api.post('/auth/logout/', {});
           console.log('[AuthStore] logout: api.auth.logout успешно выполнен.');
-        } catch (error: any) {
-          console.error("[AuthStore] logout: Ошибка при выходе на бэкенде:", error.message);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error("[AuthStore] logout: Ошибка при выходе на бэкенде:", message);
           // Продолжаем очистку на клиенте независимо от ошибки бэкенда
         }
         clearAuthData(); // clearAuthData устанавливает disableAutoLogin в localStorage
@@ -250,17 +261,15 @@ export const useAuthStore = create<AuthState>()(
           // Получаем все доступные заголовки аутентификации
           const headers = get().getAuthHeaders();
           
-          const response = await api.get('/accounts/users/me/', { headers }); 
-          const userData = (response as any)?.data 
-            ? {...(response as any)?.data, pk: (response as any)?.data?.id} 
-            : response;
+          const response = await api.get<RawUserResponse | { data: RawUserResponse }>('/accounts/users/me/', { headers }); 
+          const userData = extractApiData<RawUserResponse>(response);
 
           if (userData) {
             console.log('[AuthStore] checkAuthStatus: Профиль пользователя успешно загружен:', userData);
             const normalizedUser = {
               ...userData,
-              id: userData.id || userData.pk || null,
-              username: userData.username || userData.email || `user_${userData.pk || userData.id}`,
+              id: userData.id ?? userData.pk ?? `unknown`,
+              username: userData.username || userData.email || `user_${userData.pk ?? userData.id ?? 'unknown'}`,
             };
             
             // Проверяем, что все обязательные поля присутствуют
@@ -289,8 +298,9 @@ export const useAuthStore = create<AuthState>()(
             // Если userData пустой, но запрос прошел успешно (что странно), считаем не аутентифицированным
             // Это приведет к установке неаутентифицированного состояния ниже
           }
-        } catch (error: any) {
-          console.warn(`[AuthStore] checkAuthStatus: Ошибка при загрузке профиля пользователя (вероятно, не аутентифицирован или API недоступен):`, error.message);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`[AuthStore] checkAuthStatus: Ошибка при загрузке профиля пользователя (вероятно, не аутентифицирован или API недоступен):`, message);
           if (isLoginProcess) {
             console.log('[AuthStore] checkAuthStatus: Ошибка в процессе логина, пробрасываю дальше.');
             set({ isLoading: false }); // Устанавливаем isLoading false перед пробросом
@@ -375,19 +385,19 @@ export const useAuthStore = create<AuthState>()(
           // Получаем все доступные заголовки аутентификации
           const headers = get().getAuthHeaders();
           
-          const response = await api.patch('/accounts/users/update_profile/', profileData, { headers });
-          const updatedUserData = (response as any)?.data;
+          const response = await api.patch<User | { data: User }>('/accounts/users/update_profile/', profileData, { headers });
+          const updatedUserData = extractApiData<User>(response);
           
           // Всегда устанавливаем isLoading в false после успешного запроса
           if (updatedUserData && !skipRefresh) {
             const currentUser = get().user;
-            const updatedUser = currentUser ? { ...currentUser, ...updatedUserData } as User : null;
+            const updatedUser = currentUser ? { ...currentUser, ...updatedUserData } : null;
             set({ user: updatedUser, isLoading: false, error: null });
             console.log('[AuthStore] updateProfile: Профиль успешно обновлен с данными от сервера');
           } else if (!skipRefresh) {
             // Если нет данных в ответе, но нужно обновить store, используем отправленные данные
             const currentUser = get().user;
-            const updatedUser = currentUser ? { ...currentUser, ...profileData } as User : null;
+            const updatedUser = currentUser ? { ...currentUser, ...profileData } : null;
             set({ user: updatedUser, isLoading: false, error: null });
             console.log('[AuthStore] updateProfile: Профиль обновлен с отправленными данными');
           } else {
@@ -395,7 +405,7 @@ export const useAuthStore = create<AuthState>()(
             set({ isLoading: false, error: null });
             console.log('[AuthStore] updateProfile: Профиль обновлен (пропущен refresh)');
           }
-        } catch (error: any) {
+        } catch (error) {
           console.error('[AuthStore] updateProfile: Ошибка обновления профиля:', error);
           set({
             isLoading: false,
@@ -421,12 +431,12 @@ export const useAuthStore = create<AuthState>()(
           const headers = get().getAuthHeaders();
           
           // Для FormData не указываем Content-Type, браузер сам установит правильную границу
-          const response = await api.patch('/accounts/users/update_profile/', formData, { headers });
+          const response = await api.patch<User | { data: User }>('/accounts/users/update_profile/', formData, { headers });
           
-          const updatedUserData = (response as any)?.data;
+          const updatedUserData = extractApiData<User>(response);
           if (updatedUserData) {
             const currentUser = get().user;
-            const updatedUser = currentUser ? { ...currentUser, avatar: updatedUserData.avatar } as User : null;
+            const updatedUser = currentUser ? { ...currentUser, avatar: updatedUserData.avatar } : null;
             set({ user: updatedUser, isLoading: false, error: null });
             console.log('[AuthStore] updateAvatar: Аватар успешно обновлен с данными от сервера');
           } else {
@@ -435,7 +445,7 @@ export const useAuthStore = create<AuthState>()(
             if (currentUser) {
               // Создаем временный URL для файла и обновляем аватар
               const tempAvatarUrl = URL.createObjectURL(file);
-              const updatedUser = { ...currentUser, avatar: tempAvatarUrl } as User;
+              const updatedUser = { ...currentUser, avatar: tempAvatarUrl };
               set({ user: updatedUser, isLoading: false, error: null });
               console.log('[AuthStore] updateAvatar: Аватар обновлен с временным URL (без данных от сервера)');
               
@@ -465,7 +475,7 @@ export const useAuthStore = create<AuthState>()(
               console.log('[AuthStore] updateAvatar: Аватар обновлен (без данных от сервера, пользователь не найден)');
             }
           }
-        } catch (error: any) {
+        } catch (error) {
           console.error('[AuthStore] updateAvatar: Ошибка обновления аватара:', error);
           set({
             isLoading: false,

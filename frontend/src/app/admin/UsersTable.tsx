@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import api from "@/lib/api/fetch";
 import { useAuthStore } from "@/store/useAuthStore";
 import UserDetailsModal from "@/components/UserDetailsModal";
@@ -36,20 +36,23 @@ export default function UsersTable() {
   const user = useAuthStore((s) => s.user);
   const checkAuthStatus = useAuthStore((s) => s.checkAuthStatus);
 
-  const fetchUsers = async () => {
+  // Обернули в useCallback, чтобы ссылка на функцию была стабильной
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const headers = getAuthHeaders();
-      const res: any = await api.get("/accounts/users/admin_list/", { headers });
-      const data = res?.data ?? res;
+      const res = await api.get<UserRow[]>("/accounts/users/admin_list/", { headers });
+      const data =
+        (res as { data?: UserRow[] }).data ?? (Array.isArray(res) ? res : []);
       setUsers(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setError(e?.message || "Не удалось загрузить пользователей");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : null;
+      setError(message || "Не удалось загрузить пользователей");
     } finally {
       setLoading(false);
     }
-  };
+  }, [getAuthHeaders]);
 
   useEffect(() => {
     const initData = async () => {
@@ -75,7 +78,7 @@ export default function UsersTable() {
     if (user && !authLoading) {
       fetchUsers();
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, fetchUsers]);
 
   const filteredUsers = users.filter((user) => {
     const matchesSearch = 
@@ -394,5 +397,3 @@ export default function UsersTable() {
     </div>
   );
 }
-
-

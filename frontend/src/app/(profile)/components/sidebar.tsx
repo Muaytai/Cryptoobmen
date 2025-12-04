@@ -6,9 +6,7 @@ import Link from "next/link";
 import {usePathname} from "next/navigation";
 import styles from "./sidebar.module.css";
 import {clsx} from "clsx";
-import Image from "next/image";
 
-import {useTheme} from 'next-themes';
 import {useAuthStore} from '@/store/useAuthStore';
 import ImageDependTheme from "@/components/imageDependTheme/imageDependTheme";
 
@@ -45,7 +43,6 @@ export const SideBar = (): JSX.Element => {
   const [isOpen, setIsOpen] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
 
-  const {theme} = useTheme();
   const user = useAuthStore(state => state.user);
 
   useEffect(() => {

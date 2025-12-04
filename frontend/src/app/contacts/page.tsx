@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/lib/ThemeProvider';
 import Link from 'next/link';
-import Image from 'next/image';
 
 export default function ContactsPage() {
   const { theme } = useTheme();
@@ -193,7 +192,7 @@ export default function ContactsPage() {
                 <div>
                   <h3 className="font-medium mb-1">Есть ли у вас вакансии?</h3>
                   <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                    Актуальные вакансии публикуются в разделе "Карьера" на нашем сайте. 
+                    Актуальные вакансии публикуются в разделе &quot;Карьера&quot; на нашем сайте. 
                     Также вы можете отправить резюме на почту hr@ctokenx.com.
                   </p>
                 </div>

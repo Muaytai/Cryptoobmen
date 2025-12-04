@@ -1,13 +1,13 @@
 "use client";
 
-import {useForm} from "react-hook-form";
+import {Controller, useForm} from "react-hook-form";
 import {z} from "zod";
 import {zodResolver} from "@hookform/resolvers/zod";
-import {useEffect} from "react";
 import {Button} from "@/components/ui/Button";
 import styles from "./withdrawalForm.module.css";
 import {FormInput} from "../forms/FormInput";
 import FormSelect from "../forms/FormSelect";
+import {OptionType} from "../types/types";
 
 const schema = z.object({
   bill: z.string().min(1, "Выберите лицевой счет"),
@@ -29,7 +29,7 @@ export const WithdrawalForm = () => {
     register,
     handleSubmit,
     formState: {errors},
-    setFocus,
+    control,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -38,10 +38,6 @@ export const WithdrawalForm = () => {
       wallet: "",
     },
   });
-
-  // useEffect(() => {
-  //   setFocus("address");
-  // }, [setFocus]);
 
   const onSubmit = (data: FormData) => {
     console.log("Submitted:", data);
@@ -72,15 +68,22 @@ export const WithdrawalForm = () => {
 
       <div className={styles.divider}></div>
 
-      <FormSelect
-        label="Крипто-кошелек:"
-        required
-        options={options}
-        error={errors.wallet?.message}
-        {...register("wallet")}
-      >
-        <option value="Лицевой ( 170.43 USDT)">Лицевой ( 170.43 USDT)</option>
-      </FormSelect>
+      <Controller
+        control={control}
+        name="wallet"
+        render={({field}) => (
+          <FormSelect
+            label="Крипто-кошелек:"
+            required
+            options={options}
+            error={errors.wallet?.message}
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            name={field.name}
+          />
+        )}
+      />
 
       <div className={styles.divider}></div>
 

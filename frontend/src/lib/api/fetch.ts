@@ -1,18 +1,6 @@
-import { getCookie } from '../cookies';
-
-interface Tokens {
-  access: string;
-  refresh: string;
-}
-
 // Базовый URL API, устанавливаемый из переменных окружения
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 console.log('Базовый URL API:', API_BASE_URL);
-
-interface ApiResponse<T = any> {
-  data: T;
-  error?: string;
-}
 
 // Функция для получения заголовков с авторизацией
 const getAuthHeaders = (isFormData = false, customHeaders: Record<string, string> = {}) => {
@@ -31,7 +19,7 @@ const getAuthHeaders = (isFormData = false, customHeaders: Record<string, string
 };
 
 // Основная функция для выполнения запросов к API
-const fetcher = async (url: string, options: RequestInit = {}) => {
+const fetcher = async <T = unknown>(url: string, options: RequestInit = {}): Promise<T> => {
   try {
     // Формируем полный URL для запроса
     const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
@@ -62,10 +50,10 @@ const fetcher = async (url: string, options: RequestInit = {}) => {
 
     // Если ответ не успешный, выбрасываем ошибку
     if (!response.ok) {
-      let errorData;
+      let errorData: { detail?: string; message?: string } | undefined;
       try {
         errorData = await response.json();
-      } catch (e) {
+      } catch (_err) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
       
@@ -75,9 +63,9 @@ const fetcher = async (url: string, options: RequestInit = {}) => {
     // Проверяем content-type для определения формата ответа
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
-      return await response.json();
+      return (await response.json()) as T;
     } else {
-      return await response.text();
+      return (await response.text()) as T;
     }
   } catch (error) {
     console.error('Ошибка API запроса:', error);
@@ -87,38 +75,38 @@ const fetcher = async (url: string, options: RequestInit = {}) => {
 
 // API клиент с методами для разных типов запросов
 const api = {
-  get: async (url: string, options: RequestInit = {}) => {
-    return fetcher(url, { ...options, method: 'GET' });
+  get: async <T = unknown>(url: string, options: RequestInit = {}): Promise<T> => {
+    return fetcher<T>(url, { ...options, method: 'GET' });
   },
   
-  post: async (url: string, data: any, options: RequestInit = {}) => {
-    return fetcher(url, {
+  post: async <TResponse = unknown, TBody = unknown>(url: string, data: TBody, options: RequestInit = {}): Promise<TResponse> => {
+    return fetcher<TResponse>(url, {
       ...options,
       method: 'POST',
       body: JSON.stringify(data)
     });
   },
   
-  put: async (url: string, data: any, options: RequestInit = {}) => {
-    return fetcher(url, {
+  put: async <TResponse = unknown, TBody = unknown>(url: string, data: TBody, options: RequestInit = {}): Promise<TResponse> => {
+    return fetcher<TResponse>(url, {
       ...options,
       method: 'PUT',
       body: JSON.stringify(data)
     });
   },
   
-  patch: async (url: string, data: any, options: RequestInit = {}) => {
+  patch: async <TResponse = unknown, TBody = unknown>(url: string, data: TBody, options: RequestInit = {}): Promise<TResponse> => {
     // Для FormData не сериализуем в JSON
     const body = data instanceof FormData ? data : JSON.stringify(data);
-    return fetcher(url, {
+    return fetcher<TResponse>(url, {
       ...options,
       method: 'PATCH',
       body
     });
   },
   
-  delete: async (url: string, options: RequestInit = {}) => {
-    return fetcher(url, { ...options, method: 'DELETE' });
+  delete: async <TResponse = unknown>(url: string, options: RequestInit = {}): Promise<TResponse> => {
+    return fetcher<TResponse>(url, { ...options, method: 'DELETE' });
   }
 };
 

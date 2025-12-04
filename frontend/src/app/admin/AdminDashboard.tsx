@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import api from "@/lib/api/fetch";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -45,6 +46,27 @@ interface RecentActivity {
   currency?: string;
 }
 
+interface User {
+  id: number;
+  username: string;
+  email: string;
+  date_joined: string;
+}
+
+interface Transaction {
+  id: number;
+  type_display: string;
+  amount: string;
+  crypto_info?: {
+    symbol: string;
+  };
+  timestamp: string;
+  user_info?: {
+    username: string;
+    email: string;
+  };
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
@@ -52,35 +74,31 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const getAuthHeaders = useAuthStore((s) => s.getAuthHeaders);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const headers = getAuthHeaders();
       
-      // Загружаем статистику дашборда
-      const statsRes: any = await api.get("/accounts/users/dashboard_stats/", { headers });
-      const dashboardStats = statsRes?.data ?? statsRes;
+      const statsRes = await api.get<DashboardStats>("/accounts/users/dashboard_stats/", { headers });
+      const dashboardStats = statsRes.data;
       
       setStats(dashboardStats);
 
-      // Загружаем недавнюю активность отдельно
-      const usersRes: any = await api.get("/accounts/users/admin_list/", { headers });
-      const users = usersRes?.data ?? usersRes;
+      const usersRes = await api.get<{ results: User[] }>("/accounts/users/admin_list/", { headers });
+      const users = usersRes.data.results ?? [];
       
-      const transactionsRes: any = await api.get("/transactions/transactions/admin_list/?page_size=50", { headers });
+      const transactionsRes = await api.get<{ results: Transaction[] }>("/transactions/transactions/admin_list/?page_size=50", { headers });
       const transactions = transactionsRes?.data?.results ?? [];
 
-      // Генерируем недавнюю активность
       const activity: RecentActivity[] = [];
       const now = new Date();
       const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       
-      // Добавляем недавние регистрации
       users
-        .filter((u: any) => new Date(u.date_joined) >= yesterday)
+        .filter((u: User) => new Date(u.date_joined) >= yesterday)
         .slice(0, 5)
-        .forEach((u: any) => {
+        .forEach((u: User) => {
           activity.push({
             id: u.id,
             type: 'user_registration',
@@ -90,11 +108,10 @@ export default function AdminDashboard() {
           });
         });
 
-      // Добавляем недавние транзакции
       transactions
-        .filter((t: any) => new Date(t.timestamp) >= yesterday)
+        .filter((t: Transaction) => new Date(t.timestamp) >= yesterday)
         .slice(0, 10)
-        .forEach((t: any) => {
+        .forEach((t: Transaction) => {
           activity.push({
             id: t.id,
             type: 'transaction',
@@ -106,20 +123,23 @@ export default function AdminDashboard() {
           });
         });
 
-      // Сортируем по времени и берем последние 15
       activity.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setRecentActivity(activity.slice(0, 15));
 
-    } catch (e: any) {
-      setError(e?.message || "Не удалось загрузить данные дашборда");
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError("Не удалось загрузить данные дашборда");
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [getAuthHeaders]);
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [fetchDashboardData]);
 
   const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -345,7 +365,7 @@ export default function AdminDashboard() {
       <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100 p-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">🚀 Быстрые действия</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <a
+          <Link
             href="/admin/users"
             className="flex items-center gap-3 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
           >
@@ -354,8 +374,8 @@ export default function AdminDashboard() {
               <h3 className="font-medium text-gray-900">Пользователи</h3>
               <p className="text-sm text-gray-500">Управление пользователями</p>
             </div>
-          </a>
-          <a
+          </Link>
+          <Link
             href="/admin/transactions"
             className="flex items-center gap-3 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
           >
@@ -364,8 +384,8 @@ export default function AdminDashboard() {
               <h3 className="font-medium text-gray-900">Транзакции</h3>
               <p className="text-sm text-gray-500">Просмотр транзакций</p>
             </div>
-          </a>
-          <a
+          </Link>
+          <Link
             href="/admin/crypto"
             className="flex items-center gap-3 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
           >
@@ -374,8 +394,8 @@ export default function AdminDashboard() {
               <h3 className="font-medium text-gray-900">Криптовалюты</h3>
               <p className="text-sm text-gray-500">Управление валютами</p>
             </div>
-          </a>
-          <a
+          </Link>
+          <Link
             href="/admin/wallets"
             className="flex items-center gap-3 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
           >
@@ -384,7 +404,7 @@ export default function AdminDashboard() {
               <h3 className="font-medium text-gray-900">Кошельки</h3>
               <p className="text-sm text-gray-500">Управление кошельками</p>
             </div>
-          </a>
+          </Link>
         </div>
       </div>
     </div>

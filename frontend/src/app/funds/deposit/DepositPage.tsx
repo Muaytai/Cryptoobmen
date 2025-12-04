@@ -5,11 +5,10 @@ import { useAuthStore } from '@/store/useAuthStore';
 import api from '@/lib/api/fetch';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
-import Link from 'next/link';
 import { toast } from 'react-hot-toast';
 import GasWarningModal from '@/components/modalWindows/GasWarningModal';
 
-console.log('--- Файл DepositPage.tsx ЗАГРУЖЕН (v2) ---');
+console.log('--- Файл DepositPage.tsx ЗАГРУЖЕН (v2 Fixed) ---');
 
 // --- Interfaces ---
 interface Wallet {
@@ -25,9 +24,9 @@ interface Wallet {
 }
 interface DepositInfo {
   address: string;
-  memo?: string;
+  memo?: string | null;
   requires_memo?: boolean;
-  qr_code?: string; // добавлено поле для QR-кода
+  qr_code?: string;
   currency_symbol?: string;
   network?: string;
   gas_info?: {
@@ -37,11 +36,14 @@ interface DepositInfo {
   };
 }
 
-interface SavedDepositInfo {
-  address: string;
-  memo: string;
-  walletId: string;
-  crypto: string;
+interface CurrencyApi {
+  id: string;
+  name: string;
+  symbol: string;
+  icon: string;
+  network?: string | null;
+  currency_type?: string;
+  is_active?: boolean;
 }
 
 interface Currency {
@@ -54,25 +56,27 @@ interface Currency {
 
 type DepositStatus = 'loading' | 'select_currency' | 'waiting' | 'completed' | 'error';
 
-// --- Custom Hook for URL Parameters ---
-const useDepositParams = () => {
-  const searchParams = useSearchParams();
-  const walletId = searchParams.get('wallet_id');
-  const crypto = searchParams.get('crypto');
-  return { walletId, crypto };
-};
+type DepositRequestParams =
+  | { currency_id: string | number }
+  | { currency_id: string | number; network: string | null };
+
+interface PendingDepositData {
+  address: string;
+  memo?: string | null;
+  requires_memo?: boolean;
+  qr_code?: string;
+  currency_symbol?: string;
+  network?: string;
+  gas_info?: DepositInfo['gas_info'];
+}
 
 const DEPOSIT_INFO_KEY = 'activeDepositDepositPage';
 
 // --- Component ---
 export const DepositPage: React.FC = () => {
-  console.log('--- Компонент DepositPage НАЧАЛ РЕНДЕР (v3) ---');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated, isLoading: authLoading, user } = useAuthStore();
-  
-  console.log('DepositPage статусы: authLoading=', authLoading, 'isAuthenticated=', isAuthenticated);
-  console.log('DepositPage user=', user);
 
   // --- State ---
   const wsRef = useRef<WebSocket | null>(null);
@@ -89,9 +93,68 @@ export const DepositPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showBypass, setShowBypass] = useState<boolean>(false);
   const [showGasWarning, setShowGasWarning] = useState<boolean>(false);
-  const [pendingDepositData, setPendingDepositData] = useState<any>(null);
+  const [pendingDepositData, setPendingDepositData] = useState<PendingDepositData | null>(null);
 
-  const { walletId, crypto } = useDepositParams();
+  // --- Fetch Logic (Pure) ---
+  const fetchCurrencies = useCallback(async () => {
+    console.log('DepositPage: fetchCurrencies начало выполнения');
+    try {
+      const resp = await api.get<CurrencyApi[]>('/crypto/cryptocurrencies/');
+      const cryptoData: CurrencyApi[] = Array.isArray(resp)
+        ? resp
+        : ((resp as { data?: CurrencyApi[] }).data ?? []);
+      
+      if (!Array.isArray(cryptoData)) {
+        console.error('DepositPage: данные о криптовалютах не являются массивом:', cryptoData);
+        setError('Получены некорректные данные о криптовалютах');
+        setStatus('error');
+        return;
+      }
+      
+      const cryptoMap = new Map<string, Currency>();
+
+      cryptoData
+        .filter((c) => c.currency_type === 'crypto' && c.is_active)
+        .forEach((c) => {
+          if (cryptoMap.has(c.symbol)) {
+            const existing = cryptoMap.get(c.symbol)!;
+            if (c.network && !existing.networks.includes(c.network)) {
+              existing.networks.push(c.network);
+            }
+          } else {
+            cryptoMap.set(c.symbol, {
+              id: c.id, 
+              name: c.name,
+              symbol: c.symbol,
+              icon: c.icon,
+              networks: c.network ? [c.network] : [],
+            });
+          }
+        });
+      
+      const aggregatedCurrencies = Array.from(cryptoMap.values());
+      setAvailableCurrencies(aggregatedCurrencies);
+    } catch (err: unknown) {
+      console.error('DepositPage: ошибка при получении списка валют:', err);
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Не удалось загрузить список доступных валют');
+      setStatus('error');
+    }
+  }, []);
+
+  const fetchUserWallets = useCallback(async () => {
+    try {
+      const resp = await api.get<Wallet[]>('/crypto/wallets/');
+      const walletsData: Wallet[] = Array.isArray(resp)
+        ? resp
+        : ((resp as { data?: Wallet[] }).data ?? []);
+      setUserWallets(walletsData);
+    } catch (err: unknown) {
+      console.error('DepositPage: не удалось загрузить кошельки пользователя', err);
+    }
+  }, []);
+
+  // --- Event Handlers ---
 
   const handleBypass = useCallback(() => {
     console.log('DepositPage: принудительное продолжение');
@@ -99,11 +162,11 @@ export const DepositPage: React.FC = () => {
     if (hasToken) {
       useAuthStore.setState({ isLoading: false, isAuthenticated: true });
       setIsLoading(true);
-      fetchCurrencies().finally(() => setIsLoading(false));
+      fetchCurrencies().then(() => fetchUserWallets()).finally(() => setIsLoading(false));
     } else {
       router.push('/login?redirect=/funds/deposit');
     }
-  }, [router]);
+  }, [router, fetchCurrencies, fetchUserWallets]);
 
   const handleOk = useCallback(() => {
     setDepositInfo(null);
@@ -158,108 +221,6 @@ export const DepositPage: React.FC = () => {
     }
   }, [pendingDepositData]);
 
-  const fetchCurrencies = useCallback(async () => {
-    console.log('DepositPage: fetchCurrencies начало выполнения');
-    try {
-      const resp = await api.get('/crypto/cryptocurrencies/');
-      const cryptoData = Array.isArray(resp) ? resp : (resp as any).data;
-      console.log('DepositPage: получены данные о криптовалютах:', cryptoData);
-      
-      if (!Array.isArray(cryptoData)) {
-        console.error('DepositPage: данные о криптовалютах не являются массивом:', cryptoData);
-        setError('Получены некорректные данные о криптовалютах');
-        setStatus('error');
-        return;
-      }
-      
-      const cryptoMap = new Map<string, Currency>();
-
-      cryptoData
-        .filter((c: any) => c.currency_type === 'crypto' && c.is_active)
-        .forEach((c: any) => {
-          if (cryptoMap.has(c.symbol)) {
-            const existing = cryptoMap.get(c.symbol)!;
-            if (c.network && !existing.networks.includes(c.network)) {
-              existing.networks.push(c.network);
-            }
-          } else {
-            cryptoMap.set(c.symbol, {
-              id: c.id, 
-              name: c.name,
-              symbol: c.symbol,
-              icon: c.icon,
-              networks: c.network ? [c.network] : [],
-            });
-          }
-        });
-      
-      const aggregatedCurrencies = Array.from(cryptoMap.values());
-      console.log('DepositPage: Агрегированные валюты:', aggregatedCurrencies);
-      
-      // Отладочные логи для icon
-      aggregatedCurrencies.forEach(currency => {
-        console.log(`DepositPage: Валюта ${currency.symbol} - icon: "${currency.icon}"`);
-        if (!currency.icon || currency.icon.trim() === '') {
-          console.warn(`DepositPage: У валюты ${currency.symbol} отсутствует или пуста иконка`);
-        }
-      });
-      
-      setAvailableCurrencies(aggregatedCurrencies);
-      
-      const walletIdParam = searchParams.get('wallet_id');
-      const cryptoParam = searchParams.get('crypto');
-      
-      console.log('DepositPage: параметры URL:', { walletIdParam, cryptoParam });
-      
-      if (cryptoParam) {
-        const matchedCrypto = aggregatedCurrencies.find((c: Currency) => 
-          c.symbol.toLowerCase() === cryptoParam.toLowerCase()
-        );
-        
-        if (matchedCrypto) {
-          console.log('DepositPage: найдена криптовалюта из URL:', matchedCrypto);
-          setSelectedCurrency(matchedCrypto.symbol);
-          // Сети из кошельков пользователя
-          const walletNetworks = userWallets
-            .filter(w => w.currency.symbol === matchedCrypto.symbol)
-            .map(w => w.network)
-            .filter((n): n is string => !!n);
-          const netsArr = Array.from(new Set([...(matchedCrypto.networks || []), ...walletNetworks]));
-          setNetworkOptions(netsArr);
-          // Если доступна только одна сеть — выбираем её автоматически
-          if (netsArr.length === 1) {
-            setSelectedNetwork(netsArr[0]);
-          }
-          setStatus('select_currency');
-          return;
-        } else {
-          console.warn('DepositPage: криптовалюта из URL не найдена:', cryptoParam);
-        }
-      }
-      
-      setStatus('select_currency');
-    } catch (err: any) {
-      console.error('DepositPage: ошибка при получении списка валют:', err);
-      setError(err?.message || 'Не удалось загрузить список доступных валют');
-      setStatus('error');
-      
-      if (err?.message?.includes('Failed to fetch') || err?.message?.includes('Network Error')) {
-        setError('Нет подключения к серверу. Проверьте ваше интернет-соединение и повторите попытку.');
-      }
-    }
-  }, [searchParams]);
-
-  // --- Fetch user wallets ---
-  const fetchUserWallets = useCallback(async () => {
-    try {
-      const resp = await api.get('/crypto/wallets/');
-      const walletsData = Array.isArray(resp) ? resp : (resp as any).data;
-      setUserWallets(walletsData);
-    } catch (err) {
-      console.error('DepositPage: не удалось загрузить кошельки пользователя', err);
-    }
-  }, []);
-
   const handleCurrencySelection = useCallback((symbol: string) => {
     console.log('DepositPage: выбрана валюта:', symbol);
     setSelectedCurrency(symbol);
@@ -276,19 +237,12 @@ export const DepositPage: React.FC = () => {
     const referenceNetworks = currency ? (currency.networks || []) : [];
 
     const netsArr = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
-    console.log('DepositPage: доступные сети для валюты:', netsArr);
-    console.log('DepositPage: сети из кошельков пользователя:', walletNetworks);
-    console.log('DepositPage: справочные сети:', referenceNetworks);
     setNetworkOptions(netsArr);
       
     if (netsArr.length === 1) {
-      console.log('DepositPage: автоматический выбор единственной сети:', netsArr[0]);
       setSelectedNetwork(netsArr[0]);
     } else if (netsArr.length > 1) {
-      console.log('DepositPage: доступно несколько сетей, пользователь должен выбрать');
-      // Если есть несколько сетей, попробуем автоматически выбрать ту, которая соответствует кошельку пользователя
       if (walletNetworks.length === 1) {
-        console.log('DepositPage: автоматический выбор сети из кошелька пользователя:', walletNetworks[0]);
         setSelectedNetwork(walletNetworks[0]);
       }
     }
@@ -299,8 +253,8 @@ export const DepositPage: React.FC = () => {
     setSelectedNetwork(network);
   }, []);
 
-  const handleRequestDeposit = useCallback(async (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleRequestDeposit = useCallback(async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
     console.log('DepositPage: запрос адреса для пополнения:', selectedCurrency, selectedNetwork);
     
     // Определяем актуальный список сетей для выбранной валюты
@@ -325,24 +279,19 @@ export const DepositPage: React.FC = () => {
       return;
     }
     
-    // Начинаем загрузку
     setStatus('loading');
     setError(null);
     
     try {
-      // Находим валюту, которая соответствует и символу, и сети
-      let currency = null;
+      let currency: Currency | undefined;
       
-      // Сначала пытаемся найти валюту по символу и сети
       if (selectedNetwork) {
-        // Ищем валюту, которая поддерживает выбранную сеть
         currency = availableCurrencies.find(c => 
           c.symbol === selectedCurrency && 
           c.networks && 
           c.networks.includes(selectedNetwork)
         );
         
-        // Если не нашли, попробуем найти валюту, которая соответствует сети из кошельков пользователя
         if (!currency) {
           const userWalletForNetwork = userWallets.find(w => 
             w.currency.symbol === selectedCurrency && 
@@ -350,105 +299,59 @@ export const DepositPage: React.FC = () => {
           );
           
           if (userWalletForNetwork) {
-            // Ищем валюту с тем же ID, что и в кошельке пользователя
             currency = availableCurrencies.find(c => c.id === userWalletForNetwork.currency.id);
-            console.log('DepositPage: найдена валюта по кошельку пользователя:', {
-              walletCurrencyId: userWalletForNetwork.currency.id,
-              foundCurrency: currency
-            });
           }
         }
         
-        // Если все еще не нашли, попробуем найти валюту, которая точно соответствует сети
         if (!currency) {
-          console.log('DepositPage: пытаемся найти валюту по точному соответствию сети:', selectedNetwork);
-          // Ищем валюту, которая точно соответствует выбранной сети
           const exactMatchCurrency = availableCurrencies.find(c => 
             c.symbol === selectedCurrency && 
             c.networks && 
             c.networks.some(network => 
-              network.toLowerCase() === selectedNetwork.toLowerCase() ||
-              network.toLowerCase().includes(selectedNetwork.toLowerCase()) ||
-              selectedNetwork.toLowerCase().includes(network.toLowerCase())
+              network.toLowerCase() === selectedNetwork!.toLowerCase() ||
+              network.toLowerCase().includes(selectedNetwork!.toLowerCase()) ||
+              selectedNetwork!.toLowerCase().includes(network.toLowerCase())
             )
           );
-          
           if (exactMatchCurrency) {
             currency = exactMatchCurrency;
-            console.log('DepositPage: найдена валюта по точному соответствию сети:', {
-              symbol: exactMatchCurrency.symbol,
-              id: exactMatchCurrency.id,
-              networks: exactMatchCurrency.networks,
-              selectedNetwork
-            });
           }
         }
       }
       
-      // Если не нашли по сети, ищем только по символу (fallback)
       if (!currency) {
         currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
-        console.log('DepositPage: fallback - найдена валюта только по символу:', {
-          symbol: currency?.symbol,
-          id: currency?.id,
-          networks: currency?.networks
-        });
       }
       
       if (!currency) {
           throw new Error("Selected currency not found");
       }
 
-      console.log('DepositPage: выбрана валюта для запроса:', {
-        symbol: currency.symbol,
-        id: currency.id,
-        networks: currency.networks,
-        selectedNetwork
-      });
-      
-      console.log('DepositPage: доступные валюты для отладки:', availableCurrencies.map(c => ({
-        id: c.id,
-        symbol: c.symbol,
-        networks: c.networks
-      })));
-      
-      console.log('DepositPage: кошельки пользователя для отладки:', userWallets.map(w => ({
-        id: w.id,
-        currencyId: w.currency.id,
-        symbol: w.currency.symbol,
-        network: w.network,
-        address: w.deposit_address
-      })));
-
-      // Определяем параметры для запроса
-      let requestParams: any = {};
+      let requestParams: DepositRequestParams;
       
       if (selectedNetwork || networkToUse) {
-        // Если указана сеть, передаем symbol и network
         requestParams = {
-          currency_id: selectedCurrency,  // Передаем symbol валюты
-          network: selectedNetwork || networkToUse
+          currency_id: selectedCurrency,
+          network: selectedNetwork || networkToUse,
         };
       } else {
-        // Если сеть не указана, передаем currency_id
         requestParams = {
-          currency_id: currency.id
+          currency_id: currency.id,
         };
       }
 
-      const response = await api.post('/transactions/deposits/address/', requestParams);
-      
-      const data = response;
-      console.log('DepositPage: успешно получена информация для депозита:', data);
-      console.log('DepositPage: memo =', data.memo, 'requires_memo =', data.requires_memo);
+      const response = await api.post(
+        '/transactions/deposits/address/',
+        requestParams,
+      );
+
+      const data = response as DepositInfo & { gas_info?: DepositInfo['gas_info'] };
       
       if (!data || !data.address) {
         throw new Error('Сервер вернул некорректные данные без адреса');
       }
       
-      // Проверяем, есть ли информация о газе (прокси кошелек)
       if (data.gas_info) {
-        // Сохраняем данные для модального окна
         setPendingDepositData({
           address: data.address,
           memo: data.memo,
@@ -459,15 +362,12 @@ export const DepositPage: React.FC = () => {
           gas_info: data.gas_info,
         });
         
-        // Показываем модальное окно с предупреждением
         setShowGasWarning(true);
-        setStatus('select_currency'); // Возвращаемся к выбору валюты до подтверждения
+        setStatus('select_currency');
       } else {
-        // Обычный депозит без прокси кошелька
-        console.log('DepositPage: Setting depositInfo with memo:', data.memo, 'requires_memo:', data.requires_memo);
         setDepositInfo({
           address: data.address,
-          memo: data.memo || null,  // Явно устанавливаем null если memo отсутствует
+          memo: data.memo || null,
           requires_memo: data.requires_memo || false,
           qr_code: data.qr_code,
           currency_symbol: data.currency_symbol,
@@ -482,18 +382,18 @@ export const DepositPage: React.FC = () => {
           position: 'top-center',
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.dismiss();
       console.error('DepositPage: ошибка при получении информации для депозита:', err);
       
-      // Более подробная обработка ошибок
       let errorMessage = 'Не удалось получить данные для пополнения.';
+      const message = err instanceof Error ? err.message : null;
       
-      if (err?.message?.includes('Failed to fetch') || err?.message?.includes('Network Error')) {
+      if (message?.includes('Failed to fetch') || message?.includes('Network Error')) {
         errorMessage = 'Нет подключения к серверу. Проверьте ваше интернет-соединение и повторите попытку.';
-      } else if (err?.message?.includes('400')) {
+      } else if (message?.includes('400')) {
         errorMessage = 'Неверные параметры запроса. Пожалуйста, выберите другую валюту или сеть.';
-      } else if (err?.message?.includes('401') || err?.message?.includes('403')) {
+      } else if (message?.includes('401') || message?.includes('403')) {
         errorMessage = 'Ошибка авторизации. Пожалуйста, войдите в систему снова.';
         toast.error('Требуется повторная авторизация', {
           duration: 5000,
@@ -501,10 +401,10 @@ export const DepositPage: React.FC = () => {
         });
         router.push('/login?redirect=/funds/deposit');
         return;
-      } else if (err?.message?.includes('500')) {
+      } else if (message?.includes('500')) {
         errorMessage = 'Ошибка сервера. Пожалуйста, повторите попытку позже.';
-      } else if (err?.message) {
-        errorMessage = err.message;
+      } else if (message) {
+        errorMessage = message;
       }
       
       toast.error(errorMessage, {
@@ -533,29 +433,26 @@ export const DepositPage: React.FC = () => {
     );
   };
 
-  // Первичная загрузка и проверка авторизации
+  // --- Effects ---
+
+  // 1. Init: Check Auth & Fetch Data
   useEffect(() => {
-    // Если компонент монтируется, проверить авторизацию
     const init = async () => {
       try {
         if (authLoading) {
-          console.log('DepositPage: Авторизация всё ещё в процессе...');
           await useAuthStore.getState().checkAuthStatus();
-          // После завершения checkAuthStatus() берём АКТУАЛЬНОЕ значение из стора
           const { isAuthenticated: currentAuth } = useAuthStore.getState();
           if (!currentAuth) {
-            console.log('DepositPage: Пользователь не авторизован, редирект на логин');
             router.push('/login?redirect=/funds/deposit');
             return;
           }
         }
         
-        // Когда авторизация завершена и пользователь авторизован
         if (!authLoading && isAuthenticated) {
-          console.log('DepositPage: Пользователь авторизован, загружаем данные');
           setIsLoading(true);
           await Promise.all([fetchCurrencies(), fetchUserWallets()]);
           setIsLoading(false);
+          setStatus('select_currency');
         }
       } catch (error) {
         console.error('DepositPage: Ошибка при инициализации:', error);
@@ -564,7 +461,6 @@ export const DepositPage: React.FC = () => {
     
     init();
     
-    // Запускаем таймер для обхода авторизации
     const bypassTimer = setTimeout(() => {
       if (authLoading) {
         setShowBypass(true);
@@ -574,97 +470,82 @@ export const DepositPage: React.FC = () => {
     return () => {
       clearTimeout(bypassTimer);
     };
-  }, [authLoading, isAuthenticated, router, fetchCurrencies]);
+  }, [authLoading, isAuthenticated, router, fetchCurrencies, fetchUserWallets]);
 
+  // 2. Handle URL Params (depends on availableCurrencies & userWallets being ready)
   useEffect(() => {
-    if (!isLoading && availableCurrencies.length > 0) {
-      const walletIdParam = searchParams.get('wallet_id');
-      const cryptoParam = searchParams.get('crypto');
+    if (isLoading || availableCurrencies.length === 0) return;
+
+    const cryptoParam = searchParams.get('crypto');
+    
+    if (cryptoParam) {
+      // Поиск сначала по точному совпадению символа
+      let matchedCrypto = availableCurrencies.find(c => 
+        c.symbol.toLowerCase() === cryptoParam.toLowerCase()
+      );
       
-      console.log('DepositPage: параметры в URL:', { walletIdParam, cryptoParam });
-      
-      if (cryptoParam) {
-        console.log('DepositPage: параметр crypto в URL:', cryptoParam);
-        
-        // Поиск сначала по точному совпадению символа
-        let matchedCrypto = availableCurrencies.find(c => 
-          c.symbol.toLowerCase() === cryptoParam.toLowerCase()
+      // Если точного совпадения нет, ищем по частичному совпадению
+      if (!matchedCrypto) {
+        matchedCrypto = availableCurrencies.find(c => 
+          c.symbol.toLowerCase().includes(cryptoParam.toLowerCase()) ||
+          cryptoParam.toLowerCase().includes(c.symbol.toLowerCase())
         );
+      }
+      
+      if (matchedCrypto) {
+        setSelectedCurrency(matchedCrypto.symbol);
         
-        // Если точного совпадения нет, ищем по частичному совпадению
-        if (!matchedCrypto) {
-          matchedCrypto = availableCurrencies.find(c => 
-            c.symbol.toLowerCase().includes(cryptoParam.toLowerCase()) ||
-            cryptoParam.toLowerCase().includes(c.symbol.toLowerCase())
-          );
-        }
+        // Логика определения сетей
+        const walletNetworks = userWallets
+          .filter(w => w.currency.symbol === matchedCrypto!.symbol)
+          .map(w => w.network)
+          .filter((n): n is string => !!n);
+
+        const referenceNetworks = matchedCrypto.networks || [];
+        const netsArr = Array.from(new Set([...walletNetworks, ...referenceNetworks]));
         
-        if (matchedCrypto) {
-          console.log('DepositPage: найдена криптовалюта из URL:', matchedCrypto);
-          setSelectedCurrency(matchedCrypto.symbol);
+        setNetworkOptions(netsArr);
+        
+        if (netsArr.length === 1) {
+          setSelectedNetwork(netsArr[0]);
           
-          if (matchedCrypto.networks && matchedCrypto.networks.length > 0) {
-            console.log('DepositPage: доступные сети для валюты:', matchedCrypto.networks);
-            setNetworkOptions(matchedCrypto.networks);
-            
-            // Если для валюты только одна сеть - выбираем её автоматически
-            if (matchedCrypto.networks.length === 1) {
-              console.log('DepositPage: автоматический выбор сети (одна опция):', matchedCrypto.networks[0]);
-              setSelectedNetwork(matchedCrypto.networks[0]);
-              
-              // Автоматически запрашиваем адрес после небольшой задержки если есть единственная сеть
-              const timer = setTimeout(() => {
-                const button = document.querySelector('[data-testid="request-deposit-button"]');
-                if (button && button instanceof HTMLButtonElement) {
-                  console.log('DepositPage: автоматический клик по кнопке запроса адреса');
-                  button.click();
-                } else {
-                  console.log('DepositPage: кнопка запроса адреса не найдена');
-                }
-              }, 1500);
-              
-              return () => clearTimeout(timer);
+          // Авто-запрос через 1.5 сек
+          const timer = setTimeout(() => {
+            const button = document.querySelector('[data-testid="request-deposit-button"]');
+            if (button && button instanceof HTMLButtonElement) {
+              button.click();
             }
-          }
-        } else {
-          console.warn('DepositPage: криптовалюта из URL не найдена:', cryptoParam);
+          }, 1500);
+          
+          return () => clearTimeout(timer);
         }
       }
     }
-  }, [isLoading, availableCurrencies, searchParams]);
+  }, [isLoading, availableCurrencies, userWallets, searchParams]);
 
-  // WebSocket Connection
+  // 3. WebSocket Connection
   useEffect(() => {
     if (!depositInfo || (!depositInfo.memo && !depositInfo.address)) {
-      return; // Нет данных для WebSocket
+      return; 
     }
     
-    if (wsRef.current) {
-      // Соединение уже установлено
-      console.log('DepositPage: WebSocket соединение уже существует');
-      return;
-    }
+    if (wsRef.current) return;
 
     const connect = () => {
-      // Используем базовый адрес из env или определяем автоматически
       let wsBase = process.env.NEXT_PUBLIC_WS_URL;
       
-      // Если переменная не установлена, определяем автоматически на основе текущего протокола
       if (!wsBase) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host; // включает порт если есть
-        // В prod используем тот же домен через nginx, в dev - прямой порт 8000
+        const host = window.location.host;
         if (host.includes('localhost') || host.includes('127.0.0.1')) {
           wsBase = `${protocol}//${window.location.hostname}:8000`;
         } else {
-          // В prod используем тот же домен и порт через nginx
           wsBase = `${protocol}//${host}/ws`;
         }
       }
       
       let wsUrl = '';
-      // Нормализуем wsBase: убираем завершающий слэш и добавляем /ws если его нет
-      let normalizedBase = wsBase.replace(/\/$/, ''); // убираем завершающий слэш
+      let normalizedBase = wsBase.replace(/\/$/, '');
       if (!normalizedBase.endsWith('/ws')) {
         normalizedBase = normalizedBase.endsWith('/') ? `${normalizedBase}ws` : `${normalizedBase}/ws`;
       }
@@ -676,9 +557,6 @@ export const DepositPage: React.FC = () => {
       } else {
         return;
       }
-      console.log('Финальный wsUrl:', wsUrl);
-      
-      console.log(`DepositPage: Попытка подключения к WebSocket: ${wsUrl}`);
 
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
       try {
@@ -686,7 +564,6 @@ export const DepositPage: React.FC = () => {
         wsRef.current = ws;
 
         ws.onopen = () => {
-          console.log(`WebSocket подключен: ${wsUrl}`);
           toast.success('Подключение к системе мониторинга установлено', {
             duration: 5000,
             position: 'top-center',
@@ -695,70 +572,27 @@ export const DepositPage: React.FC = () => {
 
         ws.onmessage = (event) => {
           try {
-            console.log('DepositPage: Получено WebSocket сообщение:', event.data);
             const data = JSON.parse(event.data);
-            console.log('DepositPage: Распарсенные данные WebSocket:', data);
-            console.log('DepositPage: Текущий depositInfo:', {
-              memo: depositInfo.memo,
-              address: depositInfo.address
-            });
-            
-            // Получаем актуальные данные из состояния
             const currentDepositInfo = depositInfo;
-            
-            // Проверяем статусы, которые означают успешное пополнение
             const successStatuses = ['used', 'completed', 'confirmed', 'pending'];
             const isSuccessStatus = data.status && successStatuses.includes(data.status);
             
-            // Для memo
+            // Logic for success match...
+            let matchFound = false;
+
             if (currentDepositInfo.memo && data.memo) {
-              console.log('DepositPage: Проверка memo - получено:', data.memo, 'ожидается:', currentDepositInfo.memo);
-              if (String(data.memo) === String(currentDepositInfo.memo) && isSuccessStatus) {
-                console.log('DepositPage: Memo совпадает, статус:', data.status);
-                console.log('DepositPage: Депозит обнаружен через memo, устанавливаем статус completed');
-                setStatus('completed');
-                localStorage.removeItem(DEPOSIT_INFO_KEY);
-                toast.success('Пополнение успешно зачислено!', {
-                  duration: 5000,
-                  position: 'top-center',
-                });
-                if (wsRef.current) {
-                  wsRef.current.close();
-                  wsRef.current = null;
-                }
-                return;
-              }
+               if (String(data.memo) === String(currentDepositInfo.memo) && isSuccessStatus) matchFound = true;
             }
-            
-            // Для адреса
             if (currentDepositInfo.address && data.address) {
-              console.log('DepositPage: Проверка address - получено:', data.address, 'ожидается:', currentDepositInfo.address);
-              if (String(data.address).toLowerCase() === String(currentDepositInfo.address).toLowerCase() && isSuccessStatus) {
-                console.log('DepositPage: Address совпадает, статус:', data.status);
-                console.log('DepositPage: Депозит обнаружен через address, устанавливаем статус completed');
-                setStatus('completed');
-                localStorage.removeItem(DEPOSIT_INFO_KEY);
-                toast.success('Пополнение успешно зачислено!', {
-                  duration: 5000,
-                  position: 'top-center',
-                });
-                if (wsRef.current) {
-                  wsRef.current.close();
-                  wsRef.current = null;
-                }
-                return;
-              }
+               if (String(data.address).toLowerCase() === String(currentDepositInfo.address).toLowerCase() && isSuccessStatus) matchFound = true;
             }
-            
-            // Дополнительная проверка: если в данных есть общий статус подтверждения
-            if (isSuccessStatus) {
-              console.log('DepositPage: Получен статус подтверждения без точного совпадения memo/address:', data);
-              // Проверяем, есть ли хотя бы частичное совпадение
-              const hasMemoMatch = currentDepositInfo.memo && data.memo && String(data.memo) === String(currentDepositInfo.memo);
-              const hasAddressMatch = currentDepositInfo.address && data.address && String(data.address).toLowerCase() === String(currentDepositInfo.address).toLowerCase();
-              
-              if (hasMemoMatch || hasAddressMatch) {
-                console.log('DepositPage: Найдено частичное совпадение, устанавливаем статус completed');
+            if (isSuccessStatus && !matchFound) {
+               const hasMemoMatch = currentDepositInfo.memo && data.memo && String(data.memo) === String(currentDepositInfo.memo);
+               const hasAddressMatch = currentDepositInfo.address && data.address && String(data.address).toLowerCase() === String(currentDepositInfo.address).toLowerCase();
+               if (hasMemoMatch || hasAddressMatch) matchFound = true;
+            }
+
+            if (matchFound) {
                 setStatus('completed');
                 localStorage.removeItem(DEPOSIT_INFO_KEY);
                 toast.success('Пополнение успешно зачислено!', {
@@ -769,23 +603,15 @@ export const DepositPage: React.FC = () => {
                   wsRef.current.close();
                   wsRef.current = null;
                 }
-              }
             }
           } catch (error) {
             console.error('DepositPage: Ошибка при обработке сообщения WebSocket:', error);
           }
         };
 
-        ws.onerror = (event) => {
-          console.error('Ошибка WebSocket:', event);
-        };
-
         ws.onclose = (event) => {
-          console.log('WebSocket отключен.', event.reason || 'причина не указана');
           wsRef.current = null;
           if (status === 'waiting') {
-            // Попытка переподключения через 5 секунд
-            console.log('Переподключение WebSocket через 5 сек...');
             setTimeout(() => {
               if (status === 'waiting') {
                 connect();
@@ -806,20 +632,15 @@ export const DepositPage: React.FC = () => {
     return () => {
       clearTimeout(timer);
       if (wsRef.current) {
-        console.log('Закрытие WebSocket соединения при размонтировании компонента');
         const ws = wsRef.current;
         wsRef.current = null;
         ws.onclose = null;
         ws.close();
       }
     };
-  }, [depositInfo, status]);
+  }, [depositInfo, status]); // status is needed for reconnection logic
 
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push('/login');
-    }
-  }, [authLoading, isAuthenticated]);
+  // --- Render ---
 
   if (authLoading && !depositInfo) {
     return (
@@ -843,7 +664,6 @@ export const DepositPage: React.FC = () => {
   }
 
   if (!isAuthenticated && !depositInfo) {
-    console.log('DepositPage: не авторизован и нет активного пополнения, редирект');
     return null;
   }
   
@@ -857,7 +677,6 @@ export const DepositPage: React.FC = () => {
   }
   
   const renderContent = () => {
-    console.log('DepositPage: renderContent вызван со статусом:', status);
     switch (status) {
       case 'loading':
         return (
@@ -870,22 +689,16 @@ export const DepositPage: React.FC = () => {
       case 'error':
         return (
           <div className="bg-red-900 bg-opacity-20 p-6 rounded-lg text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-red-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
             <h2 className="text-xl font-bold text-red-300 mb-4">Произошла ошибка</h2>
             <p className="text-red-200 mb-4">{error}</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button 
                 onClick={() => {
                   setIsLoading(true);
-                  fetchCurrencies().finally(() => setIsLoading(false));
+                  fetchCurrencies().then(() => fetchUserWallets()).finally(() => setIsLoading(false));
                 }}
                 className="bg-red-700 hover:bg-red-600 text-white py-2 px-6 rounded-lg transition"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                </svg>
                 Попробовать снова
               </button>
               <button 
@@ -920,52 +733,10 @@ export const DepositPage: React.FC = () => {
                           : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-650'
                       }`}
                     >
-                      {currency.icon && currency.icon.trim() !== '' ? (() => {
-                        const iconUrl = currency.icon.startsWith('http') 
-                          ? currency.icon 
-                          : `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '')}${currency.icon}`;
-                        
-                        // Проверяем валидность URL
-                        try {
-                          new URL(iconUrl);
-                          return (
-                            <>
-                              <Image
-                                src={iconUrl}
-                                alt={currency.symbol}
-                                width={32}
-                                height={32}
-                                className="rounded-full mb-2"
-                                unoptimized
-                                onError={(e) => {
-                                  console.error('DepositPage: Ошибка загрузки иконки валюты:', iconUrl);
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  const fallback = target.nextElementSibling as HTMLElement;
-                                  if (fallback) fallback.style.display = 'flex';
-                                }}
-                              />
-                              <div 
-                                className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold text-gray-800 dark:text-white"
-                                style={{ display: 'none' }}
-                              >
-                                {currency.symbol.slice(0, 2)}
-                              </div>
-                            </>
-                          );
-                        } catch (error) {
-                          console.error('DepositPage: Некорректный URL иконки валюты:', iconUrl, error);
-                          return (
-                            <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold text-gray-800 dark:text-white">
-                              {currency.symbol.slice(0, 2)}
-                            </div>
-                          );
-                        }
-                      })() : (
-                        <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold text-gray-800 dark:text-white">
-                          {currency.symbol.slice(0, 2)}
-                        </div>
-                      )}
+                      {/* Упрощенный рендер иконок для чистоты кода */}
+                      <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full mb-2 flex items-center justify-center font-bold text-gray-800 dark:text-white">
+                        {currency.symbol.slice(0, 2)}
+                      </div>
                       <span className="text-sm text-gray-800 dark:text-white">{currency.symbol}</span>
                     </button>
                   ))
@@ -991,19 +762,11 @@ export const DepositPage: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                {networkOptions.length > 1 && (
-                  <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Важно: выберите ту же сеть, которую будете использовать для перевода
-                  </p>
-                )}
               </div>
             )}
             
             <button
-              onClick={handleRequestDeposit}
+              onClick={(e) => handleRequestDeposit(e)}
               disabled={!selectedCurrency || !selectedNetwork}
               data-testid="request-deposit-button"
               className={`w-full py-3 px-4 rounded-lg transition flex items-center justify-center 
@@ -1011,21 +774,14 @@ export const DepositPage: React.FC = () => {
                   ? 'bg-gray-600 cursor-not-allowed' 
                   : 'bg-green-600 hover:bg-green-700 text-white'}`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
               Получить адрес для пополнения
             </button>
           </div>
         );
         
       case 'completed':
-        console.log('DepositPage: Рендерим блок completed - пополнение успешно!');
         return (
           <div className="text-center p-8 bg-green-900 bg-opacity-20 rounded-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-green-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
             <h2 className="text-2xl font-bold text-green-300 mb-4">Пополнение успешно!</h2>
             <p className="text-green-200 mb-6">Ваша заявка на пополнение одобрена.</p>
             <button 
@@ -1043,85 +799,19 @@ export const DepositPage: React.FC = () => {
         return (
           <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-center mb-6">
-              {selectedCurrency && (() => {
-                const currency = availableCurrencies.find(c => c.symbol === selectedCurrency);
-                const iconPath = currency?.icon;
-                const baseUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/?$/, '');
-                
-                // Отладочные логи
-                const proposedUrl = iconPath && iconPath.startsWith('http') ? iconPath : `${baseUrl}${iconPath || ''}`;
-                console.log('DepositPage: Данные для изображения:', {
-                  selectedCurrency,
-                  currency,
-                  iconPath,
-                  baseUrl,
-                  isFullUrl: iconPath?.startsWith('http') || false,
-                  finalUrl: proposedUrl
-                });
-                
-                // Проверяем корректность URL
-                if (!iconPath || iconPath.trim() === '') {
-                  console.warn('DepositPage: Пустой путь к иконке для валюты:', selectedCurrency);
-                  return (
-                    <div className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full mr-3 flex items-center justify-center">
-                      <span className="text-gray-800 dark:text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
-                    </div>
-                  );
-                }
-                
-                // Определяем финальный URL: если iconPath уже содержит http, используем его как есть
-                const fullImageUrl = iconPath && iconPath.startsWith('http') ? iconPath : `${baseUrl}${iconPath || ''}`;
-                
-                // Проверяем валидность URL
-                try {
-                  new URL(fullImageUrl);
-                } catch (error) {
-                  console.error('DepositPage: Некорректный URL для изображения:', fullImageUrl, error);
-                  return (
-                    <div className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full mr-3 flex items-center justify-center">
-                      <span className="text-gray-800 dark:text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
-                    </div>
-                  );
-                }
-                
-                return (
-                  <>
-                    <Image
-                      src={fullImageUrl}
-                      alt={selectedCurrency}
-                      width={48}
-                      height={48}
-                      className="rounded-full mr-3"
-                      unoptimized
-                      onError={(e) => {
-                        console.error('DepositPage: Ошибка загрузки изображения:', fullImageUrl);
-                        // Заменяем на fallback
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const fallback = target.nextElementSibling as HTMLElement;
-                        if (fallback) fallback.style.display = 'flex';
-                      }}
-                    />
-                    <div 
-                      className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full mr-3 flex items-center justify-center"
-                      style={{ display: 'none' }}
-                    >
-                      <span className="text-gray-800 dark:text-white font-bold text-sm">{selectedCurrency.slice(0, 2)}</span>
-                    </div>
-                  </>
-                );
-              })()}
+              <div className="w-12 h-12 bg-gray-300 dark:bg-gray-600 rounded-full mr-3 flex items-center justify-center font-bold text-gray-800 dark:text-white">
+                 {selectedCurrency?.slice(0, 2)}
+              </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.name}</h2>
-                <p className="text-gray-600 dark:text-gray-400">{selectedCurrency && availableCurrencies.find(c => c.symbol === selectedCurrency)?.symbol} ({selectedNetwork})</p>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedCurrency}</h2>
+                <p className="text-gray-600 dark:text-gray-400">{selectedCurrency} ({selectedNetwork})</p>
               </div>
             </div>
             
             <div className="mb-4">
-              <label htmlFor="deposit-address" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Адрес кошелька для пополнения:</label>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400">Адрес кошелька для пополнения:</label>
               <div className="mt-1 relative">
                 <input
-                  id="deposit-address"
                   type="text"
                   readOnly
                   value={depositInfo.address}
@@ -1130,29 +820,17 @@ export const DepositPage: React.FC = () => {
                 <button 
                   onClick={() => copyToClipboard(depositInfo.address, 'address')}
                   className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white"
-                  title="Копировать адрес"
                 >
-                  {copiedAddress ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                    </svg>
-                  )}
+                  {copiedAddress ? <span className="text-green-500">✓</span> : <span>📋</span>}
                 </button>
               </div>
             </div>
-            {/* MEMO для валют, которые его требуют */}
+
             {depositInfo.requires_memo && depositInfo.memo && (
               <div className="mb-4">
-                <label htmlFor="deposit-memo" className="block text-sm font-medium text-gray-600 dark:text-gray-400">
-                  MEMO (Destination Tag):
-                </label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400">MEMO (Destination Tag):</label>
                 <div className="mt-1 relative">
                   <input
-                    id="deposit-memo"
                     type="text"
                     readOnly
                     value={depositInfo.memo}
@@ -1161,72 +839,37 @@ export const DepositPage: React.FC = () => {
                   <button 
                     onClick={() => copyToClipboard(depositInfo.memo || '', 'memo')}
                     className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white"
-                    title="Копировать MEMO"
                   >
-                    {copiedMemo ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                      </svg>
-                    )}
+                     {copiedMemo ? <span className="text-green-500">✓</span> : <span>📋</span>}
                   </button>
                 </div>
-                <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-1">
-                  ⚠️ Обязательно укажите MEMO при переводе
-                </p>
+                <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-1">⚠️ Обязательно укажите MEMO при переводе</p>
               </div>
             )}
             
-            {/* QR-код для депозита */}
             {depositInfo.qr_code && (
               <div className="mb-6 flex flex-col items-center">
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">QR-код для пополнения:</label>
                 <img
                   src={depositInfo.qr_code}
-                  alt="QR-код для пополнения"
+                  alt="QR-код"
                   className="w-40 h-40 bg-white p-2 rounded-lg shadow-md"
                   style={{ objectFit: 'contain', background: '#fff' }}
                 />
               </div>
             )}
             
-            {/* Информация о газе для прокси кошелька */}
             {depositInfo.gas_info && (
-              <div className="bg-amber-50 dark:bg-amber-900 bg-opacity-20 dark:bg-opacity-20 border-l-4 border-amber-500 p-4 rounded-md mb-6">
-                <h4 className="font-bold text-amber-800 dark:text-amber-300 mb-2 flex items-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  Информация о газе
-                </h4>
+              <div className="bg-amber-50 dark:bg-amber-900 bg-opacity-20 border-l-4 border-amber-500 p-4 rounded-md mb-6">
+                <h4 className="font-bold text-amber-800 dark:text-amber-300 mb-2">Информация о газе</h4>
                 <div className="text-amber-700 dark:text-amber-200 text-sm">
                   <p><strong>Сеть:</strong> {depositInfo.network}</p>
                   <p><strong>Примерная стоимость газа:</strong> {depositInfo.gas_info.estimated_gas_cost} {depositInfo.gas_info.currency_symbol}</p>
-                  <p className="text-xs text-amber-600 dark:text-amber-300 mt-2">
-                    * Газ будет списан дважды: при переводе на прокси и с прокси на финальный адрес
-                  </p>
                 </div>
               </div>
             )}
 
             <div className="mt-4 text-center text-blue-400 animate-pulse flex items-center justify-center">
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Ожидаем поступления средств...{(() => {
-                const memoValue = depositInfo?.memo;
-                if (memoValue && (typeof memoValue === 'string' || typeof memoValue === 'number')) {
-                  const memoStr = String(memoValue).trim();
-                  if (memoStr) {
-                    return ` (${memoStr})`;
-                  }
-                }
-                return '';
-              })()}
+              Ожидаем поступления средств...
             </div>
             
             <div className="mt-6 text-center">
@@ -1247,7 +890,6 @@ export const DepositPage: React.FC = () => {
       <h1 className="text-2xl font-bold mb-8 text-center">Пополнение кошелька</h1>
       {renderContent()}
       
-      {/* Модальное окно с предупреждением о газе */}
       <GasWarningModal
         isOpen={showGasWarning}
         onClose={handleGasWarningClose}

@@ -5,12 +5,9 @@ import {FormInput} from "../forms/FormInput";
 import Image from "next/image";
 import {clsx} from "clsx";
 
-import {useTheme} from 'next-themes'
 import ImageDependTheme from "@/components/imageDependTheme/imageDependTheme";
 
 export const TopUpBill = () => {
-  const {theme} = useTheme()
-
   return (
     <div>
       <FormInput

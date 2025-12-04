@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api from "@/lib/api/fetch";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -29,28 +29,32 @@ export default function CryptoTable() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [showForm, setShowForm] = useState(false);
-  const [editingCrypto, setEditingCrypto] = useState<CryptoRow | null>(null);
+  const [setShowForm] = useState(false);
+  const [setEditingCrypto] = useState<CryptoRow | null>(null);
   const getAuthHeaders = useAuthStore((s) => s.getAuthHeaders);
 
-  const fetchCryptos = async () => {
+  const fetchCryptos = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const headers = getAuthHeaders();
-      const res: any = await api.get("/crypto/cryptocurrencies/", { headers });
-      const data = res?.data ?? res;
+      const res = await api.get<{ results: CryptoRow[] }>("/crypto/cryptocurrencies/", { headers });
+      const data = res.data.results ?? [];
       setCryptos(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setError(e?.message || "Не удалось загрузить криптовалюты");
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError("Не удалось загрузить криптовалюты");
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [getAuthHeaders]);
 
   useEffect(() => {
     fetchCryptos();
-  }, [getAuthHeaders]);
+  }, [fetchCryptos]);
 
   const filteredCryptos = cryptos.filter((crypto) => {
     const matchesSearch = 
@@ -78,8 +82,12 @@ export default function CryptoTable() {
         { headers }
       );
       await fetchCryptos();
-    } catch (e: any) {
-      setError(e?.message || "Не удалось обновить статус криптовалюты");
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError("Не удалось обновить статус криптовалюты");
+      }
     }
   };
 
@@ -90,8 +98,12 @@ export default function CryptoTable() {
       const headers = getAuthHeaders();
       await api.delete(`/crypto/cryptocurrencies/${cryptoId}/`, { headers });
       await fetchCryptos();
-    } catch (e: any) {
-      setError(e?.message || "Не удалось удалить криптовалюту");
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError("Не удалось удалить криптовалюту");
+      }
     }
   };
 
@@ -285,8 +297,7 @@ export default function CryptoTable() {
                           crypto.is_active 
                             ? "bg-red-100 text-red-700 hover:bg-red-200" 
                             : "bg-green-100 text-green-700 hover:bg-green-200"
-                        }`}
-                      >
+                        }`}>
                         {crypto.is_active ? "Деактивировать" : "Активировать"}
                       </button>
                       <button

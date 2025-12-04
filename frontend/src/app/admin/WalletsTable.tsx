@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import api from "@/lib/api/fetch";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -36,24 +36,27 @@ export default function WalletsTable() {
   const [filterCrypto, setFilterCrypto] = useState("all");
   const getAuthHeaders = useAuthStore((s) => s.getAuthHeaders);
 
-  const fetchWallets = async () => {
+  // Обернули в useCallback для стабильности ссылки на функцию
+  const fetchWallets = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const headers = getAuthHeaders();
-      const res: any = await api.get("/crypto/wallets/", { headers });
-      const data = res?.data ?? res;
+      const res = await api.get<WalletRow[]>("/crypto/wallets/", { headers });
+      const data =
+        (res as { data?: WalletRow[] }).data ?? (Array.isArray(res) ? res : []);
       setWallets(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setError(e?.message || "Не удалось загрузить кошельки");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : null;
+      setError(message || "Не удалось загрузить кошельки");
     } finally {
       setLoading(false);
     }
-  };
+  }, [getAuthHeaders]);
 
   useEffect(() => {
     fetchWallets();
-  }, [getAuthHeaders]);
+  }, [fetchWallets]);
 
   const filteredWallets = wallets.filter((wallet) => {
     const matchesSearch = 
@@ -86,8 +89,9 @@ export default function WalletsTable() {
         { headers }
       );
       await fetchWallets();
-    } catch (e: any) {
-      setError(e?.message || "Не удалось обновить статус кошелька");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : null;
+      setError(message || "Не удалось обновить статус кошелька");
     }
   };
 

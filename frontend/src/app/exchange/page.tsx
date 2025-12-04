@@ -64,6 +64,19 @@ interface ExchangeCalculation {
   fee_usd?: number;
 }
 
+const extractList = <T,>(payload: unknown): T[] => {
+  if (Array.isArray(payload)) {
+    return payload as T[];
+  }
+  if (payload && typeof payload === 'object') {
+    const data = (payload as { data?: unknown }).data;
+    if (Array.isArray(data)) {
+      return data as T[];
+    }
+  }
+  return [];
+};
+
 function ExchangePageClientInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -84,7 +97,6 @@ function ExchangePageClientInner() {
   
   // Состояния для UI
   const [loading, setLoading] = useState<boolean>(true);
-  const [calculating, setCalculating] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
@@ -118,9 +130,9 @@ function ExchangePageClientInner() {
             api.get('/crypto/wallets/')
         ]);
         
-        const cryptoData = Array.isArray(cryptoResp) ? cryptoResp : (cryptoResp as any).data;
-        const pairsData = Array.isArray(pairsResp) ? pairsResp : (pairsResp as any).data;
-        const walletsData = Array.isArray(walletsResp) ? walletsResp : (walletsResp as any).data;
+        const cryptoData = extractList<Cryptocurrency>(cryptoResp);
+        const pairsData = extractList<ExchangePair>(pairsResp);
+        const walletsData = extractList<Wallet>(walletsResp);
         
         setCryptocurrencies(cryptoData);
         setExchangePairs(pairsData);
@@ -241,7 +253,7 @@ function ExchangePageClientInner() {
     const fetchPrices = async () => {
       try {
         const resp = await api.get('/crypto/prices/latest/');
-        const data = Array.isArray(resp) ? resp : (resp as any).data;
+        const data = extractList<CryptoPrice>(resp);
         setPrices(data);
       } catch (error) {
         console.error('Ошибка при загрузке курсов:', error);
@@ -270,8 +282,8 @@ function ExchangePageClientInner() {
       // Для отладки
       console.log('prices', prices);
       // Для вашей структуры: crypto_id и prices.usd
-      const fromPriceObj = prices.find((p: any) => p.crypto_id === fromCryptoId);
-      const toPriceObj = prices.find((p: any) => p.crypto_id === toCryptoId);
+      const fromPriceObj = prices.find((p) => p.crypto_id === fromCryptoId);
+      const toPriceObj = prices.find((p) => p.crypto_id === toCryptoId);
       const fromPrice = fromPriceObj?.prices?.usd;
       const toPrice = toPriceObj?.prices?.usd;
       if (!fromPrice || !toPrice) {
@@ -368,9 +380,9 @@ function ExchangePageClientInner() {
   const refetchWallets = async () => {
     try {
       const walletsResp = await api.get('/crypto/wallets/');
-      const walletsData = Array.isArray(walletsResp) ? walletsResp : (walletsResp as any).data;
+      const walletsData = extractList<Wallet>(walletsResp);
       setWallets(walletsData);
-    } catch (e) {
+    } catch (err) {
       // Можно обработать ошибку, если нужно
     }
   };
@@ -394,18 +406,24 @@ function ExchangePageClientInner() {
       };
 
       const response = await api.post('/crypto/exchange/execute/', exchangeData);
+      type ExchangeResponse = { success?: boolean; exchange_id?: string; error?: string };
+      const res = response as ExchangeResponse;
 
-      // Если response — это уже JSON-объект:
-      if (response.success) {
+      // Если res — это уже JSON-объект:
+      if (res.success) {
         setError(null);
         setSuccess(true);
-        setExchangeId(response.exchange_id);
-        await refetchWallets(); // обязательно обновить кошельки!
+        setExchangeId(res.exchange_id ?? null);
+        await refetchWallets();
       } else {
-        setError(response.error || 'Произошла неизвестная ошибка при обмене.');
+        setError(res.error || 'Произошла неизвестная ошибка при обмене.');
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Не удалось выполнить обмен. Проверьте баланс и попробуйте снова.');
+    } catch (err) {
+      const message =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : null;
+      setError(message || 'Не удалось выполнить обмен. Проверьте баланс и попробуйте снова.');
     } finally {
       setSubmitting(false);
     }
@@ -641,11 +659,6 @@ function ExchangePageClientInner() {
                 <span className="flex items-center justify-center">
                   <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></span>
                   Обработка...
-                </span>
-              ) : calculating ? (
-                <span className="flex items-center justify-center">
-                  <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></span>
-                  Расчет...
                 </span>
               ) : (
                 'Обменять'
