@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {useState} from 'react';
 import Link from 'next/link';
@@ -10,7 +10,7 @@ import {Input} from "@/components/ui/Input";
 import InputCheckbox from "@/components/modalWindows/InputCheckbox";
 import ReCaptcha from '@/components/ReCaptcha';
 
-export default function RegisterForm() {
+export default function RegisterPageClient() {
     const router = useRouter();
     const {register, error, clearError, isLoading} = useAuthStore();
     const [formData, setFormData] = useState({
@@ -264,3 +264,4 @@ export default function RegisterForm() {
         </div>
     );
 }
+
