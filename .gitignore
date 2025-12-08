@@ -9,6 +9,14 @@ env/
 .env.*
 **/.env.*
 
+# Файлы env без точки (также должны быть исключены)
+env.backend
+**/env.backend
+env.development
+**/env.development
+env.production
+**/env.production
+
 # Но разрешаем примеры конфигураций
 !.env.example
 !frontend/.env.example
