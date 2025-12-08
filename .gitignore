@@ -76,6 +76,9 @@ docker-compose.local.yml
 .env.dev
 .env.prod
 .cursorignore
+.env.development
+.env.production
+
 
 # Скрипты бэкапа и восстановления БД
 backend/backup_db.py
@@ -89,3 +92,17 @@ backend/**/*.json.gz
 backend/*.dat
 backend/get_private_key_from_seed.py
 backend/logs
+
+# Node.js
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Next.js
+.next/
+out/
+.vercel/
+next-env.d.ts
