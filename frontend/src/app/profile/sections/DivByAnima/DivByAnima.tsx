@@ -6,7 +6,7 @@ export const DivByAnima = (): JSX.Element => {
   const userData = {
     name: "Кристина Соколова",
     welcomeMessage: "С возвращением!",
-    profileImage: "/profile/rectangle-12960.png",
+    profileImage: "/profile/rectangle-12960.webp",
     uid: "9999999999",
     verificationType: "Верифицирован",
     userType: "Личный",
@@ -46,7 +46,7 @@ export const DivByAnima = (): JSX.Element => {
           <p className={styles.welcomeMessage}>{userData.welcomeMessage}</p>
           <div className={styles.nameContainer}>
             <h2 className={styles.userName}>{userData.name}</h2>
-            <img className={styles.editIcon} alt="Edit" src="/profile/edit-2.png"/>
+            <img className={styles.editIcon} alt="Edit" src="/profile/edit-2.webp"/>
           </div>
         </div>
       </div>

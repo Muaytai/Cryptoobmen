@@ -23,7 +23,7 @@ const cryptoData = [
     id: "btc",
     name: "BTC",
     fullName: "Bitcoin",
-    image: "/images/profile/image-2-2.png",
+    image: "/images/profile/image-2-2.webp",
     data: [
       { date: '06:00', value: 76000 },
       { date: '12:00', value: 77000 },
@@ -35,7 +35,7 @@ const cryptoData = [
     id: "eth",
     name: "ETH",
     fullName: "Ethereum",
-    image: "/images/profile/image-2-1.png",
+    image: "/images/profile/image-2-1.webp",
     data: [
       { date: '06:00', value: 1400 },
       { date: '12:00', value: 1500 },
@@ -47,7 +47,7 @@ const cryptoData = [
     id: "usdt",
     name: "USDT",
     fullName: "Tether",
-    image: "/images/profile/image-2.png",
+    image: "/images/profile/image-2.webp",
     data: [
       { date: '06:00', value: 0.923 },
       { date: '12:00', value: 0.924 },

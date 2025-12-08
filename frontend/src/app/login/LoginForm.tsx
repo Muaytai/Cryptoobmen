@@ -185,11 +185,11 @@ const LoginFormWithSearchParams = () => {
             }
             <div className={styles.mainFormWrapper}>
                 <div className={styles.imageWrapper}>
-                    <img className={styles.image} src={"/images/chess_mirror.png"} alt="Chess Mirror" />
+                    <img className={styles.image} src={"/images/chess_mirror.webp"} alt="Chess Mirror" />
                 </div>
                 <div className={styles.formBox}>
                     <div className={styles.logoWrapper}>
-                        <img className={styles.logo} src={"/images/logo.png"} alt="Logo" />
+                        <img className={styles.logo} src={"/images/logo.webp"} alt="Logo" />
                     </div>
 
                     <div className={styles.formBoxWrapper}>
