@@ -143,11 +143,11 @@ export default function RegisterForm() {
         <div className="flex min-h-screen items-center justify-center">
             <div className={styles.mainFormWrapper}>
                 <div className={styles.imageWrapper}>
-                    <img className={styles.image} src={"/images/chess_mirror.png"}/>
+                    <img className={styles.image} src={"/images/chess_mirror.webp"}/>
                 </div>
                 <div className={styles.formBox}>
                     <div className={styles.logoWrapper}>
-                        <img className={styles.logo} src={"/images/logo.png"}/>
+                        <img className={styles.logo} src={"/images/logo.webp"}/>
 
                     </div>
 

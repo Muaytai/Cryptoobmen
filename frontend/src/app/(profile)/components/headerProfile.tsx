@@ -15,7 +15,7 @@ interface HeaderProfileProps {
 export const HeaderProfile = ({ user }: HeaderProfileProps): JSX.Element => {
   const userName = user?.first_name || user?.username || "Пользователь";
   const userInitials = userName.substring(0, 2).toUpperCase();
-  const userAvatar = user?.avatar || "/images/profile/rectangle-12960.png";
+  const userAvatar = user?.avatar || "/images/profile/rectangle-12960.webp";
   const router = useRouter();
 
   return (

@@ -75,7 +75,10 @@ INSTALLED_APPS = [
     'django_celery_beat',
 ]
 
-SITE_ID = 3
+# SITE_ID для django-allauth (должен соответствовать ID объекта Site в базе данных)
+# В entrypoint.sh создается Site с id=2, поэтому здесь установлено значение 2
+# Если нужно изменить, обновите также entrypoint.sh и создайте соответствующий Site в БД
+SITE_ID = 2
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

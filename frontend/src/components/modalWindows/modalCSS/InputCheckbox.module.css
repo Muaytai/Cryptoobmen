@@ -23,7 +23,7 @@
 
 /* Отмеченное состояние */
 .checkbox:checked + .label {
-    background-image: url('/images/checkbox.png'); /* Изображение для отмеченного состояния */
+    background-image: url('/images/checkbox.webp'); /* Изображение для отмеченного состояния */
     background-size: cover;
     background-repeat: no-repeat;
     background-position: center;

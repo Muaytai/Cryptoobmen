@@ -288,10 +288,10 @@ export const useEditProfile = () => {
     
     try {
       // Создаем File объект из PNG
-      const pngPath = '/empty_photo.png';
+      const pngPath = '/empty_photo.webp';
       const response = await fetch(pngPath);
       const pngBlob = await response.blob();
-      const pngFile = new File([pngBlob], 'empty-avatar.png', { type: 'image/png' });
+      const pngFile = new File([pngBlob], 'empty-avatar.webp', { type: 'image/webp' });
       
       await updateAvatar(pngFile);
       showSuccess('Установлен дефолтный аватар!');

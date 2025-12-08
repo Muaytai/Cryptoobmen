@@ -35,28 +35,63 @@ class Command(BaseCommand):
                     )
                     
                     # Генерируем адрес для системного кошелька, если его нет
-                    if not system_wallet.deposit_address and currency.network.upper() in ['ERC20', 'ETHEREUM']:
+                    if not system_wallet.deposit_address:
                         try:
-                            # Используем приватный ключ из настроек для Ethereum
-                            if hasattr(settings, 'ETHEREUM_PLATFORM_PRIVATE_KEY'):
-                                from eth_account import Account
-                                account = Account.from_key(settings.ETHEREUM_PLATFORM_PRIVATE_KEY)
-                                system_wallet.deposit_address = account.address
-                                system_wallet.encrypted_private_key = settings.ETHEREUM_PLATFORM_PRIVATE_KEY
-                                system_wallet.save()
+                            network_upper = currency.network.upper() if currency.network else ''
+                            
+                            # Специальная обработка для Ethereum
+                            if network_upper in ['ERC20', 'ETHEREUM']:
+                                # Используем приватный ключ из настроек для Ethereum
+                                if hasattr(settings, 'ETHEREUM_PLATFORM_PRIVATE_KEY'):
+                                    from eth_account import Account
+                                    account = Account.from_key(settings.ETHEREUM_PLATFORM_PRIVATE_KEY)
+                                    system_wallet.deposit_address = account.address
+                                    system_wallet.encrypted_private_key = settings.ETHEREUM_PLATFORM_PRIVATE_KEY
+                                    system_wallet.save()
+                                    self.stdout.write(
+                                        self.style.SUCCESS(f'  Адрес: {system_wallet.deposit_address}')
+                                    )
+                                else:
+                                    # Генерируем новый адрес через сервис
+                                    service = get_blockchain_service(currency.network)
+                                    address, private_key = service.create_new_address()
+                                    system_wallet.deposit_address = address
+                                    system_wallet.encrypted_private_key = private_key
+                                    system_wallet.save()
+                                    self.stdout.write(
+                                        self.style.SUCCESS(f'  Адрес: {system_wallet.deposit_address}')
+                                    )
+                            # Для Bitcoin и других валют, требующих user_id
+                            elif network_upper in ['BTC', 'BITCOIN']:
                                 self.stdout.write(
-                                    self.style.SUCCESS(f'  Адрес: {system_wallet.deposit_address}')
+                                    self.style.WARNING(
+                                        f'  ⚠️  Для Bitcoin используйте команду: python manage.py setup_bitcoin_system_address --network mainnet'
+                                    )
                                 )
+                            # Для других валют пробуем сгенерировать (если не требуется user_id)
                             else:
-                                # Генерируем новый адрес через сервис
-                                service = get_blockchain_service(currency.network)
-                                address, private_key = service.create_new_address()
-                                system_wallet.deposit_address = address
-                                system_wallet.encrypted_private_key = private_key
-                                system_wallet.save()
-                                self.stdout.write(
-                                    self.style.SUCCESS(f'  Адрес: {system_wallet.deposit_address}')
-                                )
+                                try:
+                                    service = get_blockchain_service(currency.network)
+                                    # Пробуем без user_id (для валют, которые это поддерживают)
+                                    try:
+                                        address, private_key = service.create_new_address()
+                                    except TypeError:
+                                        # Если требуется user_id, используем 0 для системного кошелька
+                                        address, private_key = service.create_new_address(user_id=0)
+                                    
+                                    system_wallet.deposit_address = address
+                                    system_wallet.encrypted_private_key = private_key
+                                    system_wallet.save()
+                                    self.stdout.write(
+                                        self.style.SUCCESS(f'  Адрес: {system_wallet.deposit_address}')
+                                    )
+                                except Exception as e:
+                                    self.stdout.write(
+                                        self.style.WARNING(
+                                            f'  ⚠️  Не удалось автоматически создать адрес: {e}\n'
+                                            f'     Используйте специализированную команду для настройки {currency.symbol}'
+                                        )
+                                    )
                         except Exception as e:
                             self.stdout.write(
                                 self.style.WARNING(f'  Не удалось создать адрес: {e}')
