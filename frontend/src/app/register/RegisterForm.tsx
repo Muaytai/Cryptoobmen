@@ -10,7 +10,7 @@ import {Input} from "@/components/ui/Input";
 import InputCheckbox from "@/components/modalWindows/InputCheckbox";
 import ReCaptcha from '@/components/ReCaptcha';
 
-export default function RegisterPageClient() {
+export default function RegisterForm() {
     const router = useRouter();
     const {register, error, clearError, isLoading} = useAuthStore();
     const [formData, setFormData] = useState({

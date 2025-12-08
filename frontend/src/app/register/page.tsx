@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import RegisterPageClient from './RegisterPageClient';
+import RegisterForm from './RegisterForm';
 
 export const metadata: Metadata = {
   title: 'Регистрация - CTokenX | Создайте аккаунт для обмена криптовалют',
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function RegisterPage() {
-  return <RegisterPageClient />;
+  return <RegisterForm />;
 }
