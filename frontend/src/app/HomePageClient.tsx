@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import chessImage from "../../public/images/chess.png";
+import chessImage from "../../public/images/chess.webp";
 import {CSSProperties, Suspense, useEffect, useState} from "react";
 import {useTheme} from "@/lib/ThemeProvider";
 import {useSearchParams, useRouter} from "next/navigation";
@@ -329,7 +329,7 @@ const HomePageInner = () => {
             style={currentStyles.socialButton}
           >
             <Image
-              src="/images/Телеграм.png"
+              src="/images/Телеграм.webp"
               alt="Telegram CTokenX"
               width={24}
               height={24}
@@ -343,7 +343,7 @@ const HomePageInner = () => {
             style={currentStyles.socialButton}
           >
             <Image
-              src="/images/Инста.png"
+              src="/images/Инста.webp"
               alt="Instagram CTokenX"
               width={24}
               height={24}
@@ -354,7 +354,7 @@ const HomePageInner = () => {
 
         <div className="stable-container" style={currentStyles.cryptoIconsContainer}>
           <Image
-            src="/images/crypt-ico.png"
+            src="/images/crypt-ico.webp"
             alt="Поддерживаемые криптовалюты"
             width={850}
             height={70}

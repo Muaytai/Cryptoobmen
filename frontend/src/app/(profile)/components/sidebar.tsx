@@ -125,7 +125,7 @@ export const SideBar = (): JSX.Element => {
             transition={{type: "spring", stiffness: 300, damping: 30}}
           >
             <Link className={styles.mobileLogo} href="/">
-              <ImageDependTheme  srcDark={'/images/logo.png'} srcLight={'/images/logo_light.png'} />
+              <ImageDependTheme  srcDark={'/images/logo.webp'} srcLight={'/images/logo_light.webp'} />
 
             </Link>
             {/* {!isMobile && (

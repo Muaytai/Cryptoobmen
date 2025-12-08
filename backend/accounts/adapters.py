@@ -201,18 +201,33 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         email = extra_data.get('email') or extra_data.get('default_email') or (user.email if user.email else None)
         # Если email в массиве emails, берем первый
         if not email and 'emails' in extra_data and isinstance(extra_data['emails'], list) and len(extra_data['emails']) > 0:
-            email = extra_data['emails']
+            email = extra_data['emails'][0] if isinstance(extra_data['emails'][0], str) else extra_data['emails'][0].get('value', '')
+        
+        # Убеждаемся, что email - это строка
+        if email and not isinstance(email, str):
+            email = str(email)
         
         if email:
-            base_username = email.split('@')
+            # Извлекаем часть email до @ и обрезаем до 150 символов (максимальная длина username в Django)
+            base_username = email.split('@')[0] if '@' in email else email
             # Если base_username пустой, используем часть email до @
             if not base_username:
                 base_username = 'user'
+            # Обрезаем до 150 символов, чтобы избежать обрезки при сохранении
+            # Оставляем место для суффикса с числом (например, "123")
+            max_base_length = 147  # 150 - 3 символа для суффикса
+            if len(base_username) > max_base_length:
+                base_username = base_username[:max_base_length]
             username = base_username
             counter = 1
             # Проверяем существование username и добавляем число если занят
             while User.objects.filter(username=username).exists():
-                username = f"{base_username}{counter}"
+                # Обрезаем base_username еще больше, чтобы поместить число
+                suffix = str(counter)
+                max_with_suffix = 150 - len(suffix)
+                if len(base_username) > max_with_suffix:
+                    base_username = base_username[:max_with_suffix]
+                username = f"{base_username}{suffix}"
                 counter += 1
             user.username = username
         else:
