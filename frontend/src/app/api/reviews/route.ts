@@ -20,7 +20,9 @@ export async function GET(request: NextRequest) {
     const page = searchParams.get('page') || '1';
     const limit = searchParams.get('limit') || '10';
     
-    let apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/transactions/reviews/?page=${page}&limit=${limit}`;
+    // Используем BACKEND_URL, так как NEXT_PUBLIC_API_URL уже содержит /api
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:8000';
+    let apiUrl = `${backendUrl}/api/transactions/reviews/?page=${page}&limit=${limit}`;
     
     // Добавляем параметры фильтрации
     if (filter === 'positive') {
@@ -147,8 +149,10 @@ export async function POST(request: NextRequest) {
       content: data.text,
     };
     
+    // Используем BACKEND_URL, так как NEXT_PUBLIC_API_URL уже содержит /api
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:8000';
     // Отправка данных на бэкенд
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/transactions/reviews/`, {
+    const response = await fetch(`${backendUrl}/api/transactions/reviews/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
