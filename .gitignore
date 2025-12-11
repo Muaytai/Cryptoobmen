@@ -89,3 +89,6 @@ backend/**/*.json.gz
 backend/*.dat
 backend/get_private_key_from_seed.py
 backend/logs
+.cursorignore
+.gitattributes
+.cursorrules
