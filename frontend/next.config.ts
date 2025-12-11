@@ -61,9 +61,63 @@ const nextConfig = {
         source: '/accounts/yandex/login/callback/',
         destination: `${apiUrl}/accounts/yandex/login/callback/`,
       },
+      // Rewrite только специфичные API пути бэкенда
+      // Next.js API routes (/api/reviews, /api/auth/callback, /api/feedback) обрабатываются локально
       {
-        source: '/api/:path*',
-        destination: `${apiUrl}/api/:path*`,
+        source: '/api/accounts/:path*',
+        destination: `${apiUrl}/api/accounts/:path*`,
+      },
+      {
+        source: '/api/crypto/:path*',
+        destination: `${apiUrl}/api/crypto/:path*`,
+      },
+      {
+        source: '/api/transactions/:path*',
+        destination: `${apiUrl}/api/transactions/:path*`,
+      },
+      {
+        source: '/api/auth/login',
+        destination: `${apiUrl}/api/auth/login`,
+      },
+      {
+        source: '/api/auth/logout',
+        destination: `${apiUrl}/api/auth/logout`,
+      },
+      {
+        source: '/api/auth/user',
+        destination: `${apiUrl}/api/auth/user`,
+      },
+      {
+        source: '/api/auth/registration/:path*',
+        destination: `${apiUrl}/api/auth/registration/:path*`,
+      },
+      {
+        source: '/api/auth/password/:path*',
+        destination: `${apiUrl}/api/auth/password/:path*`,
+      },
+      {
+        source: '/api/auth/google',
+        destination: `${apiUrl}/api/auth/google`,
+      },
+      {
+        source: '/api/auth/yandex',
+        destination: `${apiUrl}/api/auth/yandex`,
+      },
+      {
+        source: '/api/token/:path*',
+        destination: `${apiUrl}/api/token/:path*`,
+      },
+      {
+        source: '/api/schema/:path*',
+        destination: `${apiUrl}/api/schema/:path*`,
+      },
+      {
+        source: '/api/docs/:path*',
+        destination: `${apiUrl}/api/docs/:path*`,
+      },
+      {
+        source: '/api/redoc/:path*',
+        destination: `${apiUrl}/api/redoc/:path*`,
       },
     ];
   },

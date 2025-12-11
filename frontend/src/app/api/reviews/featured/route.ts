@@ -15,7 +15,9 @@ type ReviewApiItem = {
 export async function GET() {
   try {
     // Отправляем запрос к бэкенду для получения избранных отзывов
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/transactions/reviews/featured/`, {
+    // NEXT_PUBLIC_API_URL уже содержит /api, поэтому используем /transactions/reviews/featured/
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+    const response = await fetch(`${apiUrl}/transactions/reviews/featured/`, {
       headers: {
         'Content-Type': 'application/json'
       }
