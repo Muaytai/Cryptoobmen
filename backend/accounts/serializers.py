@@ -77,8 +77,11 @@ class CustomRegisterSerializer(RegisterSerializer):
         import requests
         
         secret_key = getattr(settings, 'RECAPTCHA_PRIVATE_KEY', '')
-        required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
+        base_required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
         recaptcha_domain = getattr(settings, 'RECAPTCHA_DOMAIN', 'www.recaptcha.net')
+        user_agent = (self.context.get('request').META.get('HTTP_USER_AGENT', '') if self.context.get('request') else '').lower()
+        # Смягчаем порог для мобильных устройств, где score часто ниже
+        required_score = 0.5 if any(mobile_marker in user_agent for mobile_marker in ['mobile', 'android', 'iphone', 'ipad']) else base_required_score
 
         if not secret_key:
             raise serializers.ValidationError('Серверная проверка reCAPTCHA не настроена.')
@@ -171,8 +174,10 @@ class CustomLoginSerializer(serializers.Serializer):
         Поднимает ValidationError при некорректной проверке.
         """
         secret_key = getattr(settings, 'RECAPTCHA_PRIVATE_KEY', '')
-        required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
+        base_required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
         recaptcha_domain = getattr(settings, 'RECAPTCHA_DOMAIN', 'www.recaptcha.net')
+        user_agent = (self.context.get('request').META.get('HTTP_USER_AGENT', '') if self.context.get('request') else '').lower()
+        required_score = 0.5 if any(mobile_marker in user_agent for mobile_marker in ['mobile', 'android', 'iphone', 'ipad']) else base_required_score
 
         if not secret_key:
             raise serializers.ValidationError('Серверная проверка reCAPTCHA не настроена.')
