@@ -462,7 +462,7 @@
   }
 }
 
-:global(.grecaptcha-badge) {
+.mainFormWrapper :global(.grecaptcha-badge) {
   visibility: hidden;
   pointer-events: none;
 }
