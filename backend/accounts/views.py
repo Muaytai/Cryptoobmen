@@ -30,6 +30,34 @@ from dj_rest_auth.views import LoginView as RestAuthLoginView
 
 class CustomLoginView(RestAuthLoginView):
     serializer_class = CustomLoginSerializer
+    
+    def get_response(self):
+        """
+        Переопределяем для возврата токенов в теле ответа.
+        
+        Безопасность:
+        - HttpOnly куки остаются основным механизмом (защита от XSS)
+        - Токены в body - fallback для случаев, когда куки не работают (мобильные)
+        - Фронтенд должен использовать куки в приоритете, localStorage - только как fallback
+        """
+        original_response = super().get_response()
+        
+        # Если ответ успешный и содержит пользователя
+        if self.user and original_response.status_code == 200:
+            refresh = RefreshToken.for_user(self.user)
+            
+            # Добавляем токены в тело ответа (fallback для мобильных)
+            # HttpOnly куки уже установлены и имеют приоритет по безопасности
+            if hasattr(original_response, 'data') and isinstance(original_response.data, dict):
+                original_response.data['access_token'] = str(refresh.access_token)
+                original_response.data['refresh_token'] = str(refresh)
+            else:
+                original_response.data = {
+                    'access_token': str(refresh.access_token),
+                    'refresh_token': str(refresh),
+                }
+        
+        return original_response
 
 class UserViewSet(viewsets.ModelViewSet):
     """API для работы с пользователями"""
