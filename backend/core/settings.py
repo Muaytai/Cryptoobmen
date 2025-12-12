@@ -522,7 +522,7 @@ SIMPLE_JWT = {
     
     'AUTH_COOKIE': 'access_token',  
     'AUTH_COOKIE_DOMAIN': None,
-    'AUTH_COOKIE_SECURE': False,
+    'AUTH_COOKIE_SECURE': not DEBUG,  # True в продакшене (HTTPS обязателен)
     'AUTH_COOKIE_HTTP_ONLY': True,
     'AUTH_COOKIE_PATH': '/',
     'AUTH_COOKIE_SAMESITE': 'Lax',

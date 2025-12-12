@@ -205,15 +205,32 @@ class CustomLoginSerializer(serializers.Serializer):
             raise serializers.ValidationError('Слишком низкий балл reCAPTCHA.')
 
     def validate(self, attrs):
-        email = attrs.get('email').lower()
+        email = attrs.get('email')
         password = attrs.get('password')
         recaptcha_token = attrs.get('recaptcha_token')
 
-        if not email or not password:
+        # Проверяем наличие всех обязательных полей
+        if not email:
             raise serializers.ValidationError(
-                'Пожалуйста, укажите email и пароль.',
-                code='authorization',
+                {'email': ['Email обязателен для заполнения.']},
+                code='required',
             )
+        
+        if not password:
+            raise serializers.ValidationError(
+                {'password': ['Пароль обязателен для заполнения.']},
+                code='required',
+            )
+        
+        if not recaptcha_token:
+            raise serializers.ValidationError(
+                {'recaptcha_token': ['Токен reCAPTCHA обязателен для заполнения.']},
+                code='required',
+            )
+
+        # Нормализуем email
+        email = email.strip().lower() if isinstance(email, str) else str(email).strip().lower()
+        recaptcha_token = recaptcha_token.strip() if isinstance(recaptcha_token, str) else str(recaptcha_token).strip()
 
         request = self.context.get('request')
 
@@ -221,17 +238,23 @@ class CustomLoginSerializer(serializers.Serializer):
         client_ip = None
         if request:
             # Стандартные заголовки для реального IP за прокси/балансировщиком
-            client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0] or request.META.get('REMOTE_ADDR')
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+            if x_forwarded_for:
+                client_ip = x_forwarded_for.split(',')[0].strip()
+            if not client_ip:
+                client_ip = request.META.get('REMOTE_ADDR')
+        
         self._verify_recaptcha(recaptcha_token, expected_action='login', remote_ip=client_ip)
         user = authenticate(request=request, username=email, password=password)
 
         if not user:
             raise serializers.ValidationError(
-                'Невозможно войти в систему с указанными учетными данными.',
+                {'non_field_errors': ['Невозможно войти в систему с указанными учетными данными.']},
                 code='authorization',
             )
 
         attrs['user'] = user
+        attrs['email'] = email
         return attrs
 
 
