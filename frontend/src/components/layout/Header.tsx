@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
@@ -208,6 +209,87 @@ export function Header() {
           <LogoComponent />
         </div>
 
+        {/* Иконки соцсетей для мобильных - рядом с бургер-меню (справа) */}
+        <div className={styles.mobileSocialButtonsContainer}>
+          <a
+            href="https://t.me/your_channel"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.mobileSocialButton}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = isDarkMode 
+                ? "rgba(124, 58, 237, 0.25)" 
+                : "rgba(124, 58, 237, 0.15)";
+              e.currentTarget.style.borderColor = isDarkMode 
+                ? "rgba(124, 58, 237, 0.6)" 
+                : "rgba(124, 58, 237, 0.4)";
+              e.currentTarget.style.boxShadow = isDarkMode
+                ? "0 4px 16px rgba(124, 58, 237, 0.3)"
+                : "0 4px 16px rgba(124, 58, 237, 0.15)";
+              e.currentTarget.style.transform = "scale(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = isDarkMode 
+                ? "rgba(124, 58, 237, 0.3)" 
+                : "rgba(124, 58, 237, 0.2)";
+              e.currentTarget.style.borderColor = isDarkMode 
+                ? "rgba(124, 58, 237, 0.5)" 
+                : "rgba(124, 58, 237, 0.4)";
+              e.currentTarget.style.boxShadow = isDarkMode
+                ? "0 2px 8px rgba(124, 58, 237, 0.1)"
+                : "0 2px 8px rgba(124, 58, 237, 0.05)";
+              e.currentTarget.style.transform = "scale(1)";
+            }}
+          >
+            <Image
+              src="/images/Телеграм.webp"
+              alt="Telegram CTokenX"
+              width={22}
+              height={22}
+              className={styles.socialButtonImage}
+            />
+          </a>
+          {/* Временно закомментировано */}
+          {/* <a
+            href="https://instagram.com/your_profile"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.mobileSocialButton}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = isDarkMode 
+                ? "rgba(124, 58, 237, 0.25)" 
+                : "rgba(124, 58, 237, 0.15)";
+              e.currentTarget.style.borderColor = isDarkMode 
+                ? "rgba(124, 58, 237, 0.6)" 
+                : "rgba(124, 58, 237, 0.4)";
+              e.currentTarget.style.boxShadow = isDarkMode
+                ? "0 4px 16px rgba(124, 58, 237, 0.3)"
+                : "0 4px 16px rgba(124, 58, 237, 0.15)";
+              e.currentTarget.style.transform = "scale(1.05)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = isDarkMode 
+                ? "rgba(124, 58, 237, 0.3)" 
+                : "rgba(124, 58, 237, 0.2)";
+              e.currentTarget.style.borderColor = isDarkMode 
+                ? "rgba(124, 58, 237, 0.5)" 
+                : "rgba(124, 58, 237, 0.4)";
+              e.currentTarget.style.boxShadow = isDarkMode
+                ? "0 2px 8px rgba(124, 58, 237, 0.1)"
+                : "0 2px 8px rgba(124, 58, 237, 0.05)";
+              e.currentTarget.style.transform = "scale(1)";
+            }}
+          >
+            <Image
+              src="/images/Инста.webp"
+              alt="Instagram CTokenX"
+              width={22}
+              height={22}
+              className={styles.socialButtonImage}
+            />
+          </a> */}
+        </div>
+
         {/* Кнопка бургер-меню для мобильных */}
         <button 
           className={styles.burgerButton}
@@ -230,6 +312,87 @@ export function Header() {
 
         {/* Кнопки действий для десктопа */}
         <div className={styles.actions}>
+          {/* Иконки соцсетей - только на десктопе */}
+          <div className={styles.socialButtonsContainer}>
+            <a
+              href="https://t.me/your_channel"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.socialButton}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = isDarkMode 
+                  ? "rgba(124, 58, 237, 0.25)" 
+                  : "rgba(124, 58, 237, 0.15)";
+                e.currentTarget.style.borderColor = isDarkMode 
+                  ? "rgba(124, 58, 237, 0.6)" 
+                  : "rgba(124, 58, 237, 0.4)";
+                e.currentTarget.style.boxShadow = isDarkMode
+                  ? "0 4px 16px rgba(124, 58, 237, 0.3)"
+                  : "0 4px 16px rgba(124, 58, 237, 0.15)";
+                e.currentTarget.style.transform = "scale(1.05)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = isDarkMode 
+                  ? "rgba(124, 58, 237, 0.1)" 
+                  : "rgba(124, 58, 237, 0.05)";
+                e.currentTarget.style.borderColor = isDarkMode 
+                  ? "rgba(124, 58, 237, 0.3)" 
+                  : "rgba(124, 58, 237, 0.2)";
+                e.currentTarget.style.boxShadow = isDarkMode
+                  ? "0 2px 8px rgba(124, 58, 237, 0.1)"
+                  : "0 2px 8px rgba(124, 58, 237, 0.05)";
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            >
+              <Image
+                src="/images/Телеграм.webp"
+                alt="Telegram CTokenX"
+                width={20}
+                height={20}
+                className={styles.socialButtonImage}
+              />
+            </a>
+            {/* Временно закомментировано */}
+            {/* <a
+              href="https://instagram.com/your_profile"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.socialButton}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = isDarkMode 
+                  ? "rgba(124, 58, 237, 0.25)" 
+                  : "rgba(124, 58, 237, 0.15)";
+                e.currentTarget.style.borderColor = isDarkMode 
+                  ? "rgba(124, 58, 237, 0.6)" 
+                  : "rgba(124, 58, 237, 0.4)";
+                e.currentTarget.style.boxShadow = isDarkMode
+                  ? "0 4px 16px rgba(124, 58, 237, 0.3)"
+                  : "0 4px 16px rgba(124, 58, 237, 0.15)";
+                e.currentTarget.style.transform = "scale(1.05)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = isDarkMode 
+                  ? "rgba(124, 58, 237, 0.1)" 
+                  : "rgba(124, 58, 237, 0.05)";
+                e.currentTarget.style.borderColor = isDarkMode 
+                  ? "rgba(124, 58, 237, 0.3)" 
+                  : "rgba(124, 58, 237, 0.2)";
+                e.currentTarget.style.boxShadow = isDarkMode
+                  ? "0 2px 8px rgba(124, 58, 237, 0.1)"
+                  : "0 2px 8px rgba(124, 58, 237, 0.05)";
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            >
+              <Image
+                src="/images/Инста.webp"
+                alt="Instagram CTokenX"
+                width={20}
+                height={20}
+                className={styles.socialButtonImage}
+              />
+            </a> */}
+          </div>
+          
           <button 
             onClick={toggleTheme} 
             className={styles.themeToggle} 
