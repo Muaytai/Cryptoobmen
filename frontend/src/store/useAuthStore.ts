@@ -31,7 +31,7 @@ export interface User {
 interface Credentials {
   email: string;
   password: string;
-  recaptcha_token: string;
+  recaptcha_token?: string | null;
 }
 
 interface RegistrationData {
@@ -39,7 +39,7 @@ interface RegistrationData {
   email: string;
   password1: string;
   password2: string;
-  recaptcha_token: string;
+  recaptcha_token?: string | null;
 }
 
 interface Tokens {
@@ -154,12 +154,12 @@ export const useAuthStore = create<AuthState>()(
         console.log('[AuthStore] login: Начало входа');
         set({ isLoading: true, error: null });
         try {
-          // Используем токен reCAPTCHA, переданный из формы
-          const payload: Credentials = { ...credentials };
-          
-          // Проверяем, что токен reCAPTCHA присутствует
-          if (!payload.recaptcha_token) {
-            throw new Error('Отсутствует токен reCAPTCHA');
+          const payload: Record<string, string> = {
+            email: credentials.email,
+            password: credentials.password,
+          };
+          if (credentials.recaptcha_token) {
+            payload.recaptcha_token = credentials.recaptcha_token;
           }
 
           // Шаг 1: Выполняем вход и получаем токены (предполагается, что бэкенд устанавливает HttpOnly куки)
@@ -209,7 +209,16 @@ export const useAuthStore = create<AuthState>()(
       register: async (data: RegistrationData) => {
         set({ isLoading: true, error: null });
         try {
-          await api.post('/auth/registration/', data);
+          const payload: Record<string, string> = {
+            email: data.email,
+            username: data.username,
+            password1: data.password1,
+            password2: data.password2,
+          };
+          if (data.recaptcha_token) {
+            payload.recaptcha_token = data.recaptcha_token;
+          }
+          await api.post('/auth/registration/', payload);
           set({ isLoading: false });
         } catch (error) {
           console.error('Ошибка регистрации:', error);

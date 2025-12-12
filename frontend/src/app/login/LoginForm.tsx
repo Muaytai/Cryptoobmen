@@ -103,15 +103,12 @@ const LoginFormWithSearchParams = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Проверяем наличие токена reCAPTCHA
-        if (!recaptchaToken) {
-            console.error('Отсутствует токен reCAPTCHA');
-            return;
-        }
-        
         try {
             // Добавляем токен reCAPTCHA к учетным данным
-            await login({...credentials, recaptcha_token: recaptchaToken});
+            await login({
+                ...credentials,
+                recaptcha_token: recaptchaToken || undefined
+            });
             console.log('[LoginForm] Вход выполнен успешно, данные пользователя загружены');
             
             // Добавляем дополнительную проверку через небольшую задержку для надежности
@@ -236,9 +233,6 @@ const LoginFormWithSearchParams = () => {
                             
                             {/* Компонент reCAPTCHA */}
                             <div className="mb-4">
-                                <p className="text-xs text-gray-400 mb-2">
-                                    reCAPTCHA Site Key: {process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ? 'Настроен' : 'НЕ НАСТРОЕН'}
-                                </p>
                                 <ReCaptcha
                                     siteKey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}
                                     onVerify={(token) => {
@@ -259,7 +253,7 @@ const LoginFormWithSearchParams = () => {
                             <button
                                 type="submit"
                                 className={styles.submitBtn}
-                                disabled={isLoading || !recaptchaToken}
+                                disabled={isLoading}
                             >
                                 {isLoading ? (
                                     <span className={styles.loadingContent}>
