@@ -8,7 +8,6 @@ import {FaEye, FaEyeSlash, FaGoogle, FaApple} from 'react-icons/fa';
 import styles from './Register.module.css';
 import {Input} from "@/components/ui/Input";
 import InputCheckbox from "@/components/modalWindows/InputCheckbox";
-import ReCaptcha from '@/components/ReCaptcha';
 
 export default function RegisterPageClient() {
     const router = useRouter();
@@ -25,7 +24,6 @@ export default function RegisterPageClient() {
     const [passwordError, setPasswordError] = useState('');
     const [networkError, setNetworkError] = useState('');
     const [registrationMessage, setRegistrationMessage] = useState('');
-    const [recaptchaToken, setRecaptchaToken] = useState('');
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const {name, value, type, checked} = e.target;
@@ -71,7 +69,7 @@ export default function RegisterPageClient() {
                 username: formData.username,
                 password1: formData.password,
                 password2: formData.confirmPassword,
-                recaptcha_token: recaptchaToken || undefined,
+                recaptcha_token: undefined,
             });
 
             setRegistrationMessage('Регистрация успешно завершена! Пожалуйста, проверьте вашу почту для подтверждения email. После подтверждения вы сможете войти в систему.');
@@ -210,14 +208,7 @@ export default function RegisterPageClient() {
                                 </button>
                             </div>
                             
-                            {/* Компонент reCAPTCHA */}
-                            <div className="mb-4">
-                                <ReCaptcha
-                                    siteKey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}
-                                    onVerify={setRecaptchaToken}
-                                    action="register"
-                                />
-                            </div>
+                            <div className="mb-4" />
                             
                             <div className={styles.checkboxRow}>
                                 <InputCheckbox
