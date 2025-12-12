@@ -18,7 +18,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
   const [recaptchaToken, setRecaptchaToken] = useState('');
   const [attemptsLeft, setAttemptsLeft] = useState(5); // Показываем пользователю, сколько попыток осталось
   const router = useRouter();
-  const { login, setTokens } = useAuthStore();
+  const { login, setTokens, checkAuthStatus } = useAuthStore();
 
   const handleRecaptchaVerify = (token: string) => {
     setRecaptchaToken(token);
@@ -61,9 +61,8 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         document.cookie = `access_token=${response.data.access_token}; path=/; max-age=3600; samesite=lax;`;
         document.cookie = `refresh_token=${response.data.refresh_token || ''}; path=/; max-age=604800; samesite=lax;`;
         
-        // Используем метод login из useAuthStore для аутентификации
-        // Этот метод автоматически получит данные пользователя
-        await login({ email, password });
+        // Уже получили токены, просто обновим состояние пользователя
+        await checkAuthStatus(true);
         
         if (onSuccess) {
           onSuccess();

@@ -105,15 +105,11 @@ function ExchangePageClientInner() {
   // Загрузка данных при монтировании компонента
   useEffect(() => {
     if (authLoading) {
-      console.log('ExchangePage: authLoading is true, ожидаем завершения проверки сессии...');
       setLoading(true);
       return;
     }
 
-    console.log(`ExchangePage: authLoading is false. isAuthenticated: ${isAuthenticated}, user: ${!!user}`);
-
     if (!isAuthenticated || !user) {
-      console.log('ExchangePage: Пользователь НЕ аутентифицирован (после authLoading: false). Перенаправление на /login.');
       const redirectPath = `/exchange${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
       router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
       return;
@@ -121,7 +117,6 @@ function ExchangePageClientInner() {
     
     // Если пользователь аутентифицирован, загружаем данные страницы
     const fetchData = async () => {
-      console.log('ExchangePage: Пользователь аутентифицирован. Загрузка данных страницы...');
       setLoading(true);
       try {
         const [cryptoResp, pairsResp, walletsResp] = await Promise.all([
@@ -219,8 +214,7 @@ function ExchangePageClientInner() {
         }
         
         setLoading(false);
-      } catch (err) {
-        console.error('Ошибка при получении данных:', err);
+      } catch {
         setError('Не удалось загрузить данные. Пожалуйста, попробуйте позже.');
         setLoading(false);
       }
@@ -255,8 +249,7 @@ function ExchangePageClientInner() {
         const resp = await api.get('/crypto/prices/latest/');
         const data = extractList<CryptoPrice>(resp);
         setPrices(data);
-      } catch (error) {
-        console.error('Ошибка при загрузке курсов:', error);
+      } catch {
         setPrices([]);
       }
     };
@@ -279,8 +272,6 @@ function ExchangePageClientInner() {
         setCalculation(null);
         return;
       }
-      // Для отладки
-      console.log('prices', prices);
       // Для вашей структуры: crypto_id и prices.usd
       const fromPriceObj = prices.find((p) => p.crypto_id === fromCryptoId);
       const toPriceObj = prices.find((p) => p.crypto_id === toCryptoId);
