@@ -42,6 +42,7 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
     margin: '0 auto',
     // Сместим заметно правее
     marginLeft: isMobile ? '4px' : isTablet ? '12px' : '20px',
+    marginTop: isMobile ? '20px' : isTablet ? '30px' : '40px',
     padding: isMobile ? '8px 12px' : '16px 16px',
     background: 'transparent',
     contain: 'layout style',
@@ -69,8 +70,15 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
   const phrase2: CSSProperties = {
     ...phraseBase,
     fontWeight: 700,
-    fontSize: isSmallMobile ? 18 : isMobile ? 20 : isTablet ? 26 : 32,
+    fontSize: isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 32 : 42,
     transitionDelay: '200ms',
+  };
+  const phrase3: CSSProperties = {
+    ...phraseBase,
+    fontWeight: 400,
+    fontSize: isSmallMobile ? 18 : isMobile ? 20 : isTablet ? 26 : 32,
+    transitionDelay: '400ms',
+    whiteSpace: isMobile ? 'normal' : 'nowrap',
   };
   const strongAccent: CSSProperties = { color: colors.accent };
   // Третья строка — немного мельче
@@ -105,12 +113,12 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
   const btnRow: CSSProperties = {
     display: 'flex',
     gap: isMobile ? 10 : 14,
-    marginTop: isMobile ? 48 : 60,
-    flexWrap: 'wrap',
+    marginTop: isSmallMobile ? 60 : isMobile ? 64 : isTablet ? 72 : 80,
+    flexWrap: 'nowrap',
     // Появление кнопок после текста
     opacity: mounted ? 1 : 0,
     transform: mounted ? 'translateY(0)' : 'translateY(8px)',
-    transition: 'opacity 600ms ease 1700ms, transform 600ms ease 1700ms',
+    transition: 'opacity 600ms ease 900ms, transform 600ms ease 900ms',
   };
 
   const btnBase: CSSProperties = {
@@ -127,6 +135,7 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
     background: 'transparent',
     color: colors.accent,
     boxShadow: isDark ? 'inset 0 0 0 0 rgba(124,58,237,0.2)' : 'inset 0 0 0 0 rgba(124,58,237,0.12)',
+    whiteSpace: 'nowrap',
   };
   const btnPrimary: CSSProperties = {
     ...btnBase,
@@ -200,12 +209,9 @@ export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
       }} />
 
       {/* Текстовые строки */}
-      {renderInteractiveLine('ОБМЕН', phrase1)}
-      {renderInteractiveLine('КРИПТОВАЛЮТ', phrase2)}
-      {renderInteractiveLine('БЕЗ ЛИШНИХ ХОДОВ', phrase3Title)}
-      {renderInteractiveLine('БЫСТРО ЧЕТКО ПО‑ТВОЕМУ', phrase4, ['ПО‑ТВОЕМУ'])}
-      {renderInteractiveLine('Комиссия только при выводе', phrase5)}
-      {renderInteractiveLine('Экономь фигуры для решающей партии', phrase6)}
+      {renderInteractiveLine('Инвестируй и получай', phrase1)}
+      {renderInteractiveLine('доход в USDT просто!', phrase2, ['доход', 'в', 'USDT'])}
+      {renderInteractiveLine('Комиссия только при выводе', phrase3)}
 
       {/* Кнопки */}
       <div style={btnRow}>

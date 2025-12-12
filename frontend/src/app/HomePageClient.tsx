@@ -135,14 +135,16 @@ const HomePageInner = () => {
       },
       spacer: {
         flex: 0,
-        height: isMobile ? "20px" : isTablet ? "60px" : "clamp(200px, 40vh, 400px)",
+        height: isMobile ? "100px" : isTablet ? "200px" : "clamp(500px, 70vh, 700px)",
       },
       cryptoIconsContainer: {
         display: "flex",
         justifyContent: "center",
         padding: "0 15px",
-        marginTop: isMobile ? 20 : 40,
-        marginBottom: isFirefox ? 100 : 80,
+        marginTop: isMobile ? 80 : 100,
+        marginBottom: isFirefox 
+          ? (isSmallMobile ? 10 : isMobile ? 15 : isTablet ? 20 : 25)
+          : (isSmallMobile ? 8 : isMobile ? 12 : isTablet ? 18 : 22),
         overflow: "hidden",
         minHeight: isMobile ? 50 : 70,
         height: isMobile ? 50 : 70,
@@ -159,8 +161,8 @@ const HomePageInner = () => {
       bottomSpacer: {
         width: "100%",
         minHeight: isFirefox
-          ? (isSmallMobile ? 60 : isMobile ? 80 : isTablet ? 120 : 160)
-          : (isSmallMobile ? 30 : isMobile ? 50 : isTablet ? 80 : 100),
+          ? (isSmallMobile ? 10 : isMobile ? 15 : isTablet ? 25 : 30)
+          : (isSmallMobile ? 5 : isMobile ? 8 : isTablet ? 15 : 20),
       },
       socialButtonsContainer: {
         position: "fixed",
