@@ -245,6 +245,11 @@
   border-color: #5a3a7a;
 }
 
+:global(.grecaptcha-badge) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .loadingOverlay {
   display: flex;
   align-items: center;
