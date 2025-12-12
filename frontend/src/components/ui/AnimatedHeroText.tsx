@@ -6,11 +6,10 @@ import { useTheme } from '@/lib/ThemeProvider';
 
 interface AnimatedHeroTextProps {
   deviceType: 'mobile-small' | 'mobile' | 'tablet' | 'desktop';
-  showButtons?: boolean; // Флаг для отображения кнопок (по умолчанию true для обратной совместимости)
 }
 
 // Вариант A — «Кинетическая доска»
-export const AnimatedHeroText = ({ deviceType, showButtons = true }: AnimatedHeroTextProps) => {
+export const AnimatedHeroText = ({ deviceType }: AnimatedHeroTextProps) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const router = useRouter();
@@ -42,9 +41,9 @@ export const AnimatedHeroText = ({ deviceType, showButtons = true }: AnimatedHer
     maxWidth: isMobile ? 'none' : isTablet ? 660 : 760,
     margin: '0 auto',
     // Сместим заметно правее
-    marginLeft: isMobile ? '26px' : isTablet ? '12px' : '20px',
-    marginTop: isSmallMobile ? '8px' : isMobile ? '12px' : isTablet ? '30px' : '40px',
-    padding: isSmallMobile ? '4px 8px' : isMobile ? '6px 10px' : '16px 16px',
+    marginLeft: isMobile ? '4px' : isTablet ? '12px' : '20px',
+    marginTop: isMobile ? '20px' : isTablet ? '30px' : '40px',
+    padding: isMobile ? '8px 12px' : '16px 16px',
     background: 'transparent',
     contain: 'layout style',
     willChange: 'auto',
@@ -65,26 +64,20 @@ export const AnimatedHeroText = ({ deviceType, showButtons = true }: AnimatedHer
   const phrase1: CSSProperties = {
     ...phraseBase,
     fontWeight: 700,
-    fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 32 : 42,
+    fontSize: isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 32 : 42,
     transitionDelay: '0ms',
   };
   const phrase2: CSSProperties = {
     ...phraseBase,
     fontWeight: 700,
-    fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 32 : 42,
+    fontSize: isSmallMobile ? 20 : isMobile ? 24 : isTablet ? 32 : 42,
     transitionDelay: '200ms',
   };
   const phrase3: CSSProperties = {
     ...phraseBase,
-    fontWeight: 700,
-    fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 32 : 42,
-    transitionDelay: '400ms',
-  };
-  const phrase4: CSSProperties = {
-    ...phraseBase,
     fontWeight: 400,
-    fontSize: isSmallMobile ? 13 : isMobile ? 15 : isTablet ? 26 : 32,
-    transitionDelay: '600ms',
+    fontSize: isSmallMobile ? 18 : isMobile ? 20 : isTablet ? 26 : 32,
+    transitionDelay: '400ms',
     whiteSpace: isMobile ? 'normal' : 'nowrap',
   };
   const strongAccent: CSSProperties = { color: colors.accent };
@@ -94,6 +87,12 @@ export const AnimatedHeroText = ({ deviceType, showButtons = true }: AnimatedHer
     fontWeight: 600,
     fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 26,
     transitionDelay: '400ms',
+  };
+  const phrase4: CSSProperties = {
+    ...phraseBase,
+    fontWeight: 400,
+    fontSize: isSmallMobile ? 16 : isMobile ? 18 : isTablet ? 22 : 24,
+    transitionDelay: '800ms',
   };
   // Пятая и шестая строки — отделяем увеличенным промежутком и паузой
   const phrase5: CSSProperties = {
@@ -113,9 +112,9 @@ export const AnimatedHeroText = ({ deviceType, showButtons = true }: AnimatedHer
 
   const btnRow: CSSProperties = {
     display: 'flex',
-    gap: isSmallMobile ? 6 : isMobile ? 8 : 14,
-    marginTop: isSmallMobile ? 16 : isMobile ? 24 : isTablet ? 72 : 80,
-    flexWrap: isMobile ? 'wrap' : 'nowrap',
+    gap: isMobile ? 10 : 14,
+    marginTop: isSmallMobile ? 60 : isMobile ? 64 : isTablet ? 72 : 80,
+    flexWrap: 'nowrap',
     // Появление кнопок после текста
     opacity: mounted ? 1 : 0,
     transform: mounted ? 'translateY(0)' : 'translateY(8px)',
@@ -126,10 +125,10 @@ export const AnimatedHeroText = ({ deviceType, showButtons = true }: AnimatedHer
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: isSmallMobile ? '8px 12px' : isMobile ? '10px 16px' : '12px 26px',
+    padding: isMobile ? '10px 18px' : '12px 26px',
     borderRadius: 9999,
     fontWeight: 600,
-    fontSize: isSmallMobile ? 11 : isMobile ? 12 : 16,
+    fontSize: isMobile ? 14 : 16,
     cursor: 'pointer',
     transition: 'all .25s ease',
     border: `1px solid ${colors.accent}`,
@@ -210,93 +209,43 @@ export const AnimatedHeroText = ({ deviceType, showButtons = true }: AnimatedHer
       }} />
 
       {/* Текстовые строки */}
-      {renderInteractiveLine('Инвестируй и', phrase1)}
-      {renderInteractiveLine('получай доход в USDT', phrase2, ['доход', 'в', 'USDT'])}
-      {renderInteractiveLine('просто!', phrase3)}
-      {renderInteractiveLine('Комиссия только при выводе', phrase4)}
+      {renderInteractiveLine('Инвестируй и получай', phrase1)}
+      {renderInteractiveLine('доход в USDT просто!', phrase2, ['доход', 'в', 'USDT'])}
+      {renderInteractiveLine('Комиссия только при выводе', phrase3)}
 
-      {/* Кнопки - показываем только если showButtons=true (для десктопа) */}
-      {showButtons && !isMobile && (
-        <div style={btnRow}>
-          <button
-            type="button"
-            onClick={handleRegister}
-            aria-label="Сделай первый ход"
-            style={btnPrimary}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(124,58,237,0.22)';
-              e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(124,58,237,0.35)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(124,58,237,0.14)';
-              e.currentTarget.style.boxShadow = 'inset 0 0 0 0 rgba(124,58,237,0.2)';
-            }}
-          >
-            Сделай первый ход
-          </button>
-          <button
-            type="button"
-            onClick={handleAbout}
-            aria-label="Правила игры"
-            style={btnBase}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(124,58,237,0.08)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            Правила игры
-          </button>
-        </div>
-      )}
+      {/* Кнопки */}
+      <div style={btnRow}>
+        <button
+          type="button"
+          onClick={handleRegister}
+          aria-label="Сделай первый ход"
+          style={btnPrimary}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(124,58,237,0.22)';
+            e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(124,58,237,0.35)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(124,58,237,0.14)';
+            e.currentTarget.style.boxShadow = 'inset 0 0 0 0 rgba(124,58,237,0.2)';
+          }}
+        >
+          Сделай первый ход
+        </button>
+        <button
+          type="button"
+          onClick={handleAbout}
+          aria-label="Правила игры"
+          style={btnBase}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(124,58,237,0.08)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          Правила игры
+        </button>
+      </div>
     </div>
   );
-};
-
-// Экспортируем стили и обработчики для использования в HomePageClient
-export const getButtonStyles = (deviceType: 'mobile-small' | 'mobile' | 'tablet' | 'desktop') => {
-  const isSmallMobile = deviceType === 'mobile-small';
-  const isMobile = deviceType === 'mobile' || isSmallMobile;
-
-  return {
-    btnRow: {
-      display: 'flex',
-      gap: isSmallMobile ? 6 : isMobile ? 8 : 14,
-      marginTop: isSmallMobile ? 16 : isMobile ? 20 : 80,
-      flexWrap: 'wrap' as const,
-      justifyContent: 'center' as const,
-      width: '100%',
-    } as CSSProperties,
-    btnBase: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: isSmallMobile ? '8px 12px' : isMobile ? '10px 16px' : '12px 26px',
-      borderRadius: 9999,
-      fontWeight: 600,
-      fontSize: isSmallMobile ? 11 : isMobile ? 12 : 16,
-      cursor: 'pointer',
-      transition: 'all .25s ease',
-      border: '1px solid #7C3AED',
-      background: 'transparent',
-      color: '#7C3AED',
-      whiteSpace: 'nowrap' as const,
-    } as CSSProperties,
-    btnPrimary: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: isSmallMobile ? '8px 12px' : isMobile ? '10px 16px' : '12px 26px',
-      borderRadius: 9999,
-      fontWeight: 600,
-      fontSize: isSmallMobile ? 11 : isMobile ? 12 : 16,
-      cursor: 'pointer',
-      transition: 'all .25s ease',
-      border: '1px solid #7C3AED',
-      background: 'rgba(124,58,237,0.14)',
-      color: '#7C3AED',
-      whiteSpace: 'nowrap' as const,
-    } as CSSProperties,
-  };
 };

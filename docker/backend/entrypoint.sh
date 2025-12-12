@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 #!/bin/sh
-=======
-#!/usr/bin/env sh
->>>>>>> 15289855a991ed48da9be2cf9124ebfb7d590251
 set -e
 
 # Ждем доступности базы данных
@@ -18,13 +14,8 @@ import os
 dbname = os.environ.get('POSTGRES_DB')
 user = os.environ.get('POSTGRES_USER')
 password = os.environ.get('POSTGRES_PASSWORD')
-<<<<<<< HEAD
 host = os.environ.get('POSTGRES_HOST', 'postgres')  # По умолчанию используем имя сервиса в Docker
 port = os.environ.get('POSTGRES_PORT', '5432')
-=======
-host = os.environ.get('POSTGRES_HOST')
-port = os.environ.get('POSTGRES_PORT')
->>>>>>> 15289855a991ed48da9be2cf9124ebfb7d590251
 
 print(f'Trying to connect to PostgreSQL at {host}:{port}...')
 
@@ -53,7 +44,6 @@ while True:
         time.sleep(2)
 "
 
-<<<<<<< HEAD
 # Создаем необходимые директории с правильными правами через Python
 # Это нужно, так как volume может быть смонтирован с правами root
 echo "Creating required directories..."
@@ -114,8 +104,6 @@ EOF
     echo "Collecting static files..."
     python manage.py collectstatic --noinput || echo "Collectstatic failed, continuing..."
 fi
-=======
->>>>>>> 15289855a991ed48da9be2cf9124ebfb7d590251
 
 # Запускаем команду, переданную в docker-compose
 echo "Executing command: $@"

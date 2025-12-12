@@ -1,13 +1,9 @@
 #!/bin/bash
 # Полный запуск Celery системы (Workers + Beat)
 
-<<<<<<< HEAD
 # Определяем директорию скрипта
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
-=======
-cd /mnt/d/progects/Cryptoobmen/backend
->>>>>>> 15289855a991ed48da9be2cf9124ebfb7d590251
 
 echo "🚀 Запуск полной Celery системы..."
 echo ""
