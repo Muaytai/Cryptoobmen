@@ -4,7 +4,6 @@ import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { Input } from '@/components/ui/Input';
-import ReCaptcha from '@/components/ReCaptcha';
 import styles from './Login.module.css';
 import { FaEye, FaEyeSlash, FaGoogle, FaSpinner } from 'react-icons/fa';
 import { TbBrandYandex } from 'react-icons/tb';
@@ -19,7 +18,6 @@ const LoginFormWithSearchParams = () => {
     const [credentials, setCredentials] = useState({ email: '', password: '' });
     const [showPassword, setShowPassword] = useState(false);
     const [verificationSuccess, setVerificationSuccess] = useState(false);
-    const [recaptchaToken, setRecaptchaToken] = useState('');
     const modalManagerChangePassword = useModal(false);
 
     // Функция для очистки всех данных аутентификации
@@ -104,10 +102,9 @@ const LoginFormWithSearchParams = () => {
         e.preventDefault();
         
         try {
-            // Добавляем токен reCAPTCHA к учетным данным
             await login({
                 ...credentials,
-                recaptcha_token: recaptchaToken || undefined
+                recaptcha_token: undefined
             });
             console.log('[LoginForm] Вход выполнен успешно, данные пользователя загружены');
             
@@ -231,17 +228,7 @@ const LoginFormWithSearchParams = () => {
                                 </button>
                             </div>
                             
-                            {/* Компонент reCAPTCHA */}
-                            <div className="mb-4">
-                                <ReCaptcha
-                                    siteKey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}
-                                    onVerify={(token) => {
-                                        console.log('reCAPTCHA токен получен:', token ? 'Да' : 'Нет');
-                                        setRecaptchaToken(token);
-                                    }}
-                                    action="login"
-                                />
-                            </div>
+                            <div className="mb-4" />
                             
                             <div className={styles.linkForgotPassword}>
                                 <a className="text-sm  hover:underline">Забыли
