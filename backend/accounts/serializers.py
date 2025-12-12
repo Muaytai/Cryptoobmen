@@ -43,7 +43,7 @@ class CustomRegisterSerializer(RegisterSerializer):
     phone_number = serializers.CharField(required=False, allow_blank=True)
     password1 = serializers.CharField(write_only=True)
     password2 = serializers.CharField(write_only=True)
-    recaptcha_token = serializers.CharField(required=True, write_only=True)
+    recaptcha_token = serializers.CharField(required=False, allow_blank=True, write_only=True)
     
     def get_cleaned_data(self):
         return {
@@ -54,21 +54,10 @@ class CustomRegisterSerializer(RegisterSerializer):
         }
     
     def validate(self, attrs):
-        """Проверяем reCAPTCHA перед валидацией"""
-        recaptcha_token = attrs.get('recaptcha_token')
-        
-        if not recaptcha_token:
-            raise serializers.ValidationError('Токен reCAPTCHA обязателен.')
-        
-        # Проверяем reCAPTCHA
-        request = self.context.get('request')
-        client_ip = None
-        if request:
-            client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0] or request.META.get('REMOTE_ADDR')
-        
-        # Используем тот же метод проверки, что и в CustomLoginSerializer
-        self._verify_recaptcha(recaptcha_token, expected_action='register', remote_ip=client_ip)
-        
+        """
+        Временное отключение обязательной проверки reCAPTCHA:
+        фронтенд и мобильные клиенты могут не прислать токен.
+        """
         return attrs
     
     def _verify_recaptcha(self, token: str, expected_action: str, remote_ip: str | None = None) -> None:
@@ -166,7 +155,7 @@ class CustomLoginSerializer(serializers.Serializer):
     """
     email = serializers.EmailField(required=True, write_only=True)
     password = serializers.CharField(style={'input_type': 'password'}, trim_whitespace=False, write_only=True)
-    recaptcha_token = serializers.CharField(required=True, write_only=True)
+    recaptcha_token = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
     def _verify_recaptcha(self, token: str, expected_action: str, remote_ip: str | None = None) -> None:
         """Проверяет reCAPTCHA v3 токен через серверный endpoint.
@@ -227,29 +216,13 @@ class CustomLoginSerializer(serializers.Serializer):
                 code='required',
             )
         
-        if not recaptcha_token:
-            raise serializers.ValidationError(
-                {'recaptcha_token': ['Токен reCAPTCHA обязателен для заполнения.']},
-                code='required',
-            )
-
         # Нормализуем email
         email = email.strip().lower() if isinstance(email, str) else str(email).strip().lower()
         recaptcha_token = recaptcha_token.strip() if isinstance(recaptcha_token, str) else str(recaptcha_token).strip()
 
         request = self.context.get('request')
 
-        # Проверяем reCAPTCHA перед аутентификацией
-        client_ip = None
-        if request:
-            # Стандартные заголовки для реального IP за прокси/балансировщиком
-            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
-            if x_forwarded_for:
-                client_ip = x_forwarded_for.split(',')[0].strip()
-            if not client_ip:
-                client_ip = request.META.get('REMOTE_ADDR')
-        
-        self._verify_recaptcha(recaptcha_token, expected_action='login', remote_ip=client_ip)
+        # Проверку reCAPTCHA временно отключаем для упрощения входа
         user = authenticate(request=request, username=email, password=password)
 
         if not user:

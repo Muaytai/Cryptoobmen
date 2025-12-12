@@ -59,12 +59,6 @@ export default function RegisterPageClient() {
             return;
         }
         
-        // Проверяем наличие токена reCAPTCHA
-        if (!recaptchaToken) {
-            setPasswordError('Пожалуйста, дождитесь проверки reCAPTCHA');
-            return;
-        }
-
         // Сбрасываем все ошибки перед отправкой
         setPasswordError('');
         setNetworkError('');
@@ -77,7 +71,7 @@ export default function RegisterPageClient() {
                 username: formData.username,
                 password1: formData.password,
                 password2: formData.confirmPassword,
-                recaptcha_token: recaptchaToken,
+                recaptcha_token: recaptchaToken || undefined,
             });
 
             setRegistrationMessage('Регистрация успешно завершена! Пожалуйста, проверьте вашу почту для подтверждения email. После подтверждения вы сможете войти в систему.');
@@ -252,7 +246,7 @@ export default function RegisterPageClient() {
                             <button
                                 type="submit"
                                 className={styles.submitBtn}
-                                disabled={isLoading || !recaptchaToken}
+                                disabled={isLoading}
                             >
                                 {isLoading ? 'Загрузка...' : 'Зарегистрироваться'}
                             </button>
