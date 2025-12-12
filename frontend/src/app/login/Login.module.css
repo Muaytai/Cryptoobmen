@@ -245,7 +245,7 @@
   border-color: #5a3a7a;
 }
 
-:global(.grecaptcha-badge) {
+.mainFormWrapper :global(.grecaptcha-badge) {
   visibility: hidden;
   pointer-events: none;
 }
