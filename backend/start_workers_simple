@@ -1,0 +1,31 @@
+#!/bin/bash
+# Простой скрипт запуска Celery workers
+
+cd /mnt/d/progects/Cryptoobmen/backend
+source venv/bin/activate
+
+echo "🛑 Останавливаем старые процессы..."
+pkill -f celery 2>/dev/null
+sleep 2
+
+echo "🚀 Запускаем workers..."
+
+# High priority
+celery -A core worker -l info -Q high_priority -n high_priority_worker --concurrency=2 &
+echo "High priority worker запущен (PID: $!)"
+
+# Medium priority  
+celery -A core worker -l info -Q medium_priority -n medium_priority_worker --concurrency=2 &
+echo "Medium priority worker запущен (PID: $!)"
+
+# Low priority
+celery -A core worker -l info -Q low_priority -n low_priority_worker --concurrency=2 &
+echo "Low priority worker запущен (PID: $!)"
+
+sleep 3
+echo ""
+echo "📊 Статус:"
+ps aux | grep celery | grep -v grep | wc -l | xargs echo "Активных процессов:"
+
+echo ""
+echo "✅ Готово! Для остановки: pkill -f celery"
