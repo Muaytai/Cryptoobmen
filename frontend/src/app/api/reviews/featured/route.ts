@@ -15,7 +15,12 @@ type ReviewApiItem = {
 export async function GET() {
   try {
     // Отправляем запрос к бэкенду для получения избранных отзывов
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/transactions/reviews/featured/`, {
+    // Используем внутренний URL для Docker или внешний для других окружений
+    const backendUrl = process.env.BACKEND_INTERNAL_URL || 
+                       process.env.NEXT_PUBLIC_BACKEND_URL || 
+                       process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 
+                       'http://backend:8000'; // Fallback для Docker
+    const response = await fetch(`${backendUrl}/api/transactions/reviews/featured/`, {
       headers: {
         'Content-Type': 'application/json'
       }

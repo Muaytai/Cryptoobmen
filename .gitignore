@@ -94,3 +94,6 @@ backend/logs
 **/mcp.json
 **/.cursor/mcp.json
 **/*mcp*.json
+.cursorignore
+.gitattributes
+.cursorrules

@@ -20,7 +20,13 @@ export async function GET(request: NextRequest) {
     const page = searchParams.get('page') || '1';
     const limit = searchParams.get('limit') || '10';
     
-    let apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/transactions/reviews/?page=${page}&limit=${limit}`;
+    // Используем внутренний URL для Docker или внешний для других окружений
+    // В Docker используем имя сервиса, иначе внешний URL
+    const backendUrl = process.env.BACKEND_INTERNAL_URL || 
+                       process.env.NEXT_PUBLIC_BACKEND_URL || 
+                       process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 
+                       'http://backend:8000'; // Fallback для Docker
+    let apiUrl = `${backendUrl}/api/transactions/reviews/?page=${page}&limit=${limit}`;
     
     // Добавляем параметры фильтрации
     if (filter === 'positive') {
@@ -147,8 +153,13 @@ export async function POST(request: NextRequest) {
       content: data.text,
     };
     
+    // Используем внутренний URL для Docker или внешний для других окружений
+    const backendUrl = process.env.BACKEND_INTERNAL_URL || 
+                       process.env.NEXT_PUBLIC_BACKEND_URL || 
+                       process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 
+                       'http://backend:8000'; // Fallback для Docker
     // Отправка данных на бэкенд
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/transactions/reviews/`, {
+    const response = await fetch(`${backendUrl}/api/transactions/reviews/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
