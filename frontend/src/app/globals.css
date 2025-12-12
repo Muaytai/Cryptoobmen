@@ -521,6 +521,12 @@ button {
   object-fit: contain;
 }
 
+/* Скрываем стандартный значок reCAPTCHA, если скрипт всё же загружен */
+.grecaptcha-badge {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* Анимации */
 .fade-in {
   animation: fadeIn 0.3s ease-in-out;

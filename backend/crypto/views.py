@@ -348,13 +348,23 @@ class ExchangeCurrencyView(APIView):
         if to_wallet.currency.symbol == 'USDT':
             to_crypto_coingecko_id = 'tether'
 
-        live_rates = get_exchange_rates([from_crypto_coingecko_id], [to_crypto_coingecko_id])
+        live_rates = get_exchange_rates(['usd'])
 
-        if not live_rates or from_wallet.currency.coingecko_id not in live_rates or to_wallet.currency.coingecko_id not in live_rates[from_wallet.currency.coingecko_id]:
+        # Ожидаем курс каждой валюты к USD и строим кросс-курс
+        if not live_rates:
             return Response({"error": "Не удалось получить актуальный курс для указанной пары."},
                             status=status.HTTP_400_BAD_REQUEST)
-        
-        rate = Decimal(str(live_rates[from_wallet.currency.coingecko_id][to_wallet.currency.coingecko_id]))
+
+        from_rate_data = live_rates.get(from_crypto_coingecko_id) or {}
+        to_rate_data = live_rates.get(to_crypto_coingecko_id) or {}
+        from_usd_rate = from_rate_data.get('usd')
+        to_usd_rate = to_rate_data.get('usd')
+
+        if not from_usd_rate or not to_usd_rate:
+            return Response({"error": "Не удалось получить актуальный курс для указанной пары."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        rate = Decimal(str(from_usd_rate)) / Decimal(str(to_usd_rate))
         amount_to = amount_from * rate
 
         # Комиссия платформы

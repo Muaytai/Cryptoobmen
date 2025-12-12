@@ -43,7 +43,7 @@ class CustomRegisterSerializer(RegisterSerializer):
     phone_number = serializers.CharField(required=False, allow_blank=True)
     password1 = serializers.CharField(write_only=True)
     password2 = serializers.CharField(write_only=True)
-    recaptcha_token = serializers.CharField(required=True, write_only=True)
+    recaptcha_token = serializers.CharField(required=False, allow_blank=True, write_only=True)
     
     def get_cleaned_data(self):
         return {
@@ -54,21 +54,10 @@ class CustomRegisterSerializer(RegisterSerializer):
         }
     
     def validate(self, attrs):
-        """Проверяем reCAPTCHA перед валидацией"""
-        recaptcha_token = attrs.get('recaptcha_token')
-        
-        if not recaptcha_token:
-            raise serializers.ValidationError('Токен reCAPTCHA обязателен.')
-        
-        # Проверяем reCAPTCHA
-        request = self.context.get('request')
-        client_ip = None
-        if request:
-            client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0] or request.META.get('REMOTE_ADDR')
-        
-        # Используем тот же метод проверки, что и в CustomLoginSerializer
-        self._verify_recaptcha(recaptcha_token, expected_action='register', remote_ip=client_ip)
-        
+        """
+        Временное отключение обязательной проверки reCAPTCHA:
+        фронтенд и мобильные клиенты могут не прислать токен.
+        """
         return attrs
     
     def _verify_recaptcha(self, token: str, expected_action: str, remote_ip: str | None = None) -> None:
@@ -77,8 +66,11 @@ class CustomRegisterSerializer(RegisterSerializer):
         import requests
         
         secret_key = getattr(settings, 'RECAPTCHA_PRIVATE_KEY', '')
-        required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
+        base_required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
         recaptcha_domain = getattr(settings, 'RECAPTCHA_DOMAIN', 'www.recaptcha.net')
+        user_agent = (self.context.get('request').META.get('HTTP_USER_AGENT', '') if self.context.get('request') else '').lower()
+        # Смягчаем порог для мобильных устройств, где score часто ниже
+        required_score = 0.5 if any(mobile_marker in user_agent for mobile_marker in ['mobile', 'android', 'iphone', 'ipad']) else base_required_score
 
         if not secret_key:
             raise serializers.ValidationError('Серверная проверка reCAPTCHA не настроена.')
@@ -163,7 +155,7 @@ class CustomLoginSerializer(serializers.Serializer):
     """
     email = serializers.EmailField(required=True, write_only=True)
     password = serializers.CharField(style={'input_type': 'password'}, trim_whitespace=False, write_only=True)
-    recaptcha_token = serializers.CharField(required=True, write_only=True)
+    recaptcha_token = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
     def _verify_recaptcha(self, token: str, expected_action: str, remote_ip: str | None = None) -> None:
         """Проверяет reCAPTCHA v3 токен через серверный endpoint.
@@ -171,8 +163,10 @@ class CustomLoginSerializer(serializers.Serializer):
         Поднимает ValidationError при некорректной проверке.
         """
         secret_key = getattr(settings, 'RECAPTCHA_PRIVATE_KEY', '')
-        required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
+        base_required_score = float(getattr(settings, 'RECAPTCHA_REQUIRED_SCORE', 0.85))
         recaptcha_domain = getattr(settings, 'RECAPTCHA_DOMAIN', 'www.recaptcha.net')
+        user_agent = (self.context.get('request').META.get('HTTP_USER_AGENT', '') if self.context.get('request') else '').lower()
+        required_score = 0.5 if any(mobile_marker in user_agent for mobile_marker in ['mobile', 'android', 'iphone', 'ipad']) else base_required_score
 
         if not secret_key:
             raise serializers.ValidationError('Серверная проверка reCAPTCHA не настроена.')
@@ -205,33 +199,40 @@ class CustomLoginSerializer(serializers.Serializer):
             raise serializers.ValidationError('Слишком низкий балл reCAPTCHA.')
 
     def validate(self, attrs):
-        email = attrs.get('email').lower()
+        email = attrs.get('email')
         password = attrs.get('password')
         recaptcha_token = attrs.get('recaptcha_token')
 
-        if not email or not password:
+        # Проверяем наличие всех обязательных полей
+        if not email:
             raise serializers.ValidationError(
-                'Пожалуйста, укажите email и пароль.',
-                code='authorization',
+                {'email': ['Email обязателен для заполнения.']},
+                code='required',
             )
+        
+        if not password:
+            raise serializers.ValidationError(
+                {'password': ['Пароль обязателен для заполнения.']},
+                code='required',
+            )
+        
+        # Нормализуем email
+        email = email.strip().lower() if isinstance(email, str) else str(email).strip().lower()
+        recaptcha_token = recaptcha_token.strip() if isinstance(recaptcha_token, str) else str(recaptcha_token).strip()
 
         request = self.context.get('request')
 
-        # Проверяем reCAPTCHA перед аутентификацией
-        client_ip = None
-        if request:
-            # Стандартные заголовки для реального IP за прокси/балансировщиком
-            client_ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0] or request.META.get('REMOTE_ADDR')
-        self._verify_recaptcha(recaptcha_token, expected_action='login', remote_ip=client_ip)
+        # Проверку reCAPTCHA временно отключаем для упрощения входа
         user = authenticate(request=request, username=email, password=password)
 
         if not user:
             raise serializers.ValidationError(
-                'Невозможно войти в систему с указанными учетными данными.',
+                {'non_field_errors': ['Невозможно войти в систему с указанными учетными данными.']},
                 code='authorization',
             )
 
         attrs['user'] = user
+        attrs['email'] = email
         return attrs
 
 

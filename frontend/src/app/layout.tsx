@@ -7,7 +7,6 @@ import { ThemeProvider } from "@/lib/ThemeProvider";
 import HydrationFix from '@/components/layout/HydrationFix';
 import "@/app/globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
-import ReCaptchaProvider from "@/components/ui/ReCaptchaProvider";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -39,16 +38,14 @@ export default function RootLayout({
       <body suppressHydrationWarning className={`${inter.className} antialiased bg-black text-white dark`}>
         <ThemeProvider>
           <AuthProvider>
-            <ReCaptchaProvider>
-              <div className="flex flex-col min-h-screen hydration-container">
-                <HydrationFix />
-                <Header />
-                <main className="flex-1 overflow-auto">
-                  {children}
-                </main>
-                <Footer />
-              </div>
-            </ReCaptchaProvider>
+            <div className="flex flex-col min-h-screen hydration-container">
+              <HydrationFix />
+              <Header />
+              <main className="flex-1 overflow-auto">
+                {children}
+              </main>
+              <Footer />
+            </div>
           </AuthProvider>
         </ThemeProvider>
       </body>
