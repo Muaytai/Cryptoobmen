@@ -11,7 +11,7 @@ export const SocialButtons = () => (
     zIndex: 10
   }}>
     <a
-      href="https://t.me/your_channel"
+      href="https://t.me/GPT4_AIobot"
       target="_blank"
       rel="noopener noreferrer"
       style={{
@@ -25,7 +25,7 @@ export const SocialButtons = () => (
       }}
       onMouseOver={e => e.currentTarget.style.background = '#b48afd'}
       onMouseOut={e => e.currentTarget.style.background = '#262626'}
-      title="Telegram"
+      title="GPT-4 AI Assistant"
     >
       <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
         <path fill="#b48afd" d="M21.5 4.5 18.2 19.1c-.2.8-.7 1-1.4.6l-3.8-2.8-1.8 1.7c-.2.2-.4.3-.7.3l.2-2.2 8-7.2c.3-.3-.1-.4-.5-.2l-9.9 6.2-2.1-.7c-.8-.3-.8-.8.2-1.2l16.3-6.3c.7-.3 1.3.2 1.1 1.1Z"/>

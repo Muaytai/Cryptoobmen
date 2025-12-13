@@ -331,6 +331,7 @@ const HomePageInner = () => {
           </div>
         </div>
 
+
         {/* Кнопки под картинкой для мобильных устройств */}
         {isMobile && (
           <div style={{

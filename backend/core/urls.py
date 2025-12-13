@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenVerifyView
-from dj_rest_auth.views import PasswordResetConfirmView, LogoutView, UserDetailsView
+from dj_rest_auth.views import PasswordResetView, PasswordResetConfirmView, LogoutView, UserDetailsView
 from accounts.views import CustomLoginView
 from dj_rest_auth.registration.views import RegisterView, ResendEmailVerificationView, VerifyEmailView
 from django.views.generic import TemplateView
@@ -85,6 +85,7 @@ urlpatterns = [
     path('api/auth/user/', UserDetailsView.as_view(), name='rest_user_details'),
     # Используем кастомные URL для регистрации
     path('api/auth/registration/', include(dj_rest_auth_custom_registration_urls)), 
+    path('api/auth/password/reset/', PasswordResetView.as_view(), name='password_reset'),
     path('api/auth/password/reset/confirm/<uidb64>/<token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     
     # JWT endpoints
