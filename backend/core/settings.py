@@ -542,6 +542,8 @@ REST_AUTH = {
     'SESSION_LOGIN': False,
     'LOGIN_SERIALIZER': 'accounts.serializers.CustomLoginSerializer',
     'REGISTER_SERIALIZER': 'accounts.serializers.CustomRegisterSerializer',
+    'PASSWORD_RESET_USE_SITES_DOMAIN': False,
+    'PASSWORD_RESET_CONFIRM_URL': f'{FRONTEND_URL}/reset-password/{{uid}}/{{token}}/',
 }
 
 # AllAuth настройки (обновлены для версии 65.11.0)

@@ -231,8 +231,16 @@ const LoginFormWithSearchParams = () => {
                             <div className="mb-4" />
                             
                             <div className={styles.linkForgotPassword}>
-                                <a className="text-sm  hover:underline">Забыли
-                                    пароль?</a>
+                                <a 
+                                    href="/forgot-password"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        router.push('/forgot-password');
+                                    }}
+                                    className="text-sm hover:underline cursor-pointer"
+                                >
+                                    Забыли пароль?
+                                </a>
                             </div>
                             <button
                                 type="submit"
