@@ -87,12 +87,61 @@ interface AuthState {
 
 const handleApiError = (error: unknown, defaultMessage: string): string => {
   if (error instanceof Error) {
-    return error.message;
+    // Если ошибка уже содержит понятное сообщение, возвращаем его
+    if (error.message && error.message !== 'HTTP error! Status: 400') {
+      return error.message;
+    }
+    
+    // Проверяем, есть ли дополнительные данные об ошибке
+    const errorWithData = error as Error & { data?: any; status?: number };
+    if (errorWithData.data) {
+      // Пытаемся извлечь детальное сообщение из данных ошибки
+      const data = errorWithData.data;
+      
+      if (data.detail) {
+        return data.detail;
+      }
+      
+      if (data.non_field_errors && Array.isArray(data.non_field_errors)) {
+        return data.non_field_errors.join('. ');
+      }
+      
+      // Обрабатываем ошибки полей
+      const fieldErrors: string[] = [];
+      for (const [field, errors] of Object.entries(data)) {
+        if (Array.isArray(errors)) {
+          const fieldName = getFieldNameInRussian(field);
+          fieldErrors.push(`${fieldName}: ${errors.join(', ')}`);
+        } else if (typeof errors === 'string') {
+          const fieldName = getFieldNameInRussian(field);
+          fieldErrors.push(`${fieldName}: ${errors}`);
+        }
+      }
+      
+      if (fieldErrors.length > 0) {
+        return fieldErrors.join('. ');
+      }
+    }
+    
+    return error.message || defaultMessage;
   }
   if (typeof error === 'string') {
     return error;
   }
   return defaultMessage;
+};
+
+// Функция для получения русских названий полей
+const getFieldNameInRussian = (field: string): string => {
+  const fieldNames: Record<string, string> = {
+    email: 'Email',
+    username: 'Имя пользователя',
+    password: 'Пароль',
+    password1: 'Пароль',
+    password2: 'Подтверждение пароля',
+    recaptcha_token: 'reCAPTCHA',
+  };
+  return fieldNames[field] || field;
 };
 
 const extractApiData = <T>(payload: unknown): T | null => {

@@ -91,6 +91,30 @@ class CustomAccountAdapter(DefaultAccountAdapter):
         else:
             email_template = "account/email/email_confirmation"
         self.send_mail(email_template, emailconfirmation.email_address.email, ctx)
+    
+    def get_password_reset_url(self, request, user, temp_key):
+        """Возвращает URL для сброса пароля на фронтенде"""
+        # temp_key от dj_rest_auth может быть в формате "uidb64-token" или просто token
+        # Генерируем uidb64 для пользователя
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+        
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+        
+        # Если temp_key содержит дефис, то это "uidb64-token"
+        if '-' in temp_key:
+            parts = temp_key.split('-', 1)
+            uidb64_from_key = parts[0]
+            token = parts[1]
+            # Используем uidb64 из ключа, если он там есть
+            if uidb64_from_key:
+                uidb64 = uidb64_from_key
+        else:
+            # Иначе temp_key - это просто token
+            token = temp_key
+        
+        # Формируем URL на фронтенде
+        return f"{settings.FRONTEND_URL}/reset-password/{uidb64}/{token}/"
 
 
 class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
