@@ -90,5 +90,5 @@ backend/*.dat
 backend/get_private_key_from_seed.py
 backend/logs
 .cursorignore
-.gitattributes
+# .gitattributes - теперь отслеживается в Git
 .cursorrules

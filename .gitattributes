@@ -1,0 +1,9 @@
+# Принудительно использовать LF для shell скриптов
+*.sh text eol=lf
+backend/start_celery_system text eol=lf
+backend/stop_celery_system text eol=lf
+backend/start_workers_simple text eol=lf
+
+# Остальные текстовые файлы
+* text=auto
+

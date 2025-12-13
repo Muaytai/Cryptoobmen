@@ -69,6 +69,7 @@ const EmailConfirmedModal = ({onClose}: { onClose: () => void }) => {
 };
 
 const HomePageInner = () => {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const showEmailConfirmedModal = useAuthStore((state) => state.showEmailConfirmedModal);
   const setShowEmailConfirmedModal = useAuthStore((state) => state.setShowEmailConfirmedModal);
@@ -93,7 +94,7 @@ const HomePageInner = () => {
         justifyContent: "flex-start",
         alignItems: isMobile ? "center" : "flex-start",
         gap: isMobile ? 20 : 40,
-        marginBottom: isMobile ? 15 : 20,
+        marginBottom: isMobile ? 0 : 20,
         minHeight: isMobile ? "auto" : isTablet ? 400 : 500,
         height: isMobile ? "auto" : isTablet ? 400 : 500,
         width: "100%",
@@ -105,7 +106,7 @@ const HomePageInner = () => {
         zIndex: 2,
         position: "relative",
         textAlign: isMobile ? "center" : "left",
-        marginBottom: isMobile ? "20px" : 0,
+        marginBottom: isSmallMobile ? "12px" : isMobile ? "14px" : 0,
         marginLeft: 0,
         padding: isMobile ? "0" : "0 20px",
         width: isMobile ? "100%" : isTablet ? "55%" : "50%",
@@ -121,6 +122,7 @@ const HomePageInner = () => {
         marginLeft: isMobile ? 0 : isTablet ? -20 : -28,
         marginTop: isMobile ? 0 : isTablet ? -10 : 30,
         alignSelf: isMobile ? "center" : "flex-end",
+        transform: isMobile ? "none" : "none",
         minHeight: isSmallMobile ? 200 : isMobile ? 250 : isTablet ? 350 : 450,
         maxWidth: isMobile ? "100%" : "none",
       },
@@ -140,11 +142,12 @@ const HomePageInner = () => {
       cryptoIconsContainer: {
         display: "flex",
         justifyContent: "center",
-        padding: "0 15px",
-        marginTop: isMobile ? 80 : 100,
+        padding: isMobile ? "0 15px" : "0 15px",
+        marginTop: isSmallMobile ? 60 : isMobile ? 70 : 100,
         marginBottom: isFirefox 
-          ? (isSmallMobile ? 10 : isMobile ? 15 : isTablet ? 20 : 25)
-          : (isSmallMobile ? 8 : isMobile ? 12 : isTablet ? 18 : 22),
+          ? (isSmallMobile ? 32 : isMobile ? 32 : isTablet ? 20 : 25)
+          : (isSmallMobile ? 32 : isMobile ? 32 : isTablet ? 18 : 22),
+        paddingBottom: isMobile ? 0 : undefined,
         overflow: "hidden",
         minHeight: isMobile ? 50 : 70,
         height: isMobile ? 50 : 70,
@@ -161,8 +164,8 @@ const HomePageInner = () => {
       bottomSpacer: {
         width: "100%",
         minHeight: isFirefox
-          ? (isSmallMobile ? 10 : isMobile ? 15 : isTablet ? 25 : 30)
-          : (isSmallMobile ? 5 : isMobile ? 8 : isTablet ? 15 : 20),
+          ? (isSmallMobile ? 0 : isMobile ? 0 : isTablet ? 25 : 30)
+          : (isSmallMobile ? 0 : isMobile ? 0 : isTablet ? 15 : 20),
       },
       socialButtonsContainer: {
         position: "fixed",
@@ -179,15 +182,19 @@ const HomePageInner = () => {
       socialButton: {
         width: isMobile ? 40 : 48,
         height: isMobile ? 40 : 48,
-        borderRadius: 10,
-        background: isDark ? "rgba(38, 38, 38, 0.6)" : "rgba(230, 230, 230, 0.8)",
+        borderRadius: 12,
+        background: isDark ? "rgba(124, 58, 237, 0.1)" : "rgba(124, 58, 237, 0.05)",
+        border: isDark ? "1px solid rgba(124, 58, 237, 0.3)" : "1px solid rgba(124, 58, 237, 0.2)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         cursor: "pointer",
-        transition: "all 0.2s ease",
-        backdropFilter: "blur(5px)",
-        WebkitBackdropFilter: "blur(5px)",
+        transition: "all 0.3s ease",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        boxShadow: isDark 
+          ? "0 2px 8px rgba(124, 58, 237, 0.1)" 
+          : "0 2px 8px rgba(124, 58, 237, 0.05)",
       },
       socialButtonImage: {
         width: isMobile ? 20 : 24,
@@ -291,7 +298,8 @@ const HomePageInner = () => {
           minHeight: "100vh",
           maxWidth: 1400,
           margin: "0 auto",
-          padding: isMobile ? "16px 0 60px 0" : "20px 32px 80px 0px",
+          padding: isMobile ? "32px 0 0 0" : "20px 32px 80px 0px",
+          marginBottom: isMobile ? "-20px" : 0,
           display: "flex",
           flexDirection: "column",
           justifyContent: "flex-start",
@@ -308,7 +316,7 @@ const HomePageInner = () => {
 
         <div className="stable-container" style={currentStyles.contentContainer}>
           <div className="stable-container" style={currentStyles.textContainer}>
-            <AnimatedHeroText deviceType={deviceType}/>
+            <AnimatedHeroText deviceType={deviceType} showButtons={!isMobile}/>
           </div>
 
           <div className="stable-container" style={currentStyles.imageContainer}>
@@ -323,36 +331,78 @@ const HomePageInner = () => {
           </div>
         </div>
 
-        <div style={currentStyles.socialButtonsContainer} data-fixed>
-          <a
-            href="https://t.me/your_channel"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={currentStyles.socialButton}
-          >
-            <Image
-              src="/images/Телеграм.webp"
-              alt="Telegram CTokenX"
-              width={24}
-              height={24}
-              style={currentStyles.socialButtonImage}
-            />
-          </a>
-          <a
-            href="https://instagram.com/your_profile"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={currentStyles.socialButton}
-          >
-            <Image
-              src="/images/Инста.webp"
-              alt="Instagram CTokenX"
-              width={24}
-              height={24}
-              style={currentStyles.socialButtonImage}
-            />
-          </a>
-        </div>
+        {/* Кнопки под картинкой для мобильных устройств */}
+        {isMobile && (
+          <div style={{
+            display: 'flex',
+            gap: isMobile ? 8 : 14,
+            marginTop: isMobile ? 32 : 0,
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            width: '100%',
+            padding: isMobile ? '0 16px' : '0',
+          }}>
+            <button
+              type="button"
+              onClick={() => router.push('/register')}
+              aria-label="Сделай первый ход"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: isMobile ? '10px 16px' : '12px 26px',
+                borderRadius: 9999,
+                fontWeight: 600,
+                fontSize: isMobile ? 12 : 16,
+                cursor: 'pointer',
+                transition: 'all .25s ease',
+                border: '1px solid #7C3AED',
+                background: 'rgba(124,58,237,0.14)',
+                color: '#7C3AED',
+                whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(124,58,237,0.22)';
+                e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(124,58,237,0.35)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(124,58,237,0.14)';
+                e.currentTarget.style.boxShadow = 'inset 0 0 0 0 rgba(124,58,237,0.2)';
+              }}
+            >
+              Сделай первый ход
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/about')}
+              aria-label="Правила игры"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: isMobile ? '10px 16px' : '12px 26px',
+                borderRadius: 9999,
+                fontWeight: 600,
+                fontSize: isMobile ? 12 : 16,
+                cursor: 'pointer',
+                transition: 'all .25s ease',
+                border: '1px solid #7C3AED',
+                background: 'transparent',
+                color: '#7C3AED',
+                whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(124,58,237,0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              Правила игры
+            </button>
+          </div>
+        )}
+
 
         <div className="stable-container" style={currentStyles.cryptoIconsContainer}>
           <Image
@@ -365,7 +415,7 @@ const HomePageInner = () => {
           />
         </div>
 
-        <div style={currentStyles.bottomSpacer}/>
+        {!isMobile && <div style={currentStyles.bottomSpacer}/>}
       </main>
     </div>
   );
