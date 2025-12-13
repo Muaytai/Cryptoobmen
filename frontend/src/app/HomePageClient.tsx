@@ -325,7 +325,7 @@ const HomePageInner = () => {
 
         <div style={currentStyles.socialButtonsContainer} data-fixed>
           <a
-            href="https://t.me/your_channel"
+            href="https://t.me/GPT4_AIobot"
             target="_blank"
             rel="noopener noreferrer"
             style={currentStyles.socialButton}
